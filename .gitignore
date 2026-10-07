@@ -1,0 +1,24 @@
+# Local agent tooling (machine-specific paths)
+.atl/
+
+# Java / Maven
+target/
+*.class
+*.log
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# IDEs and OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
