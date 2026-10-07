@@ -161,7 +161,10 @@
                             <failWhenNoMutations>true</failWhenNoMutations>
                         </configuration>
                         <executions>
-                            <!-- Pure domain rules, covered by fast unit tests (*Test, no Spring, no database). -->
+                            <!-- Pure domain rules, covered by fast unit tests (*Test, no Spring, no database). Every
+                                 domain class has direct unit tests, so a class that only an IT exercised would show up
+                                 as no-coverage here on purpose: the fix is a unit test, not an IT. The domain-all
+                                 execution below measures the same classes with every test as a cross-check. -->
                             <execution>
                                 <id>domain</id>
                                 <configuration>
@@ -176,6 +179,26 @@
                                     </targetTests>
                                     <threads>4</threads>
                                     <reportsDirectory>${project.build.directory}/pit-reports/domain</reportsDirectory>
+                                </configuration>
+                            </execution>
+                            <!-- Cross-check (optional, ~25 min): the same domain classes with ALL tests, unit and *IT. Each
+                                 PIT JVM that touches an IT starts its own Spring context and Postgres container, which is
+                                 what makes it slow, so threads stay low. -->
+                            <execution>
+                                <id>domain-all</id>
+                                <configuration>
+                                    <targetClasses>
+                                        <param>ar.cetobhb.catalog.domain.*</param>
+                                        <param>ar.cetobhb.inventory.domain.*</param>
+                                        <param>ar.cetobhb.orders.domain.*</param>
+                                        <param>ar.cetobhb.common.domain.*</param>
+                                    </targetClasses>
+                                    <targetTests>
+                                        <param>ar.cetobhb.*</param>
+                                    </targetTests>
+                                    <threads>2</threads>
+                                    <timeoutConstant>20000</timeoutConstant>
+                                    <reportsDirectory>${project.build.directory}/pit-reports/domain-all</reportsDirectory>
                                 </configuration>
                             </execution>
                             <!-- Critical services, covered by the ITs (real Postgres via Testcontainers; each PIT JVM
