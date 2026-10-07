@@ -30,6 +30,14 @@ class SchemaGuardWiringIT {
                 .hasStackTraceContaining("jakarta.persistence.schema-generation.database.action");
     }
 
+    @Test
+    void realApplicationFailsToStartWithBracketedHbm2ddlArgument() {
+        assertThatThrownBy(() -> run("--spring.jpa.hibernate.ddl-auto=validate",
+                "--spring.jpa.properties[hibernate.hbm2ddl.auto]=create"))
+                .hasStackTraceContaining(REFUSAL)
+                .hasStackTraceContaining("hibernate.hbm2ddl.auto");
+    }
+
     private static void run(String... args) {
         SpringApplication application = new SpringApplication(CetoBackendApplication.class);
         application.setWebApplicationType(WebApplicationType.NONE);

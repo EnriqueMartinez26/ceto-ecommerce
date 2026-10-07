@@ -100,6 +100,35 @@ class SchemaManagementCheckTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
+            "spring.jpa.properties[hibernate.hbm2ddl.auto]",
+            "spring.jpa.properties[jakarta.persistence.schema-generation.database.action]",
+            "spring.jpa.properties[javax.persistence.schema-generation.database.action]",
+            "spring.jpa.properties[hibernate.hbm2ddl_auto]",
+            "spring.jpa.properties[Hibernate.Hbm2ddl.Auto]"})
+    void rejectsBracketedSpringJpaPropertiesKeys(String key) {
+        assertThatThrownBy(() -> SchemaManagementCheck.verify(withValidDdlAuto(key, "create")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Refusing to start");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "spring.jpa.properties[hibernate.hbm2ddl.auto]",
+            "spring.jpa.properties[jakarta.persistence.schema-generation.database.action]"})
+    void bracketedKeysAcceptNoneAndValidate(String key) {
+        assertThatCode(() -> SchemaManagementCheck.verify(withValidDdlAuto(key, " None "))).doesNotThrowAnyException();
+        assertThatCode(() -> SchemaManagementCheck.verify(withValidDdlAuto(key, "validate"))).doesNotThrowAnyException();
+    }
+
+    @Test
+    void unrelatedSpringJpaPropertiesAreIgnored() {
+        assertThatCode(() -> SchemaManagementCheck.verify(
+                withValidDdlAuto("spring.jpa.properties[hibernate.jdbc.time_zone]", "UTC")))
+                .doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
             "SPRING_JPA_PROPERTIES_JAKARTA_PERSISTENCE_SCHEMA_GENERATION_DATABASE_ACTION",
             "SPRING_JPA_PROPERTIES_JAVAX_PERSISTENCE_SCHEMA_GENERATION_DATABASE_ACTION",
             "SPRING_JPA_PROPERTIES_HIBERNATE_HBM2DDL_AUTO"})
