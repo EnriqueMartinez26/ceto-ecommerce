@@ -112,6 +112,8 @@ class ApiExceptionHandlerTest {
                 Arguments.of(new ReservationNotExpiredException(), 500, "INTERNAL_ERROR"),
                 Arguments.of(new DomainException("UNMAPPED"), 500, "INTERNAL_ERROR"),
                 Arguments.of(new DataIntegrityViolationException(SECRET), 409, "CONFLICT"),
+                // Extension of REQ-ERR-03: a lost optimistic-lock race is a conflict with the current state (409),
+                // not a retryable overload, so it is deliberately not in the 503 SERVICE_BUSY family below.
                 Arguments.of(new OptimisticLockingFailureException(SECRET), 409, "CONFLICT"),
                 Arguments.of(new NoResourceFoundException(HttpMethod.GET, "/nope", "nope"), 404, "NOT_FOUND"),
                 Arguments.of(new RuntimeException(SECRET), 500, "INTERNAL_ERROR"),
@@ -170,6 +172,11 @@ class ApiExceptionHandlerTest {
         assertThat(body(result)).doesNotContain("boom:", "+54");
     }
 
+    /**
+     * Known gap (verification U-10): a raw JdbcTemplate lock timeout surfaces as {@code UncategorizedSQLException},
+     * which is not in this family and therefore answers 500. Repositories that need 503 must go through JPA or
+     * translate the SQLState themselves.
+     */
     static Stream<Throwable> serviceBusyFamily() {
         return Stream.of(new CannotAcquireLockException(SECRET), new PessimisticLockingFailureException(SECRET),
                 new QueryTimeoutException(SECRET), new CannotCreateTransactionException(SECRET),
@@ -270,6 +277,21 @@ class ApiExceptionHandlerTest {
     void unacceptableRepresentationIsNotAcceptable() throws Exception {
         mvc.perform(get("/items/5").accept(MediaType.APPLICATION_XML)).andExpect(status().isNotAcceptable())
                 .andExpect(jsonPath("$.code").value("NOT_ACCEPTABLE"));
+    }
+
+    @Test
+    void problemBodyHasNoTypeMember() throws Exception {
+        THROWN.set(new RuntimeException(SECRET));
+
+        mvc.perform(get("/boom")).andExpect(jsonPath("$.type").doesNotExist());
+    }
+
+    @Test
+    void instanceFallsBackToRootWhenTheRequestPathIsNotAValidUri() throws Exception {
+        mvc.perform(get("/boom").with(request -> {
+            request.setRequestURI("/not a uri");
+            return request;
+        })).andExpect(status().isNotFound()).andExpect(jsonPath("$.instance").value("/"));
     }
 
     @Test
