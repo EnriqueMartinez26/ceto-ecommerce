@@ -149,5 +149,7 @@ class StorefrontServiceIT extends AbstractPostgresIT {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new StorefrontService(catalog, inventory, orderProperties, 501))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThat(new StorefrontService(catalog, inventory, orderProperties, 1)).isNotNull();
+        assertThat(new StorefrontService(catalog, inventory, orderProperties, 500)).isNotNull();
     }
 }
