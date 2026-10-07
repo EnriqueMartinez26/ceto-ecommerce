@@ -17,6 +17,11 @@ import java.util.HexFormat;
  * {@code item} record per line, sorted by product id, whose value is {@code <product id>x<quantity>}. The byte
  * length prefix keeps values containing separators or newlines from colliding with a different split. Changing
  * this form requires a new version header, never a silent edit ({@code OrderRequestFingerprintTest} pins it).
+ *
+ * <p>Warning: the zone is fingerprinted by its constant name, so renaming a {@link ShippingZone} constant (or
+ * any other canonical label such as {@code name}, {@code item}) changes the fingerprint of requests already
+ * stored under in-flight idempotency keys. Such a change requires a version bump ({@code v2}) and a golden
+ * update.
  */
 public final class OrderRequestFingerprint {
 

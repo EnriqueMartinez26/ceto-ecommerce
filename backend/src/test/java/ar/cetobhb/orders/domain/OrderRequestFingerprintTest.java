@@ -32,6 +32,10 @@ class OrderRequestFingerprintTest {
         return fingerprint(KEY, BUYER, lines);
     }
 
+    /**
+     * Renaming a {@link ShippingZone} constant (or any canonical label) changes the fingerprint of in-flight
+     * idempotency keys: it requires a version bump ({@code v2}) and a golden update, never a silent edit.
+     */
     @Test
     void goldenValuePinsTheCanonicalV1Form() {
         assertThat(base(line(3, 1), line(7, 2))).isEqualTo(GOLDEN);
