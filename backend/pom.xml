@@ -30,6 +30,9 @@
         <archunit.version>1.5.1</archunit.version>
         <!-- Not managed by the Boot BOM. 9.0.40 verified on Maven Central (docs/dependencias.md, G0). -->
         <libphonenumber.version>9.0.40</libphonenumber.version>
+        <!-- Build-only, used by the `mutation` profile. Verified on Maven Central (docs/dependencias.md, pending review). -->
+        <pitest-maven.version>1.30.0</pitest-maven.version>
+        <pitest-junit5-plugin.version>1.2.3</pitest-junit5-plugin.version>
     </properties>
 
     <dependencies>
@@ -119,4 +122,84 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+            Mutation testing with PIT (manual, NOT part of `./mvnw clean verify`). See docs/testing.md.
+            Run: ./mvnw -Pmutation test-compile \
+                     org.pitest:pitest-maven:mutationCoverage@domain \
+                     org.pitest:pitest-maven:mutationCoverage@services
+            Plugin versions are verified in docs/dependencias.md ("Mutation testing", pending Mateo's review).
+            Build-only: nothing here reaches the runtime classpath.
+        -->
+        <profile>
+            <id>mutation</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.pitest</groupId>
+                        <artifactId>pitest-maven</artifactId>
+                        <version>${pitest-maven.version}</version>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.pitest</groupId>
+                                <artifactId>pitest-junit5-plugin</artifactId>
+                                <version>${pitest-junit5-plugin.version}</version>
+                            </dependency>
+                        </dependencies>
+                        <configuration>
+                            <outputFormats>
+                                <outputFormat>HTML</outputFormat>
+                                <outputFormat>XML</outputFormat>
+                            </outputFormats>
+                            <timestampedReports>false</timestampedReports>
+                            <reportsDirectory>${project.build.directory}/pit-reports</reportsDirectory>
+                            <jvmArgs>
+                                <jvmArg>-Duser.timezone=UTC</jvmArg>
+                            </jvmArgs>
+                            <!-- Same bar as the compiler baseline: fail loudly rather than skip silently. -->
+                            <failWhenNoMutations>true</failWhenNoMutations>
+                        </configuration>
+                        <executions>
+                            <!-- Pure domain rules, covered by fast unit tests (*Test, no Spring, no database). -->
+                            <execution>
+                                <id>domain</id>
+                                <configuration>
+                                    <targetClasses>
+                                        <param>ar.cetobhb.catalog.domain.*</param>
+                                        <param>ar.cetobhb.inventory.domain.*</param>
+                                        <param>ar.cetobhb.orders.domain.*</param>
+                                        <param>ar.cetobhb.common.domain.*</param>
+                                    </targetClasses>
+                                    <targetTests>
+                                        <param>ar.cetobhb.*Test</param>
+                                    </targetTests>
+                                    <threads>4</threads>
+                                    <reportsDirectory>${project.build.directory}/pit-reports/domain</reportsDirectory>
+                                </configuration>
+                            </execution>
+                            <!-- Critical services, covered by the ITs (real Postgres via Testcontainers; each PIT JVM
+                                 starts its own container, so keep threads low). -->
+                            <execution>
+                                <id>services</id>
+                                <configuration>
+                                    <targetClasses>
+                                        <param>ar.cetobhb.inventory.service.InventoryService</param>
+                                        <param>ar.cetobhb.catalog.service.CatalogService</param>
+                                        <param>ar.cetobhb.orders.service.*</param>
+                                    </targetClasses>
+                                    <targetTests>
+                                        <param>ar.cetobhb.*</param>
+                                    </targetTests>
+                                    <threads>2</threads>
+                                    <timeoutConstant>20000</timeoutConstant>
+                                    <reportsDirectory>${project.build.directory}/pit-reports/services</reportsDirectory>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
