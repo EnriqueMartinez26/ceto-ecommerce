@@ -9,21 +9,33 @@ import org.springframework.jdbc.core.JdbcTemplate;
  */
 public final class StockReconciliation {
 
+    /**
+     * FULL JOIN on purpose: a base product with pending units but no {@code inventory_stock} row has nothing
+     * reserved (actual 0), so any pending demand for it is drift. A product with neither a stock row nor pending
+     * lines does not appear on either side and is not drift.
+     */
     private static final String STOCK_DRIFT = """
-            SELECT s.product_id,
-                   COALESCE(SUM(oi.base_units_total) FILTER (WHERE o.status = 'PAGO_PENDIENTE'), 0) AS expected,
-                   s.reserved AS actual
+            WITH pending AS (
+                SELECT oi.base_product_id AS product_id, SUM(oi.base_units_total) AS expected
+                  FROM order_items oi
+                  JOIN orders o ON o.id = oi.order_id
+                 WHERE o.status = 'PAGO_PENDIENTE'
+                 GROUP BY oi.base_product_id)
+            SELECT COALESCE(s.product_id, p.product_id) AS product_id,
+                   COALESCE(p.expected, 0) AS expected,
+                   COALESCE(s.reserved, 0) AS actual
               FROM inventory_stock s
-              LEFT JOIN order_items oi ON oi.base_product_id = s.product_id
-              LEFT JOIN orders o ON o.id = oi.order_id
-             GROUP BY s.product_id, s.reserved
-            HAVING s.reserved <> COALESCE(SUM(oi.base_units_total) FILTER (WHERE o.status = 'PAGO_PENDIENTE'), 0)
-             ORDER BY s.product_id""";
+              FULL JOIN pending p ON p.product_id = s.product_id
+             WHERE COALESCE(s.reserved, 0) <> COALESCE(p.expected, 0)
+             ORDER BY 1""";
 
     private StockReconciliation() {
     }
 
-    /** Base products whose {@code reserved} differs from the pending demand, ascending by product id. */
+    /**
+     * Base products whose {@code reserved} differs from the pending demand, ascending by product id. A missing
+     * stock row counts as {@code reserved = 0}.
+     */
     public static List<StockDrift> stockDrift(JdbcTemplate jdbc) {
         return jdbc.query(STOCK_DRIFT,
                 (rs, row) -> new StockDrift(rs.getLong("product_id"), rs.getLong("expected"), rs.getLong("actual")));
