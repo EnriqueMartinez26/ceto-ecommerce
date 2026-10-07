@@ -179,9 +179,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    (`placementsPaymentsCancellationsAndExpiryOnSharedBaseProductsNeverDeadlock`):
    carritos con los productos en orden de id opuesto, un pago, una
    cancelación y dos corridas de vencimiento a la vez, 20 iteraciones sin
-   deadlock. Evidencia por mutación (S11): con `InventoryService.release`
-   lockeando en orden descendente la misma ráfaga falló con
-   `deadlock detected` (SQLState 40P01).
+   deadlock. Evidencia por mutación (registrada el 2026-10-07): cambiar
+   `InventoryService.release` para lockear las filas de stock en orden de id
+   DESCENDENTE (en vez de ascendente) hizo fallar la misma ráfaga en la
+   iteración 0 con `40P01 deadlock detected` de Postgres; con el orden
+   ascendente restaurado el test pasa.
 4. **Ciclo de la reserva**: crear el pedido suma a `reserved`; pasar a
    pagado descuenta en firme (`on_hand −= n`, `reserved −= n`); cancelar o
    vencer libera (`reserved −= n`). Una reserva sin pago vence sola a las
@@ -198,8 +200,14 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    repetidas e idénticas, dos corridas concurrentes sin doble liberación,
    fila bloqueada por otra transacción salteada y carrera contra el pago.
    Libera desde los snapshots del pedido, con `OrderLifecycleService.expireDueOrders`
-   (una transacción por lote; un lote que falla se revierte entero y el job lo
-   reintenta en el siguiente ciclo). El job (`OrderExpiryJob`) solo se agenda
+   (una transacción por lote; si el lote falla se revierte entero y se
+   reintenta pedido por pedido, cada uno en su propia transacción: el pedido
+   que sigue fallando se registra en el log con ERROR, solo el id, y queda
+   `PAGO_PENDIENTE` hasta repararlo a mano, mientras el resto avanza,
+   D-20261007-12; `OrderExpiryIT` lo prueba con una fila de stock borrada). Un
+   ciclo del job repite lotes mientras vuelvan llenos, hasta
+   `ceto.orders.expiry.max-batches-per-tick` (1 a 100, 10 por defecto;
+   `OrderExpiryJobDrainIT`). El job (`OrderExpiryJob`) solo se agenda
    si `ceto.scheduling.enabled` no es `false`; en tests no se agenda
    (`OrderExpiryJobSchedulingTest`, `OrderExpiryJobWiringIT`). La
    reconciliación de `reserved` contra los pedidos pendientes
