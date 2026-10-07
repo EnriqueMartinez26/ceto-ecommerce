@@ -8,9 +8,12 @@ Docker Compose en un VPS (postgres, backend, frontend, caddy).
 
 Este archivo se carga en cada sesión y es contexto autoritativo para
 cualquier cambio. Está escrito para el asistente de IA tanto como para las
-personas. **Estado al 2026-10-07: el backend tiene solo el andamiaje (`backend/`,
-Spring Boot 4.1.1), la guarda de ddl-auto, las reglas ArchUnit y el catálogo
-(`products`); el resto no está construido.** Por eso
+personas. **Estado al 2026-10-07: el backend (`backend/`, Spring Boot 4.1.1)
+tiene la guarda de ddl-auto, las reglas ArchUnit, el catálogo, el stock, el
+dominio y el ciclo de vida de los pedidos (reserva, pago, cancelación y
+vencimiento por job) y la normalización del teléfono, todo probado contra
+Postgres real. No existen la API HTTP, el panel, el frontend ni el resto de
+las áreas de §4.** Por eso
 cada regla dura dice cuál es su guarda (test, restricción de la base, chequeo
 estático) o lleva **[guarda pendiente]**: una regla con guarda pendiente es
 un requisito de implementación, no algo que ya esté protegido. Cuando la
@@ -170,8 +173,15 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    lock (`@Version` y el CHECK de stock también la frenan). La prueba que falla
    sin `FOR UPDATE` es `oppositeOrderMultiProductCartsNeverDeadlock` (evidencia
    por mutación, S9b: sin el lock en `lockByProductId` fallaron 11 de 12 hilos
-   con `ObjectOptimisticLockingFailureException`). **[guarda pendiente: orden
-   de locks ascendente, S11]** para probar específicamente el ORDEN.
+   con `ObjectOptimisticLockingFailureException`). El ORDEN de locks (pedido
+   primero, luego filas de stock por id ascendente en toda ruta: reserva,
+   pago, cancelación y vencimiento) lo prueba `OrderLockOrderingIT`
+   (`placementsPaymentsCancellationsAndExpiryOnSharedBaseProductsNeverDeadlock`):
+   carritos con los productos en orden de id opuesto, un pago, una
+   cancelación y dos corridas de vencimiento a la vez, 20 iteraciones sin
+   deadlock. Evidencia por mutación (S11): con `InventoryService.release`
+   lockeando en orden descendente la misma ráfaga falló con
+   `deadlock detected` (SQLState 40P01).
 4. **Ciclo de la reserva**: crear el pedido suma a `reserved`; pasar a
    pagado descuenta en firme (`on_hand −= n`, `reserved −= n`); cancelar o
    vencer libera (`reserved −= n`). Una reserva sin pago vence sola a las
@@ -183,7 +193,17 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    reconciliación limpia al final de cada escenario y una ráfaga de pago y
    cancelación sobre el mismo pedido; pagar pasada `reserved_until` sin que el
    job haya corrido es válido (D-20261007-04, `payingAfterReservedUntilSucceedsWhileTheJobHasNotRun`).
-   **[guarda pendiente: vencimiento por job, S11]**
+   El vencimiento lo prueba `OrderExpiryIT`: borde inclusivo
+   (`reserved_until <= now`), lotes acotados por antigüedad, corridas
+   repetidas e idénticas, dos corridas concurrentes sin doble liberación,
+   fila bloqueada por otra transacción salteada y carrera contra el pago.
+   Libera desde los snapshots del pedido, con `OrderLifecycleService.expireDueOrders`
+   (una transacción por lote; un lote que falla se revierte entero y el job lo
+   reintenta en el siguiente ciclo). El job (`OrderExpiryJob`) solo se agenda
+   si `ceto.scheduling.enabled` no es `false`; en tests no se agenda
+   (`OrderExpiryJobSchedulingTest`, `OrderExpiryJobWiringIT`). La
+   reconciliación de `reserved` contra los pedidos pendientes
+   (`StockReconciliationIT`) cierra cada escenario.
 
 ### Pedidos
 
@@ -400,8 +420,10 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 - **El checkout tiene prueba de ráfaga**: con stock de 1 unidad, N compras
   simultáneas → 1 éxito, N−1 conflictos, cero 5xx, `reserved` correcto al
   final. Lo mismo para N confirmaciones idénticas con la misma clave de
-  idempotencia. Existen: `OrderStockBurstIT` (última unidad) y
-  `OrderIdempotencyIT` (misma clave); el pool de Hikari del perfil `test` es
+  idempotencia. Existen: `OrderStockBurstIT` (última unidad),
+  `OrderIdempotencyIT` (misma clave), `OrderLockOrderingIT` (orden de locks
+  entre reserva, pago, cancelación y vencimiento) y `OrderExpiryIT`
+  (vencimiento contra pago y corridas concurrentes); el pool de Hikari del perfil `test` es
   mayor que los hilos para que la contención sea de locks y no del pool.
 - **Un bug de producción se reproduce con un test antes de arreglarse**, con
   fecha y síntoma en el comentario.
@@ -435,8 +457,9 @@ No se implementa nada de esta lista asumiendo una respuesta: se pregunta.
 - Tope de unidades por línea (10, D-20261007-02) pendiente de OK de la
   clienta. En el cambio del checkout: límite de pedidos `PAGO_PENDIENTE`
   por teléfono e IP, porque una reserva sin pago bloquea stock 48 h.
-- Del lado técnico, todavía no existen: CI, pre-commit, backups ni las demás
-  guardas marcadas como pendientes.
+- Del lado técnico, todavía no existen: CI, pre-commit, backups ni las
+  guardas que siguen marcadas como pendientes (los topes de la carga de
+  reseñas y la configuración de producción fuera de `OrderProperties`).
 
 ## 10. Compuertas de proceso
 
