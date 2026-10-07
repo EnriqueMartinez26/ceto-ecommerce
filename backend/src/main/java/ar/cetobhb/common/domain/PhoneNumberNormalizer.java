@@ -5,6 +5,7 @@ import com.google.i18n.phonenumbers.PhoneNumberUtil;
 import com.google.i18n.phonenumbers.PhoneNumberUtil.PhoneNumberFormat;
 import com.google.i18n.phonenumbers.PhoneNumberUtil.PhoneNumberType;
 import com.google.i18n.phonenumbers.Phonenumber.PhoneNumber;
+import java.util.regex.Pattern;
 
 /**
  * Normalizes a buyer phone to E.164 (D-20261007-01). Only a valid number that ends up typed MOBILE is accepted
@@ -12,7 +13,9 @@ import com.google.i18n.phonenumbers.Phonenumber.PhoneNumber;
  * An Argentine 10-digit number typed FIXED_LINE or FIXED_LINE_OR_MOBILE (written without 15 or 9, so ambiguous) is
  * read as a mobile: {@code +54 9} plus the national number is re-parsed and must be MOBILE. Numbers with an
  * extension are rejected. Foreign numbers are accepted only when they are MOBILE in international form. The
- * failure carries only the reason code, never the input (PII).
+ * failure carries only the reason code, never the input (PII). Before parsing, only digits, spaces and the
+ * separators {@code + - ( ) .} are accepted; anything else (letters would turn into vanity numbers such as
+ * {@code CASA}) is rejected.
  */
 public class PhoneNumberNormalizer {
 
@@ -20,10 +23,15 @@ public class PhoneNumberNormalizer {
 
     private static final int AR_NATIONAL_LENGTH = 10;
 
+    private static final Pattern ALLOWED_CHARACTERS = Pattern.compile("[0-9 +\\-().]+");
+
     private final PhoneNumberUtil util = PhoneNumberUtil.getInstance();
 
     public String normalize(String raw) {
         if (raw == null || raw.isBlank()) {
+            throw new ValidationException(ReasonCode.INVALID_PHONE);
+        }
+        if (!ALLOWED_CHARACTERS.matcher(raw).matches()) {
             throw new ValidationException(ReasonCode.INVALID_PHONE);
         }
         PhoneNumber number = parse(raw);

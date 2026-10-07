@@ -48,7 +48,7 @@ class PhoneNumberNormalizerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"12345", "abc", "351 15 555", "   ", "+54 9 351 555 1234 ext 5", "+54 351 555 1234 x7",
-        "+54 9 351 555 12345"})
+        "+54 9 351 555 12345", "351 15 5 CASA", "+54 9 351 555 CASA","0800 555 1234", "555-1234"})
     @NullAndEmptySource
     void rejectsNonMobileOrMalformedInput(String input) {
         assertThatThrownBy(() -> normalizer.normalize(input))
