@@ -188,7 +188,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    declarado aparte en el test; la razón `EXPIRED` solo vale desde
    `PAGO_PENDIENTE`: desde `PAGADO` es `VALIDATION_ERROR(INVALID_CANCEL_REASON)`
    y la legalidad de la arista se verifica antes que el motivo, D-20261007-10
-   (`cancelReasonValidityPerSourceState`).
+   (`cancelReasonValidityPerSourceState`). La base lo respalda con `CHECK`
+   (`orders_status_ck`, `orders_cancel_reason_ck`, `orders_cancel_pair_ck`:
+   `cancel_reason` y `cancelled_at` existen solo si el estado es `CANCELADO`;
+   `orders_expired_unpaid_ck`, `orders_paid_at_ck`), probados con SQL crudo en
+   `OrderConstraintsIT`.
    **[guarda pendiente: pares sobre pedidos reales y `status` sin setter
    público, en la entidad]**
 6. **Las líneas del pedido son una foto.** Guardan nombre, precio unitario,
@@ -205,13 +209,18 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 9. **Número de pedido legible** (`CETO-000123`) separado del id interno: es
    lo que viaja en el WhatsApp para que la clienta lo encuentre en el panel.
    `OrderNumber.format` usa `Locale.ROOT` y no trunca por encima de 999999
-   (`OrderNumberTest`).
+   (`OrderNumberTest`). El número sale de `order_number_seq` y la base lo
+   protege con `orders_order_number_uk` y `orders_order_number_ck`
+   (`OrderConstraintsIT`).
 10. **Checkout idempotente**: el front manda una clave de idempotencia por
     intento; un doble tap no crea dos pedidos ni reserva dos veces. La huella
     del pedido (`OrderRequestFingerprint` v1, SHA-256 de la forma canónica
     normalizada, sin la clave ni precios) está fijada por un valor de oro en
     `OrderRequestFingerprintTest`: no cambiar la forma canónica sin subir la
-    versión. **[guarda pendiente: test de ráfaga con la misma clave, S9b]**
+    versión. La clave es `UUID` con `UNIQUE` (`orders_idempotency_key_uk`) y la
+    huella un `VARCHAR(64)` hexadecimal en minúsculas (`orders_fingerprint_ck`),
+    ambos probados en `OrderConstraintsIT`. **[guarda pendiente: test de
+    ráfaga con la misma clave, S9b]**
 
 ### Checkout, WhatsApp y envío
 
