@@ -242,12 +242,15 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     (`America/Argentina/Cordoba`). Nunca `LocalDateTime.now()` sin zona: se
     usa `Instant` o `Clock` inyectado (los tests lo controlan). Guarda:
     `ArchitectureTest.noSystemClock` prohíbe, fuera de `ClockConfig`, toda
-    sobrecarga de `now` en clases de `java.time`, `Clock.system*`,
-    `ZoneId.systemDefault()`, `System.currentTimeMillis()`, los constructores
-    de `java.util.Date` y `Calendar.getInstance()`. Es una guarda de mejor
+    sobrecarga de `now` en clases de `java.time` salvo `now(Clock)`,
+    `Clock.system*`, `ZoneId.systemDefault()`, `TimeZone.getDefault()`,
+    `System.currentTimeMillis()`, `new Date()` y `new GregorianCalendar()`
+    sin argumentos y `Calendar.getInstance()`. Es una guarda de mejor
     esfuerzo sobre los puntos de entrada comunes, no una garantía de que
     ningún código pueda llegar al reloj del sistema (por ejemplo vía otras
-    librerías o reflexión). Se lee la hora con `clock.instant()`.
+    librerías o reflexión). Formas permitidas: el `Clock` inyectado
+    (`clock.instant()`, `X.now(clock)`, `X.now(clock.withZone(...))`) y
+    `new Date(long)`.
 
 ## 5. Seguridad
 

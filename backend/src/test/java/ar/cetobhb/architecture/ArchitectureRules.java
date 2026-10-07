@@ -12,7 +12,10 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 
 import ar.cetobhb.common.config.ClockConfig;
+import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.Dependency;
+import com.tngtech.archunit.core.domain.JavaConstructorCall;
+import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
@@ -23,6 +26,8 @@ import java.time.Clock;
 import java.time.ZoneId;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.GregorianCalendar;
+import java.util.TimeZone;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -77,21 +82,47 @@ final class ArchitectureRules {
                     "org.springframework..", "jakarta.persistence..", "org.hibernate..")
             .as("domain classes must not depend on Spring, JPA or Hibernate");
 
+    /** A {@code java.time} {@code now} overload other than {@code now(Clock)}: it reads the system clock or zone. */
+    private static final DescribedPredicate<JavaMethodCall> NON_DETERMINISTIC_NOW =
+            new DescribedPredicate<>("call a java.time now overload that does not take a Clock") {
+                @Override
+                public boolean test(JavaMethodCall call) {
+                    List<JavaClass> parameters = call.getTarget().getRawParameterTypes();
+                    boolean takesClock = parameters.size() == 1 && parameters.get(0).isEquivalentTo(Clock.class);
+                    return call.getTarget().getName().equals("now")
+                            && call.getTargetOwner().getPackageName().startsWith("java.time")
+                            && !takesClock;
+                }
+            };
+
+    /** {@code new Date()} and {@code new GregorianCalendar()} read the clock; {@code new Date(long)} does not. */
+    private static final DescribedPredicate<JavaConstructorCall> NO_ARG_DATE_OR_GREGORIAN_CALENDAR =
+            new DescribedPredicate<>("call a no-arg Date or GregorianCalendar constructor") {
+                @Override
+                public boolean test(JavaConstructorCall call) {
+                    return call.getTarget().getRawParameterTypes().isEmpty()
+                            && (call.getTargetOwner().isEquivalentTo(Date.class)
+                            || call.getTargetOwner().isEquivalentTo(GregorianCalendar.class));
+                }
+            };
+
     /**
      * CLAUDE.md rule 21 (REQ-GRD-06): only ClockConfig (and its inner and lambda classes) may touch the system
-     * clock or zone. Bans every {@code now} overload on {@code java.time} classes, the {@code Clock.system*}
-     * factories, {@code ZoneId.systemDefault}, {@code System.currentTimeMillis}, {@code java.util.Date}
-     * constructors and {@code Calendar.getInstance}. Read the time from an injected {@code Clock}
-     * ({@code clock.instant()}). This is a best-effort guard for the common entry points, not a proof that no
+     * clock or zone. Bans every {@code now} overload on {@code java.time} classes except {@code now(Clock)},
+     * the {@code Clock.system*} factories, {@code ZoneId.systemDefault}, {@code TimeZone.getDefault},
+     * {@code System.currentTimeMillis}, the no-arg {@code Date} and {@code GregorianCalendar} constructors
+     * and {@code Calendar.getInstance}. Allowed: the injected {@code Clock} ({@code clock.instant()},
+     * {@code X.now(clock)}, {@code X.now(clock.withZone(...))}) and {@code new Date(long)}. This is a best-effort guard for the common entry points, not a proof that no
      * code can reach the system clock (for example through other libraries or reflection).
      */
     static final ArchRule NO_SYSTEM_CLOCK = noClasses()
             .that().haveNameNotMatching(CLOCK_CONFIG_NAMES)
-            .should().callMethodWhere(target(name("now")).and(target(owner(resideInAPackage("java.time..")))))
+            .should().callMethodWhere(NON_DETERMINISTIC_NOW)
             .orShould().callMethodWhere(target(owner(type(Clock.class))).and(target(nameMatching("system.*"))))
             .orShould().callMethod(ZoneId.class, "systemDefault")
             .orShould().callMethod(System.class, "currentTimeMillis")
-            .orShould().callConstructorWhere(target(owner(type(Date.class))))
+            .orShould().callMethod(TimeZone.class, "getDefault")
+            .orShould().callConstructorWhere(NO_ARG_DATE_OR_GREGORIAN_CALENDAR)
             .orShould().callMethodWhere(target(owner(type(Calendar.class))).and(target(name("getInstance"))))
             .as("the system clock and zone are read only in ClockConfig; inject Clock everywhere else");
 

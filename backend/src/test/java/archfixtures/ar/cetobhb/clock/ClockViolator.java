@@ -10,9 +10,12 @@ import java.time.OffsetDateTime;
 import java.time.Year;
 import java.time.YearMonth;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.GregorianCalendar;
+import java.util.TimeZone;
 
 /**
  * Deliberate violations: every banned way of reading the system clock or zone. Each method holds exactly
@@ -22,10 +25,6 @@ public class ClockViolator {
 
     Object instantNow() {
         return Instant.now();
-    }
-
-    Object instantNowWithClock(Clock clock) {
-        return Instant.now(clock);
     }
 
     Object localDateTimeNow() {
@@ -88,8 +87,20 @@ public class ClockViolator {
         return new Date();
     }
 
-    Object newDateFromMillis(long millis) {
-        return new Date(millis);
+    Object offsetDateTimeNowWithZoneOffset() {
+        return OffsetDateTime.now(ZoneOffset.UTC);
+    }
+
+    Object zonedDateTimeNowWithZone(ZoneId zone) {
+        return ZonedDateTime.now(zone);
+    }
+
+    Object timeZoneGetDefault() {
+        return TimeZone.getDefault();
+    }
+
+    Object newGregorianCalendar() {
+        return new GregorianCalendar();
     }
 
     Object calendarGetInstance() {

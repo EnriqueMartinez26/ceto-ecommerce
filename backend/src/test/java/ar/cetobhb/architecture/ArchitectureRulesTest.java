@@ -61,10 +61,12 @@ class ArchitectureRulesTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "instantNow", "instantNowWithClock", "localDateTimeNow", "localDateNow", "localDateNowWithZone",
+            "instantNow","localDateTimeNow", "localDateNow", "localDateNowWithZone",
             "localTimeNow", "zonedDateTimeNow", "offsetDateTimeNow", "yearNow", "yearMonthNow", "monthDayNow",
             "clockSystemUtc", "clockSystemWithZone", "clockSystemDefaultZone", "zoneIdSystemDefault",
-            "systemCurrentTimeMillis", "newDate", "newDateFromMillis", "calendarGetInstance"})
+            "systemCurrentTimeMillis", "newDate", "calendarGetInstance",
+            "offsetDateTimeNowWithZoneOffset", "zonedDateTimeNowWithZone", "timeZoneGetDefault",
+            "newGregorianCalendar"})
     void clockRuleFailsOnEachSystemClockAccess(String violatingMethod) {
         assertThatThrownBy(() -> ArchitectureRules.NO_SYSTEM_CLOCK.check(fixtures("clock")))
                 .isInstanceOf(AssertionError.class)
