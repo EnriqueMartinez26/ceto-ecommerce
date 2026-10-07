@@ -16,12 +16,14 @@ import ar.cetobhb.orders.service.PlacedOrder;
 import ar.cetobhb.support.AbstractPostgresIT;
 import ar.cetobhb.support.BurstRunner;
 import ar.cetobhb.support.BurstRunner.Outcome;
+import ar.cetobhb.support.BurstRunner.Report;
 import ar.cetobhb.support.StockReconciliation;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -201,7 +203,9 @@ class OrderIdempotencyIT extends AbstractPostgresIT {
             tasks.add(() -> placement.placeOrder(command));
         }
 
-        List<Outcome<PlacedOrder>> outcomes = BurstRunner.run(tasks);
+        Report<PlacedOrder> report = BurstRunner.runMeasured(tasks);
+        List<Outcome<PlacedOrder>> outcomes = report.outcomes();
+        assertThat(report.maxInFlight()).isGreaterThan(1);
 
         assertThat(outcomes).allMatch(Outcome::succeeded);
         List<PlacedOrder> results = outcomes.stream().map(Outcome::value).toList();
@@ -224,7 +228,9 @@ class OrderIdempotencyIT extends AbstractPostgresIT {
             tasks.add(() -> placement.placeOrder(mine));
         }
 
-        List<Outcome<PlacedOrder>> outcomes = BurstRunner.run(tasks);
+        Report<PlacedOrder> report = BurstRunner.runMeasured(tasks);
+        List<Outcome<PlacedOrder>> outcomes = report.outcomes();
+        assertThat(report.maxInFlight()).isGreaterThan(1);
 
         assertThat(orderCount()).isEqualTo(1);
         long winnerQuantity = jdbc.queryForObject("SELECT quantity FROM order_items", Long.class);
@@ -239,5 +245,35 @@ class OrderIdempotencyIT extends AbstractPostgresIT {
             }
         }
         assertThat(outcomes.stream().filter(Outcome::succeeded).map(o -> o.value().orderId()).distinct()).hasSize(1);
+        long winnerPayloadThreads = IntStream.range(0, THREADS)
+                .filter(i -> (i % 2 == 0 ? 1 : 2) == winnerQuantity).count();
+        List<PlacedOrder> successes = outcomes.stream().filter(Outcome::succeeded).map(Outcome::value).toList();
+        assertThat(successes).hasSize((int) winnerPayloadThreads);
+        assertThat(successes.stream().filter(p -> !p.replayed())).as("exactly one creator").hasSize(1);
+    }
+
+    @Test
+    void sameKeyBurstWhoseWinnerRollsBackLeavesNoOrderAndDoesNotBurnTheKey() {
+        long b = base(2);
+        PlaceOrderCommand command = command(UUID.randomUUID(), BUYER, b, 3);
+        List<Callable<PlacedOrder>> tasks = new ArrayList<>();
+        for (int i = 0; i < THREADS; i++) {
+            tasks.add(() -> placement.placeOrder(command));
+        }
+
+        Report<PlacedOrder> report = BurstRunner.runMeasured(tasks);
+
+        assertThat(report.maxInFlight()).isGreaterThan(1);
+        assertThat(report.outcomes().stream().map(Outcome::error)).hasSize(THREADS)
+                .allMatch(e -> e instanceof InsufficientStockException);
+        assertThat(orderCount()).isZero();
+        assertThat(reserved(b)).isZero();
+        inventory.adjust(b, 5);
+
+        PlacedOrder placed = placement.placeOrder(command);
+
+        assertThat(placed.replayed()).isFalse();
+        assertThat(orderCount()).isEqualTo(1);
+        assertThat(reserved(b)).isEqualTo(3);
     }
 }
