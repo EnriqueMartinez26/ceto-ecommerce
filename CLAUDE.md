@@ -86,12 +86,19 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `service` (orquestación y **dueño de la transacción**: `@Transactional`
   solo acá) → `repository` (consultas, sin reglas de negocio). Las entidades
   JPA viven en `<funcionalidad>.repository`. Un controller
-  no llama a un repository. Guardas: `ArchitectureTest` aplica sobre el
-  código real las reglas de capas, `@Transactional` solo en `..service..` y
-  dominio sin Spring/JPA/Hibernate; `ArchitectureRulesTest` prueba con
-  fixtures que cada regla falla ante una violación. La regla de capas usa
-  `allowEmptyShould(true)` mientras no existan controllers; se quita en el
-  cambio HTTP.
+  no llama a un repository, y el `repository` de una funcionalidad solo lo
+  usa el `service` de la misma funcionalidad. Guardas: `ArchitectureTest`
+  aplica sobre el código real las reglas de capas, `@Transactional` solo en
+  `..service..` (y nunca `jakarta.transaction.Transactional`), acceso al
+  repository solo desde el service de la misma funcionalidad y dominio sin
+  Spring/JPA/Hibernate; `ArchitectureRulesTest` prueba con fixtures (bajo
+  `archfixtures`, fuera del paquete escaneado por Spring) que cada regla
+  falla ante una violación. Seguimiento: la regla de capas usa
+  `allowEmptyShould(true)` mientras no existan controllers (se quita en el
+  cambio HTTP); la regla de `@Transactional` en métodos y la de acceso al
+  repository usan `allowEmptyShould(true)` hasta que exista el primer
+  service con métodos `@Transactional` y el primer repository: al llegar,
+  se quita para que un renombre o movimiento no vacíe la regla en silencio.
 - Las reglas de negocio puras (transiciones de estado, cálculo de
   disponibilidad de combos, cálculo de totales) viven en clases de dominio
   sin Spring ni JPA, testeables con tests unitarios simples.
@@ -234,10 +241,13 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 21. **Persistencia y cálculo en UTC; la hora local es presentación**
     (`America/Argentina/Cordoba`). Nunca `LocalDateTime.now()` sin zona: se
     usa `Instant` o `Clock` inyectado (los tests lo controlan). Guarda:
-    `ArchitectureTest.noSystemClock` prohíbe `Instant.now()`,
-    `LocalDateTime.now()`, `LocalDate.now()`, `ZonedDateTime.now()`,
-    `OffsetDateTime.now()`, `Clock.systemDefaultZone()` y
-    `ZoneId.systemDefault()` fuera de `ClockConfig`.
+    `ArchitectureTest.noSystemClock` prohíbe, fuera de `ClockConfig`, toda
+    sobrecarga de `now` en clases de `java.time`, `Clock.system*`,
+    `ZoneId.systemDefault()`, `System.currentTimeMillis()`, los constructores
+    de `java.util.Date` y `Calendar.getInstance()`. Es una guarda de mejor
+    esfuerzo sobre los puntos de entrada comunes, no una garantía de que
+    ningún código pueda llegar al reloj del sistema (por ejemplo vía otras
+    librerías o reflexión). Se lee la hora con `clock.instant()`.
 
 ## 5. Seguridad
 
