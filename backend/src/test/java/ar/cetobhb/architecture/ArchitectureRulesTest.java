@@ -9,6 +9,8 @@ import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.lang.ArchRule;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Proves each rule bites: it must fail on a deliberately violating fixture and pass on a compliant one.
@@ -57,19 +59,19 @@ class ArchitectureRulesTest {
                 .hasMessageContaining("boundaryMethod");
     }
 
-    @Test
-    void clockRuleFailsOnEverySystemClockAccess() {
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "instantNow", "instantNowWithClock", "localDateTimeNow", "localDateNow", "localDateNowWithZone",
+            "localTimeNow", "zonedDateTimeNow", "offsetDateTimeNow", "yearNow", "yearMonthNow", "monthDayNow",
+            "clockSystemUtc", "clockSystemWithZone", "clockSystemDefaultZone", "zoneIdSystemDefault",
+            "systemCurrentTimeMillis", "newDate", "newDateFromMillis", "calendarGetInstance"})
+    void clockRuleFailsOnEachSystemClockAccess(String violatingMethod) {
         assertThatThrownBy(() -> ArchitectureRules.NO_SYSTEM_CLOCK.check(fixtures("clock")))
                 .isInstanceOf(AssertionError.class)
-                .satisfies(error -> {
-                    for (String call : List.of(
-                            "Instant.now()", "LocalDateTime.now()", "LocalDate.now()",
-                            "ZonedDateTime.now()", "OffsetDateTime.now()",
-                            "Clock.systemDefaultZone()", "ZoneId.systemDefault()")) {
-                        assertThat(error.getMessage()).as(call).contains(call);
-                    }
-                });
+                .satisfies(error -> assertThat(error.getMessage())
+                        .contains("ClockViolator." + violatingMethod + "("));
     }
+
 
     @Test
     void jakartaTransactionalIsBannedEvenInServicePackages() {

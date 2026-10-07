@@ -1,5 +1,11 @@
 package ar.cetobhb.architecture;
 
+import static com.tngtech.archunit.core.domain.JavaAccess.Predicates.target;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.type;
+import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.name;
+import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.nameMatching;
+import static com.tngtech.archunit.core.domain.properties.HasOwner.Predicates.With.owner;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
@@ -14,12 +20,9 @@ import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import com.tngtech.archunit.lang.CompositeArchRule;
 import java.time.Clock;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
 import java.time.ZoneId;
-import java.time.ZonedDateTime;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -32,6 +35,7 @@ final class ArchitectureRules {
     private static final String SERVICES = "..service..";
     private static final String REPOSITORIES = "..repository..";
     private static final String DOMAIN = "..domain..";
+    private static final String CLOCK_CONFIG_NAMES = Pattern.quote(ClockConfig.class.getName()) + "(\\$.*)?";
 
     private ArchitectureRules() {
     }
@@ -73,16 +77,22 @@ final class ArchitectureRules {
                     "org.springframework..", "jakarta.persistence..", "org.hibernate..")
             .as("domain classes must not depend on Spring, JPA or Hibernate");
 
-    /** CLAUDE.md rule 21 (REQ-GRD-06): only ClockConfig may touch the system clock or zone. */
+    /**
+     * CLAUDE.md rule 21 (REQ-GRD-06): only ClockConfig (and its inner and lambda classes) may touch the system
+     * clock or zone. Bans every {@code now} overload on {@code java.time} classes, the {@code Clock.system*}
+     * factories, {@code ZoneId.systemDefault}, {@code System.currentTimeMillis}, {@code java.util.Date}
+     * constructors and {@code Calendar.getInstance}. Read the time from an injected {@code Clock}
+     * ({@code clock.instant()}). This is a best-effort guard for the common entry points, not a proof that no
+     * code can reach the system clock (for example through other libraries or reflection).
+     */
     static final ArchRule NO_SYSTEM_CLOCK = noClasses()
-            .that().doNotHaveFullyQualifiedName(ClockConfig.class.getName())
-            .should().callMethod(Instant.class, "now")
-            .orShould().callMethod(LocalDateTime.class, "now")
-            .orShould().callMethod(LocalDate.class, "now")
-            .orShould().callMethod(ZonedDateTime.class, "now")
-            .orShould().callMethod(OffsetDateTime.class, "now")
-            .orShould().callMethod(Clock.class, "systemDefaultZone")
+            .that().haveNameNotMatching(CLOCK_CONFIG_NAMES)
+            .should().callMethodWhere(target(name("now")).and(target(owner(resideInAPackage("java.time..")))))
+            .orShould().callMethodWhere(target(owner(type(Clock.class))).and(target(nameMatching("system.*"))))
             .orShould().callMethod(ZoneId.class, "systemDefault")
+            .orShould().callMethod(System.class, "currentTimeMillis")
+            .orShould().callConstructorWhere(target(owner(type(Date.class))))
+            .orShould().callMethodWhere(target(owner(type(Calendar.class))).and(target(name("getInstance"))))
             .as("the system clock and zone are read only in ClockConfig; inject Clock everywhere else");
 
     /** Spring's {@code @Transactional} is the only one allowed; the Jakarta one has different semantics. */

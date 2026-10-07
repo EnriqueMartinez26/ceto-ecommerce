@@ -4,15 +4,28 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.MonthDay;
 import java.time.OffsetDateTime;
+import java.time.Year;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Calendar;
+import java.util.Date;
 
-/** Deliberate violations: every banned way of reading the system clock or zone. */
+/**
+ * Deliberate violations: every banned way of reading the system clock or zone. Each method holds exactly
+ * one violation and has a unique name so the test can assert every one of them individually.
+ */
 public class ClockViolator {
 
     Object instantNow() {
         return Instant.now();
+    }
+
+    Object instantNowWithClock(Clock clock) {
+        return Instant.now(clock);
     }
 
     Object localDateTimeNow() {
@@ -23,6 +36,14 @@ public class ClockViolator {
         return LocalDate.now();
     }
 
+    Object localDateNowWithZone(ZoneId zone) {
+        return LocalDate.now(zone);
+    }
+
+    Object localTimeNow() {
+        return LocalTime.now();
+    }
+
     Object zonedDateTimeNow() {
         return ZonedDateTime.now();
     }
@@ -31,11 +52,47 @@ public class ClockViolator {
         return OffsetDateTime.now();
     }
 
-    Object systemDefaultZoneClock() {
+    Object yearNow() {
+        return Year.now();
+    }
+
+    Object yearMonthNow() {
+        return YearMonth.now();
+    }
+
+    Object monthDayNow() {
+        return MonthDay.now();
+    }
+
+    Object clockSystemUtc() {
+        return Clock.systemUTC();
+    }
+
+    Object clockSystemWithZone(ZoneId zone) {
+        return Clock.system(zone);
+    }
+
+    Object clockSystemDefaultZone() {
         return Clock.systemDefaultZone();
     }
 
-    Object systemDefaultZoneId() {
+    Object zoneIdSystemDefault() {
         return ZoneId.systemDefault();
+    }
+
+    long systemCurrentTimeMillis() {
+        return System.currentTimeMillis();
+    }
+
+    Object newDate() {
+        return new Date();
+    }
+
+    Object newDateFromMillis(long millis) {
+        return new Date(millis);
+    }
+
+    Object calendarGetInstance() {
+        return Calendar.getInstance();
     }
 }

@@ -7,6 +7,6 @@ import java.time.Instant;
 public class CleanDomain {
 
     Instant at(Clock clock) {
-        return Instant.now(clock);
+        return clock.instant();
     }
 }
