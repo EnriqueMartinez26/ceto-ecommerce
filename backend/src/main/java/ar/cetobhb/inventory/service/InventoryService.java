@@ -11,6 +11,7 @@ import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
 import ar.cetobhb.inventory.repository.InventoryStock;
 import ar.cetobhb.inventory.repository.InventoryStockRepository;
+import ar.cetobhb.inventory.repository.StockLevel;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
@@ -146,9 +147,12 @@ public class InventoryService {
      */
     @Transactional(readOnly = true)
     public Map<Long, Long> availableByBase(Collection<Long> baseIds) {
+        if (baseIds.isEmpty()) {
+            return Map.of();
+        }
         Map<Long, Long> free = new LinkedHashMap<>();
-        for (Object[] row : stock.findLevels(baseIds)) {
-            free.put((Long) row[0], Availability.forBase((Integer) row[1], (Integer) row[2]));
+        for (StockLevel level : stock.findLevels(baseIds)) {
+            free.put(level.productId(), Availability.forBase(level.onHand(), level.reserved()));
         }
         return free;
     }

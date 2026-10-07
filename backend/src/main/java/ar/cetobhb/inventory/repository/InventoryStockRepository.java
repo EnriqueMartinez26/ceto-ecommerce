@@ -22,10 +22,12 @@ public interface InventoryStockRepository extends JpaRepository<InventoryStock, 
     Optional<InventoryStock> lockByProductId(@Param("id") long productId);
 
     /**
-     * Non-locking read of {@code [product_id, on_hand, reserved]} rows for the storefront. It selects columns, not
+     * Non-locking read of the {@link StockLevel} counters for the storefront. It selects columns into a record, not
      * entities, so no stock row becomes managed: a later {@link #lockByProductId} in the same transaction still
      * reads the database instead of a stale instance.
      */
-    @Query("SELECT s.productId, s.onHand, s.reserved FROM InventoryStock s WHERE s.productId IN :ids")
-    List<Object[]> findLevels(@Param("ids") Collection<Long> ids);
+    @Query("""
+            SELECT new ar.cetobhb.inventory.repository.StockLevel(s.productId, s.onHand, s.reserved)
+            FROM InventoryStock s WHERE s.productId IN :ids""")
+    List<StockLevel> findLevels(@Param("ids") Collection<Long> ids);
 }
