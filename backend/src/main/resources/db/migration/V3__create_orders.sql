@@ -1,4 +1,8 @@
 -- V3: orders and their line snapshots. No seed rows (CLAUDE.md section 6).
+-- Not snapshotted in this change: the coupon (coupons arrive in a later change) and compare_at_price (it is
+-- presentation-only and never part of what the buyer pays).
+-- Not enforced by the database: orders.total = SUM(order_items.line_total) and "a combo's base must be a base
+-- product" both need cross-row or cross-table reads; Java code and the reconciliation tests own them.
 -- Order numbers come from this sequence (rule 9). Gaps are accepted (rollbacks, idempotency losers).
 CREATE SEQUENCE order_number_seq AS BIGINT START WITH 1 INCREMENT BY 1 NO CYCLE;
 
@@ -36,6 +40,12 @@ CREATE TABLE orders (
     -- An unpaid expiry never carries a payment (D-20261007-10: EXPIRED only comes from PAGO_PENDIENTE).
     CONSTRAINT orders_expired_unpaid_ck   CHECK (cancel_reason IS DISTINCT FROM 'EXPIRED' OR paid_at IS NULL),
     CONSTRAINT orders_paid_at_ck          CHECK (status NOT IN ('PAGADO', 'DESPACHADO', 'ENTREGADO') OR paid_at IS NOT NULL),
+    -- An unpaid order has no payment; a cancelled order may keep paid_at (PAGADO -> CANCELADO).
+    CONSTRAINT orders_pending_unpaid_ck   CHECK (status <> 'PAGO_PENDIENTE' OR paid_at IS NULL),
+    -- Dispatch and delivery timestamps are present exactly in the states that imply them. A DESPACHADO order cannot
+    -- be cancelled, so a CANCELADO row never has either.
+    CONSTRAINT orders_dispatched_at_ck    CHECK ((status IN ('DESPACHADO', 'ENTREGADO')) = (dispatched_at IS NOT NULL)),
+    CONSTRAINT orders_delivered_at_ck     CHECK ((status = 'ENTREGADO') = (delivered_at IS NOT NULL)),
     CONSTRAINT orders_shipping_zone_ck    CHECK (shipping_zone IN ('CORDOBA_CAPITAL', 'RESTO_DEL_PAIS')),
     -- E.164: '+' then 8 to 15 digits, first digit non-zero; max length 16 matches the column.
     CONSTRAINT orders_phone_e164_ck       CHECK (buyer_phone_e164 ~ '^\+[1-9][0-9]{7,14}$'),
@@ -66,7 +76,9 @@ CREATE TABLE order_items (
     line_total          NUMERIC(12,2) NOT NULL,
     CONSTRAINT order_items_line_uk       UNIQUE (order_id, line_no),
     CONSTRAINT order_items_product_uk    UNIQUE (order_id, product_id),
+    CONSTRAINT order_items_line_no_ck    CHECK (line_no >= 1),
     CONSTRAINT order_items_quantity_ck   CHECK (quantity >= 1),
+    -- "base_units_per_unit >= 1" is also implied by order_items_combo_ck below; both are kept on purpose.
     CONSTRAINT order_items_base_units_ck CHECK (base_units_per_unit >= 1 AND base_units_total = quantity * base_units_per_unit),
     -- Same N >= 2 bound as products_combo_units_ck.
     CONSTRAINT order_items_combo_ck      CHECK ((is_combo AND base_product_id <> product_id AND base_units_per_unit >= 2)

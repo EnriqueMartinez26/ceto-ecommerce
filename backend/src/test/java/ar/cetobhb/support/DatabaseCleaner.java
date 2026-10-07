@@ -24,7 +24,8 @@ public final class DatabaseCleaner {
         List<String> sequences = jdbc.queryForList(
                 "SELECT quote_ident(s.sequencename) FROM pg_sequences s WHERE s.schemaname = 'public' "
                         + "AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_class c ON c.oid = d.objid "
-                        + "WHERE c.relname = s.sequencename AND c.relnamespace = 'public'::regnamespace "
+                        + "WHERE d.classid = 'pg_class'::regclass "
+                        + "AND c.relname = s.sequencename AND c.relnamespace = 'public'::regnamespace "
                         + "AND d.deptype IN ('a', 'i'))",
                 String.class);
         sequences.forEach(sequence -> jdbc.execute("ALTER SEQUENCE " + sequence + " RESTART"));

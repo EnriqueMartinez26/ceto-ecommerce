@@ -136,10 +136,19 @@ class OrderConstraintsIT extends AbstractPostgresIT {
                 "paid_at", NOW);
         Map<String, Object> cancelled = with(pendingOrder(), "order_number", "CETO-000003", "status", "CANCELADO",
                 "cancel_reason", "CANCELLED_BY_BUYER", "cancelled_at", NOW);
+        Map<String, Object> cancelledAfterPayment = with(pendingOrder(), "order_number", "CETO-000004",
+                "status", "CANCELADO", "cancel_reason", "CANCELLED_BY_ADMIN", "cancelled_at", NOW, "paid_at", NOW);
+        Map<String, Object> dispatched = with(pendingOrder(), "order_number", "CETO-000005", "status", "DESPACHADO",
+                "paid_at", NOW, "dispatched_at", NOW);
+        Map<String, Object> delivered = with(pendingOrder(), "order_number", "CETO-000006", "status", "ENTREGADO",
+                "paid_at", NOW, "dispatched_at", NOW, "delivered_at", NOW);
         assertThatCode(() -> {
             insertOrder(pendingOrder());
             insertOrder(paid);
             insertOrder(cancelled);
+            insertOrder(cancelledAfterPayment);
+            insertOrder(dispatched);
+            insertOrder(delivered);
         }).doesNotThrowAnyException();
     }
 
@@ -180,9 +189,36 @@ class OrderConstraintsIT extends AbstractPostgresIT {
 
     @Test
     void paidDispatchedAndDeliveredRequirePaidAt() {
-        for (String status : List.of("PAGADO", "DESPACHADO", "ENTREGADO")) {
-            assertOrderRejected(with(pendingOrder(), "status", status), CHECK, "orders_paid_at_ck");
-        }
+        assertOrderRejected(with(pendingOrder(), "status", "PAGADO"), CHECK, "orders_paid_at_ck");
+        assertOrderRejected(with(pendingOrder(), "status", "DESPACHADO", "dispatched_at", NOW),
+                CHECK, "orders_paid_at_ck");
+        assertOrderRejected(with(pendingOrder(), "status", "ENTREGADO", "dispatched_at", NOW, "delivered_at", NOW),
+                CHECK, "orders_paid_at_ck");
+    }
+
+    @Test
+    void aPendingOrderCannotCarryAPaymentTimestamp() {
+        assertOrderRejected(with(pendingOrder(), "paid_at", NOW), CHECK, "orders_pending_unpaid_ck");
+    }
+
+    @Test
+    void dispatchedAtIsPresentExactlyWhenDispatchedOrDelivered() {
+        assertOrderRejected(with(pendingOrder(), "status", "DESPACHADO", "paid_at", NOW),
+                CHECK, "orders_dispatched_at_ck");
+        assertOrderRejected(with(pendingOrder(), "status", "PAGADO", "paid_at", NOW, "dispatched_at", NOW),
+                CHECK, "orders_dispatched_at_ck");
+        assertOrderRejected(with(pendingOrder(), "status", "CANCELADO", "cancel_reason", "CANCELLED_BY_ADMIN",
+                "cancelled_at", NOW, "paid_at", NOW, "dispatched_at", NOW), CHECK, "orders_dispatched_at_ck");
+    }
+
+    @Test
+    void deliveredAtIsPresentExactlyWhenDelivered() {
+        assertOrderRejected(with(pendingOrder(), "status", "ENTREGADO", "paid_at", NOW, "dispatched_at", NOW),
+                CHECK, "orders_delivered_at_ck");
+        assertOrderRejected(with(pendingOrder(), "status", "DESPACHADO", "paid_at", NOW, "dispatched_at", NOW,
+                "delivered_at", NOW), CHECK, "orders_delivered_at_ck");
+        assertOrderRejected(with(pendingOrder(), "status", "PAGADO", "paid_at", NOW, "delivered_at", NOW),
+                CHECK, "orders_delivered_at_ck");
     }
 
     @Test
@@ -276,6 +312,15 @@ class OrderConstraintsIT extends AbstractPostgresIT {
     }
 
     @Test
+    void lengthsCountCharactersNotUtf16UnitsSoEmojiFitUpToTheLimit() {
+        String emoji = new String(Character.toChars(0x1F600));
+        assertThatCode(() -> insertOrder(with(pendingOrder(), "buyer_name", emoji.repeat(120),
+                "shipping_address", emoji.repeat(500)))).doesNotThrowAnyException();
+        assertTooLong(with(pendingOrder(), "order_number", "CETO-000002", "buyer_name", emoji.repeat(121)));
+        assertTooLong(with(pendingOrder(), "order_number", "CETO-000003", "shipping_address", emoji.repeat(501)));
+    }
+
+    @Test
     void theExpiryIndexIsPartialOnPendingPayment() {
         List<String> defs = jdbc.queryForList(
                 "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'orders' "
@@ -313,8 +358,11 @@ class OrderConstraintsIT extends AbstractPostgresIT {
         long product = insertProduct();
         long order = insertOrder(pendingOrder());
         assertItemRejected(baseLine(99999L, product), FK, "order_items_order_id_fkey");
-        assertItemRejected(with(baseLine(order, product), "product_id", 99999L, "base_product_id", 99999L),
-                FK, "order_items_product_id_fkey");
+        // Each row satisfies order_items_combo_ck, so only the foreign key under test can reject it.
+        assertItemRejected(with(baseLine(order, product), "product_id", 99999L, "is_combo", true,
+                "base_units_per_unit", 3, "base_units_total", 6), FK, "order_items_product_id_fkey");
+        assertItemRejected(with(baseLine(order, product), "base_product_id", 99999L, "is_combo", true,
+                "base_units_per_unit", 3, "base_units_total", 6), FK, "order_items_base_product_id_fkey");
     }
 
     @Test
@@ -325,6 +373,14 @@ class OrderConstraintsIT extends AbstractPostgresIT {
         insertItem(baseLine(order, product));
         assertItemRejected(baseLine(order, other), UNIQUE, "order_items_line_uk");
         assertItemRejected(with(baseLine(order, product), "line_no", (short) 2), UNIQUE, "order_items_product_uk");
+    }
+
+    @Test
+    void lineNumberMustBeAtLeastOne() {
+        long product = insertProduct();
+        long order = insertOrder(pendingOrder());
+        assertItemRejected(with(baseLine(order, product), "line_no", (short) 0), CHECK, "order_items_line_no_ck");
+        assertItemRejected(with(baseLine(order, product), "line_no", (short) -1), CHECK, "order_items_line_no_ck");
     }
 
     @Test
@@ -340,8 +396,8 @@ class OrderConstraintsIT extends AbstractPostgresIT {
         long product = insertProduct();
         long order = insertOrder(pendingOrder());
         assertItemRejected(with(baseLine(order, product), "base_units_total", 3), CHECK, "order_items_base_units_ck");
-        assertItemRejected(with(baseLine(order, product), "base_units_per_unit", 0, "base_units_total", 0),
-                CHECK, "order_items_base_units_ck");
+        // The "base_units_per_unit >= 1" half of order_items_base_units_ck is shadowed: every value below 1 also
+        // breaks order_items_combo_ck (base lines need 1, combos need 2 or more), so it cannot be asserted alone.
     }
 
     @Test
