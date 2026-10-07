@@ -104,6 +104,11 @@ class OrderLockQueryIT extends AbstractPostgresIT {
      * Polls pg_stat_activity until a backend running the lockById query reports wait_event_type = Lock, which
      * proves it is blocked on a row lock (not merely slow), instead of guessing with a fixed sleep.
      */
+    /**
+     * The poll is not scoped to a specific row: it matches any backend waiting on a lock for the order lock query.
+     * That is acceptable because each test starts on an empty database and runs exactly one holder and one waiter,
+     * so the only possible blocked backend is the waiter under test.
+     */
     private void awaitBackendBlockedOnARowLock() throws InterruptedException {
         long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
         while (System.nanoTime() < deadline) {
