@@ -9,7 +9,8 @@ Docker Compose en un VPS (postgres, backend, frontend, caddy).
 Este archivo se carga en cada sesión y es contexto autoritativo para
 cualquier cambio. Está escrito para el asistente de IA tanto como para las
 personas. **Estado al 2026-10-07: el backend tiene solo el andamiaje (`backend/`,
-Spring Boot 4.1.1) y la guarda de ddl-auto; el resto no está construido.** Por eso
+Spring Boot 4.1.1), la guarda de ddl-auto, las reglas ArchUnit y el catálogo
+(`products`); el resto no está construido.** Por eso
 cada regla dura dice cuál es su guarda (test, restricción de la base, chequeo
 estático) o lleva **[guarda pendiente]**: una regla con guarda pendiente es
 un requisito de implementación, no algo que ya esté protegido. Cuando la
@@ -149,7 +150,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 2. **Un combo no tiene stock propio.** Es un producto con precio propio y una
    relación "N unidades del producto base". Su disponible se deriva:
    `⌊(on_hand − reserved) / N⌋`. "Agotado" se calcula, no se guarda como
-   flag. **[guarda pendiente]**
+   flag. La relación con el producto base la sostiene la base
+   (`products_combo_pair_ck`, `products_combo_units_ck` con N ≥ 2,
+   `products_combo_not_self_ck`, FK `products_combo_base_fk`, probadas en
+   `ProductConstraintsIT`). **[guarda pendiente: la derivación del
+   disponible]**
 3. **Lock pesimista antes de reservar.** `SELECT ... FOR UPDATE` sobre la
    fila del producto base antes de leer disponibilidad. Prohibido "verificar
    y luego actuar" sin lock. Varias filas se lockean siempre en orden de id
