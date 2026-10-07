@@ -21,4 +21,11 @@ class ArchitectureTest {
 
     @ArchTest
     static final ArchRule noSystemClock = ArchitectureRules.NO_SYSTEM_CLOCK;
+
+    @ArchTest
+    static final ArchRule noJakartaTransactional = ArchitectureRules.NO_JAKARTA_TRANSACTIONAL;
+
+    @ArchTest
+    static final ArchRule repositoryOnlyFromOwnFeatureService =
+            ArchitectureRules.REPOSITORY_ONLY_FROM_OWN_FEATURE_SERVICE;
 }

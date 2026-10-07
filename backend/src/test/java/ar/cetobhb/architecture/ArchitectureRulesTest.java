@@ -64,13 +64,33 @@ class ArchitectureRulesTest {
     }
 
     @Test
+    void jakartaTransactionalIsBannedEvenInServicePackages() {
+        assertThatThrownBy(() -> ArchitectureRules.NO_JAKARTA_TRANSACTIONAL.check(fixtures("jtx")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("JakartaTxClassLevel")
+                .hasMessageContaining("JakartaTxMethodLevel");
+    }
+
+    @Test
+    void repositoryRuleFailsWhenAnotherFeatureServiceReachesIt() {
+        assertThatThrownBy(() -> ArchitectureRules.REPOSITORY_ONLY_FROM_OWN_FEATURE_SERVICE
+                .check(fixtures("crossfeature")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("OrdersService")
+                .hasMessageContaining("CatalogRepository")
+                .satisfies(error -> assertThat(error.getMessage()).doesNotContain("CatalogOwnService"));
+    }
+
+    @Test
     void compliantCodeSatisfiesEveryRule() {
         JavaClasses clean = fixtures("clean");
         List<ArchRule> rules = List.of(
                 ArchitectureRules.DOMAIN_IS_FRAMEWORK_FREE,
                 ArchitectureRules.LAYERS,
                 ArchitectureRules.TRANSACTIONAL_ONLY_IN_SERVICES,
-                ArchitectureRules.NO_SYSTEM_CLOCK);
+                ArchitectureRules.NO_SYSTEM_CLOCK,
+                ArchitectureRules.NO_JAKARTA_TRANSACTIONAL,
+                ArchitectureRules.REPOSITORY_ONLY_FROM_OWN_FEATURE_SERVICE);
         for (ArchRule rule : rules) {
             assertThatCode(() -> rule.check(clean)).doesNotThrowAnyException();
         }
