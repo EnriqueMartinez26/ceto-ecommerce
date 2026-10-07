@@ -96,10 +96,9 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `archfixtures`, fuera del paquete escaneado por Spring) que cada regla
   falla ante una violación. Seguimiento: la regla de capas usa
   `allowEmptyShould(true)` mientras no existan controllers (se quita en el
-  cambio HTTP); la regla de `@Transactional` en métodos y la de acceso al
-  repository usan `allowEmptyShould(true)` hasta que exista el primer
-  service con métodos `@Transactional` y el primer repository: al llegar,
-  se quita para que un renombre o movimiento no vacíe la regla en silencio.
+  cambio HTTP). Las reglas de `@Transactional` en métodos y de acceso al
+  repository ya no lo usan porque `CatalogService` y `ProductRepository`
+  existen: si un renombre o movimiento las vacía, el build falla.
 - Las reglas de negocio puras (transiciones de estado, cálculo de
   disponibilidad de combos, cálculo de totales) viven en clases de dominio
   sin Spring ni JPA, testeables con tests unitarios simples.

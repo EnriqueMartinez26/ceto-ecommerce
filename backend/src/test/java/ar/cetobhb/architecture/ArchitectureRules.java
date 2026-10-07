@@ -68,9 +68,9 @@ final class ArchitectureRules {
 
     private static final ArchRule NO_TRANSACTIONAL_METHODS_OUTSIDE_SERVICES = noMethods()
             .that().areAnnotatedWith(Transactional.class)
-            .should().beDeclaredInClassesThat().resideOutsideOfPackage(SERVICES)
-            // No @Transactional methods exist yet; tracked: drop once the first service lands (HTTP/service changes).
-            .allowEmptyShould(true);
+            // Not allowEmptyShould: CatalogService carries @Transactional methods, so a rename or move
+            // that empties this rule must fail instead of passing silently.
+            .should().beDeclaredInClassesThat().resideOutsideOfPackage(SERVICES);
 
     static final ArchRule TRANSACTIONAL_ONLY_IN_SERVICES = CompositeArchRule
             .of(NO_TRANSACTIONAL_CLASSES_OUTSIDE_SERVICES)
@@ -145,8 +145,8 @@ final class ArchitectureRules {
     /**
      * AD-2: a feature's repository package is reached only by the same feature's service (or repository)
      * package. The feature is the package prefix before the {@code service}/{@code repository} segment, so the
-     * rule works for any root package. allowEmptyShould(true) until the first repository lands; tracked: drop it
-     * then so a rename or move cannot silently empty the rule.
+     * rule works for any root package. Not allowEmptyShould: the catalog repository exists, so a rename or move
+     * that empties this rule must fail instead of passing silently.
      */
     static final ArchRule REPOSITORY_ONLY_FROM_OWN_FEATURE_SERVICE = classes()
             .that().resideInAPackage(REPOSITORIES)
@@ -167,7 +167,6 @@ final class ArchitectureRules {
                     }
                 }
             })
-            .allowEmptyShould(true)
             .as("a feature's ..repository.. is accessed only by the same feature's ..service..");
 
     private static final Pattern LAYER_PACKAGE = Pattern.compile("^(.*?)\\.(service|repository|controller|domain)(\\..*)?$");
