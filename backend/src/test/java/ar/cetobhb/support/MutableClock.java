@@ -4,9 +4,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Test-only clock whose instant can be set and advanced. Always UTC (CLAUDE.md rule 21). */
+/** Test-only clock whose instant can be set and advanced. Always UTC (CLAUDE.md rule 21). Instants are truncated to
+ * microseconds, like the production clock and Postgres timestamptz. */
 public final class MutableClock extends Clock {
 
     /** The instant every test starts from. */
@@ -15,7 +17,7 @@ public final class MutableClock extends Clock {
     private final AtomicReference<Instant> now = new AtomicReference<>(START);
 
     public void set(Instant instant) {
-        now.set(instant);
+        now.set(instant.truncatedTo(ChronoUnit.MICROS));
     }
 
     public void reset() {
