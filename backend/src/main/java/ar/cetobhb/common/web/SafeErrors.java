@@ -8,12 +8,15 @@ import org.hibernate.exception.ConstraintViolationException;
 
 /**
  * Personal-data-free summary of a {@link Throwable} for log lines. It emits class names, the SQLState, the violated
- * constraint name and a few stack frames of the root cause, and never any message: Postgres CHECK violations carry a
+ * constraint name, a few stack frames of the root cause and the first application frames of the top-level exception
+ * (the call site), and never any message: Postgres CHECK violations carry a
  * whole row in their message and Jackson messages echo the rejected value (CLAUDE.md section 5).
  */
 public final class SafeErrors {
 
     private static final int ROOT_FRAMES = 8;
+    private static final int APP_FRAMES = 3;
+    private static final String APP_PACKAGE = "ar.cetobhb.";
 
     private SafeErrors() {
     }
@@ -39,6 +42,18 @@ public final class SafeErrors {
             }
             root = cause;
             cause = cause.getCause();
+        }
+        if (root != error) {
+            int shown = 0;
+            for (StackTraceElement frame : error.getStackTrace()) {
+                if (shown == APP_FRAMES) {
+                    break;
+                }
+                if (frame.getClassName().startsWith(APP_PACKAGE)) {
+                    out.append("\n\tcall site at ").append(frame);
+                    shown++;
+                }
+            }
         }
         StackTraceElement[] frames = root.getStackTrace();
         for (int i = 0; i < Math.min(ROOT_FRAMES, frames.length); i++) {

@@ -54,6 +54,20 @@ class SafeErrorsTest {
     }
 
     @Test
+    void includesTheApplicationCallSiteOfTheTopLevelException() {
+        SQLException root = new SQLException(SENTINEL, "23514");
+        root.setStackTrace(new StackTraceElement[] {
+                new StackTraceElement("org.postgresql.Driver", "execute", "Driver.java", 1) });
+        RuntimeException top = new RuntimeException(SENTINEL, root);
+
+        String described = SafeErrors.describe(top);
+
+        assertThat(described).contains("ar.cetobhb.common.web.SafeErrorsTest.includesTheApplicationCallSite")
+                .contains("SafeErrorsTest.java:").doesNotContain(SENTINEL);
+        assertThat(described.lines().filter(l -> l.contains("ar.cetobhb.")).count()).isLessThanOrEqualTo(4);
+    }
+
+    @Test
     void handlesNull() {
         assertThat(SafeErrors.describe(null)).isEqualTo("null");
     }
