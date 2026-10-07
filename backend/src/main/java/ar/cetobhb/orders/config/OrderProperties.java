@@ -28,9 +28,11 @@ public record OrderProperties(
     /**
      * @param batchSize    orders expired per job run
      * @param fixedDelayMs pause between job runs, in milliseconds
+     * @param maxBatchesPerTick maximum batches one job run drains back to back (1 to 100)
      */
     public record Expiry(
             @Min(1) @Max(1000) int batchSize,
-            @Min(1000) @Max(3_600_000) long fixedDelayMs) {
+            @Min(1000) @Max(3_600_000) long fixedDelayMs,
+            @Min(1) @Max(100) int maxBatchesPerTick) {
     }
 }

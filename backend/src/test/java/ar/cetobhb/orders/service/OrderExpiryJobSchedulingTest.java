@@ -3,9 +3,11 @@ package ar.cetobhb.orders.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import ar.cetobhb.common.config.SchedulingConfig;
@@ -22,6 +24,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor;
 import org.springframework.scheduling.config.FixedDelayTask;
 import org.springframework.scheduling.config.ScheduledTask;
+import org.springframework.scheduling.support.ScheduledMethodRunnable;
 
 /**
  * Wiring of the expiry job (REQ-LIF-06, AD-12, AD-13): with {@code ceto.scheduling.enabled=true} the job is
@@ -42,7 +45,7 @@ class OrderExpiryJobSchedulingTest {
 
         @Bean
         OrderProperties orderProperties() {
-            return new OrderProperties(48, 10, 20, new OrderProperties.Expiry(7, 45_000));
+            return new OrderProperties(48, 10, 20, new OrderProperties.Expiry(7, 45_000, 10));
         }
 
         @Bean
@@ -94,12 +97,70 @@ class OrderExpiryJobSchedulingTest {
         org.mockito.Mockito.reset(SERVICE);
         when(SERVICE.expireDueOrders(7)).thenReturn(result(3));
 
-        new OrderExpiryJob(SERVICE, new OrderProperties(48, 10, 20, new OrderProperties.Expiry(7, 45_000))).run();
+        new OrderExpiryJob(SERVICE, new OrderProperties(48, 10, 20, new OrderProperties.Expiry(7, 45_000, 10))).run();
 
         verify(SERVICE).expireDueOrders(7);
         Method run = OrderExpiryJob.class.getMethod("run");
         assertThat(run.getAnnotation(Scheduled.class).fixedDelayString())
                 .isEqualTo("${ceto.orders.expiry.fixed-delay-ms}");
         assertThat(run.isAnnotationPresent(org.springframework.transaction.annotation.Transactional.class)).isFalse();
+    }
+
+    @Test
+    void aTickThatThrowsDoesNotStopTheSchedulerFromRunningTheNextOne() {
+        org.mockito.Mockito.reset(SERVICE);
+        when(SERVICE.expireDueOrders(anyInt()))
+                .thenThrow(new IllegalStateException("boom"))
+                .thenReturn(result(0));
+
+        // 1000 ms is the configured floor (@Min(1000)): the second tick must come one second after the failed one.
+        runner.withPropertyValues("ceto.scheduling.enabled=true", "ceto.orders.expiry.fixed-delay-ms=1000")
+                .run(context -> verify(SERVICE, timeout(10_000).atLeast(2)).expireDueOrders(7));
+    }
+
+    @Test
+    void aTickKeepsDrainingWhileTheBatchesComeBackFullUpToTheCap() {
+        org.mockito.Mockito.reset(SERVICE);
+        when(SERVICE.expireDueOrders(7)).thenReturn(result(7), result(7), result(7), result(7));
+
+        new OrderExpiryJob(SERVICE, props(7, 3)).run();
+
+        verify(SERVICE, times(3)).expireDueOrders(7);
+        verifyNoMoreInteractions(SERVICE);
+    }
+
+    @Test
+    void aTickStopsAtTheFirstPartialBatch() {
+        org.mockito.Mockito.reset(SERVICE);
+        when(SERVICE.expireDueOrders(7)).thenReturn(result(7), result(2), result(7));
+
+        new OrderExpiryJob(SERVICE, props(7, 10)).run();
+
+        verify(SERVICE, times(2)).expireDueOrders(7);
+    }
+
+    @Test
+    void aTickStopsWhenABatchExpiredNothing() {
+        org.mockito.Mockito.reset(SERVICE);
+        // A whole batch of failures (nothing expired) must not spin through the cap.
+        when(SERVICE.expireDueOrders(2)).thenReturn(new ExpiryResult(List.of(), List.of(1L, 2L)));
+
+        new OrderExpiryJob(SERVICE, props(2, 10)).run();
+
+        verify(SERVICE, times(1)).expireDueOrders(2);
+    }
+
+    @Test
+    void aTickKeepsDrainingWhenAFullBatchHadSomeFailuresButAlsoProgress() {
+        org.mockito.Mockito.reset(SERVICE);
+        when(SERVICE.expireDueOrders(3)).thenReturn(new ExpiryResult(List.of(2L, 3L), List.of(1L)), result(0));
+
+        new OrderExpiryJob(SERVICE, props(3, 10)).run();
+
+        verify(SERVICE, times(2)).expireDueOrders(3);
+    }
+
+    private static OrderProperties props(int batchSize, int maxBatchesPerTick) {
+        return new OrderProperties(48, 10, 20, new OrderProperties.Expiry(batchSize, 45_000, maxBatchesPerTick));
     }
 }

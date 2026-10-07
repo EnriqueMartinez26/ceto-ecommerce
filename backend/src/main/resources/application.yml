@@ -16,3 +16,4 @@ ceto:
     expiry:
       batch-size: 100
       fixed-delay-ms: 60000
+      max-batches-per-tick: 10

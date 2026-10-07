@@ -40,6 +40,7 @@ class OrderPropertiesValidationTest {
         keys.put("ceto.orders.max-lines-per-order", "20");
         keys.put("ceto.orders.expiry.batch-size", "100");
         keys.put("ceto.orders.expiry.fixed-delay-ms", "60000");
+        keys.put("ceto.orders.expiry.max-batches-per-tick", "10");
         return keys;
     }
 
@@ -100,6 +101,7 @@ class OrderPropertiesValidationTest {
             assertThat(p.maxLinesPerOrder()).isEqualTo(20);
             assertThat(p.expiry().batchSize()).isEqualTo(100);
             assertThat(p.expiry().fixedDelayMs()).isEqualTo(60_000);
+            assertThat(p.expiry().maxBatchesPerTick()).isEqualTo(10);
         });
     }
 
@@ -124,7 +126,9 @@ class OrderPropertiesValidationTest {
                 Arguments.of("ceto.orders.expiry.batch-size", "0"),
                 Arguments.of("ceto.orders.expiry.batch-size", "1001"),
                 Arguments.of("ceto.orders.expiry.fixed-delay-ms", "999"),
-                Arguments.of("ceto.orders.expiry.fixed-delay-ms", "3600001"));
+                Arguments.of("ceto.orders.expiry.fixed-delay-ms", "3600001"),
+                Arguments.of("ceto.orders.expiry.max-batches-per-tick", "0"),
+                Arguments.of("ceto.orders.expiry.max-batches-per-tick", "101"));
     }
 
     @ParameterizedTest(name = "{0}={1} fails startup")
@@ -151,7 +155,9 @@ class OrderPropertiesValidationTest {
                 Arguments.of("ceto.orders.expiry.batch-size", "1"),
                 Arguments.of("ceto.orders.expiry.batch-size", "1000"),
                 Arguments.of("ceto.orders.expiry.fixed-delay-ms", "1000"),
-                Arguments.of("ceto.orders.expiry.fixed-delay-ms", "3600000"));
+                Arguments.of("ceto.orders.expiry.fixed-delay-ms", "3600000"),
+                Arguments.of("ceto.orders.expiry.max-batches-per-tick", "1"),
+                Arguments.of("ceto.orders.expiry.max-batches-per-tick", "100"));
     }
 
     @ParameterizedTest(name = "{0}={1} is accepted")
