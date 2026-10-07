@@ -19,6 +19,7 @@ import ar.cetobhb.orders.service.OrderPlacementService;
 import ar.cetobhb.support.AbstractPostgresIT;
 import ar.cetobhb.support.BurstRunner;
 import ar.cetobhb.support.BurstRunner.Outcome;
+import ar.cetobhb.support.BurstRunner.Report;
 import ar.cetobhb.support.MutableClock;
 import ar.cetobhb.support.StockReconciliation;
 import java.sql.Timestamp;
@@ -339,7 +340,9 @@ class OrderLifecycleIT extends AbstractPostgresIT {
             });
         }
 
-        List<Outcome<String>> outcomes = BurstRunner.run(tasks);
+        Report<String> report = BurstRunner.runMeasured(tasks);
+        List<Outcome<String>> outcomes = report.outcomes();
+        assertThat(report.maxInFlight()).isGreaterThan(1);
 
         // Pay then cancel are both legal edges in sequence, so the cancel always wins eventually; the pay wins only
         // when it ran first. Every loser failed with ILLEGAL_TRANSITION, nothing else.
@@ -364,7 +367,9 @@ class OrderLifecycleIT extends AbstractPostgresIT {
             });
         }
 
-        List<Outcome<Boolean>> outcomes = BurstRunner.run(tasks);
+        Report<Boolean> report = BurstRunner.runMeasured(tasks);
+        List<Outcome<Boolean>> outcomes = report.outcomes();
+        assertThat(report.maxInFlight()).isGreaterThan(1);
 
         assertThat(outcomes.stream().filter(Outcome::succeeded)).hasSize(1);
         assertThat(outcomes.stream().filter(o -> !o.succeeded()).map(Outcome::error))
@@ -385,7 +390,9 @@ class OrderLifecycleIT extends AbstractPostgresIT {
             });
         }
 
-        List<Outcome<Boolean>> outcomes = BurstRunner.run(tasks);
+        Report<Boolean> report = BurstRunner.runMeasured(tasks);
+        List<Outcome<Boolean>> outcomes = report.outcomes();
+        assertThat(report.maxInFlight()).isGreaterThan(1);
 
         assertThat(outcomes.stream().filter(Outcome::succeeded)).hasSize(1);
         assertThat(outcomes.stream().filter(o -> !o.succeeded()).map(Outcome::error))
