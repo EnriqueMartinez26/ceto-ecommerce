@@ -157,16 +157,26 @@ class OrderPlacementIT extends AbstractPostgresIT {
     }
 
     @Test
-    void aLaterPriceChangeDoesNotTouchPlacedLinesOrTotal() {
-        long b = base("Base", "100.00", 5);
-        PlacedOrder placed = placement.placeOrder(command(line(b, 2)));
+    void eachOrderSnapshotsThePriceReadAtItsOwnPlacementTime() {
+        long b = base("Base", "100.00", 10);
+        PlacedOrder first = placement.placeOrder(command(line(b, 2)));
 
-        jdbc.update("UPDATE products SET price = 999.00 WHERE id = ?", b);
+        // No price-update API exists yet, so the change goes straight to SQL.
+        jdbc.update("UPDATE products SET price = 150.00 WHERE id = ?", b);
+        PlacedOrder second = placement.placeOrder(command(line(b, 2)));
 
-        assertThat(jdbc.queryForObject("SELECT unit_price FROM order_items WHERE order_id = ?", BigDecimal.class,
-                placed.orderId())).isEqualByComparingTo("100.00");
-        assertThat(jdbc.queryForObject("SELECT total FROM orders WHERE id = ?", BigDecimal.class,
-                placed.orderId())).isEqualByComparingTo("200.00");
+        assertThat(unitPrice(first.orderId())).isEqualByComparingTo("100.00");
+        assertThat(total(first.orderId())).isEqualByComparingTo("200.00");
+        assertThat(unitPrice(second.orderId())).isEqualByComparingTo("150.00");
+        assertThat(total(second.orderId())).isEqualByComparingTo("300.00");
+    }
+
+    private BigDecimal unitPrice(long orderId) {
+        return jdbc.queryForObject("SELECT unit_price FROM order_items WHERE order_id = ?", BigDecimal.class, orderId);
+    }
+
+    private BigDecimal total(long orderId) {
+        return jdbc.queryForObject("SELECT total FROM orders WHERE id = ?", BigDecimal.class, orderId);
     }
 
     @Test

@@ -218,7 +218,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    de alta (`OrderPlacementService`) toma precios y nombres de la base y
    calcula el total con `OrderTotals`, aunque el precio cambie después
    (`OrderPlacementIT.lineSnapshotsAndTotalsComeFromDatabasePrices`,
-   `aLaterPriceChangeDoesNotTouchPlacedLinesOrTotal`).
+   `eachOrderSnapshotsThePriceReadAtItsOwnPlacementTime`).
 8. **Dinero en `BigDecimal` / `NUMERIC(12,2)`**, nunca `double` ni `float`.
    Sumas y reportes se agregan en SQL, no cargando listas a memoria.
 9. **Número de pedido legible** (`CETO-000123`) separado del id interno: es
