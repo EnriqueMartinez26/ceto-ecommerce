@@ -75,5 +75,6 @@ class StockReconciliationIT extends AbstractPostgresIT {
         // The stock-less product with pending units drifts (expected 2, no row = 0 reserved); a product that never
         // had a stock row nor pending lines does not.
         assertThat(StockReconciliation.stockDrift(jdbc))
-                .containsExactly(new StockDrift(orphan, 2, 0));    }
+                .containsExactly(new StockDrift(orphan, 2, 0));
+    }
 }
