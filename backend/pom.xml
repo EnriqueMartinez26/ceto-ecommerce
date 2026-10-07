@@ -26,6 +26,8 @@
              IDE runs and `java -jar` on this Windows machine need the same VM option (-Duser.timezone=UTC).
              Production must pin the JVM to UTC too; that belongs to the Docker/compose change, not done here. -->
         <argLine>-Duser.timezone=UTC</argLine>
+        <!-- Not managed by the Boot BOM, so pinned explicitly. 1.5.1 verified on Maven Central (docs/dependencias.md). -->
+        <archunit.version>1.5.1</archunit.version>
     </properties>
 
     <dependencies>
@@ -62,6 +64,12 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>${archunit.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
