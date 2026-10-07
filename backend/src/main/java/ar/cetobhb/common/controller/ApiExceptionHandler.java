@@ -4,6 +4,7 @@ import ar.cetobhb.catalog.domain.ProductNotAvailableException;
 import ar.cetobhb.common.domain.DomainException;
 import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
+import ar.cetobhb.common.web.SafeErrors;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import java.util.ArrayList;
@@ -47,8 +48,9 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 /**
  * The only owner of error responses (REQ-ERR-01): every failure becomes an RFC 9457 {@code application/problem+json}
  * body built from {@link ApiErrorCatalog}. Responses carry fixed neutral text only. Logging never passes a
- * {@code Throwable} or its message to the logger for framework, persistence or Jackson exceptions: those messages echo
- * rejected values and, for Postgres CHECK violations, a whole row of personal data (CLAUDE.md section 5).
+ * {@code Throwable} or its message to the logger for framework, persistence or Jackson exceptions (those messages echo
+ * rejected values and, for Postgres CHECK violations, a whole row of personal data, CLAUDE.md section 5): it logs
+ * {@link SafeErrors} summaries or class names only.
  */
 @RestControllerAdvice
 class ApiExceptionHandler extends ResponseEntityExceptionHandler {
@@ -81,7 +83,7 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler({DataIntegrityViolationException.class, OptimisticLockingFailureException.class})
     ResponseEntity<Object> handleConflict(Exception ex, HttpServletRequest request) {
-        return respondLoggingClassOnly(ApiErrorCatalog.CONFLICT, ex, request, new HttpHeaders());
+        return respondLogging(ApiErrorCatalog.CONFLICT, ex, request, new HttpHeaders());
     }
 
     @ExceptionHandler({PessimisticLockingFailureException.class, QueryTimeoutException.class,
@@ -91,12 +93,12 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     ResponseEntity<Object> handleServiceBusy(Exception ex, HttpServletRequest request) {
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS);
-        return respondLoggingClassOnly(ApiErrorCatalog.SERVICE_BUSY, ex, request, headers);
+        return respondLogging(ApiErrorCatalog.SERVICE_BUSY, ex, request, headers);
     }
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<Object> handleUnexpected(Exception ex, HttpServletRequest request) {
-        return respondLoggingClassOnly(ApiErrorCatalog.INTERNAL, ex, request, new HttpHeaders());
+        return respondLogging(ApiErrorCatalog.INTERNAL, ex, request, new HttpHeaders());
     }
 
     /** Every Spring MVC exception handled by the base class ends here; its default body and detail are discarded. */
@@ -119,7 +121,7 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 extras.put("reason", reason);
             }
         }
-        return respondLoggingClassOnly(error, ex, request, responseHeaders, extras);
+        return respondLogging(error, ex, request, responseHeaders, extras);
     }
 
     private static ApiError classify(Exception ex, HttpStatusCode status) {
@@ -191,17 +193,28 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return false;
     }
 
-    private ResponseEntity<Object> respondLoggingClassOnly(ApiError error, Throwable ex, HttpServletRequest request,
+    private ResponseEntity<Object> respondLogging(ApiError error, Throwable ex, HttpServletRequest request,
             HttpHeaders headers) {
-        return respondLoggingClassOnly(error, ex, request, headers, Map.of());
+        return respondLogging(error, ex, request, headers, Map.of());
     }
 
-    private ResponseEntity<Object> respondLoggingClassOnly(ApiError error, Throwable ex, HttpServletRequest request,
+    private ResponseEntity<Object> respondLogging(ApiError error, Throwable ex, HttpServletRequest request,
             HttpHeaders headers, Map<String, Object> extras) {
         if (error.logLevel() != null) {
-            LOG.atLevel(error.logLevel()).log("{} {}", error.code(), ex.getClass().getName());
+            LOG.atLevel(error.logLevel()).log("{} {}", error.code(), describe(error, ex));
         }
         return respond(error, request, headers, extras);
+    }
+
+    /**
+     * Server-side failures and conflicts get the PII-free {@link SafeErrors} summary (class chain, SQLState, constraint
+     * name, root frames); client mistakes only the top class name. Messages are never logged.
+     */
+    private static String describe(ApiError error, Throwable ex) {
+        if (error.status().is5xxServerError() || error == ApiErrorCatalog.CONFLICT) {
+            return SafeErrors.describe(ex);
+        }
+        return ex.getClass().getName();
     }
 
     private static ResponseEntity<Object> respond(ApiError error, HttpServletRequest request, HttpHeaders headers,

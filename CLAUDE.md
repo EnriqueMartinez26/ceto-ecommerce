@@ -394,8 +394,19 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   texto fijo, y `ApiExceptionHandlerTest` verifica la tabla completa sin filtrar
   mensajes; `ApiErrorCatalogTest` hace fallar el build si una subclase concreta de
   `DomainException` no tiene fila; `BootErrorEndpointIT` fija que el `/error` de
-  Boot no devuelve stack trace ni mensaje (D-20261007-23). **[Guarda pendiente]**
-  logs sin datos personales (`PiiLoggingIT`, cambio `checkout-http`).
+  Boot no devuelve stack trace ni mensaje (D-20261007-23). Logs sin datos
+  personales: nunca se loguea el mensaje de una excepción de framework,
+  persistencia o Jackson (`SafeErrors` emite clases, SQLState y restricción;
+  `SafeErrorsTest`), el logger de errores SQL de Hibernate 7
+  (`org.hibernate.orm.jdbc.error`) está apagado en `application.yml`, y
+  `PiiLoggingIT` fija con un teléfono centinela que ni una violación CHECK real
+  ni un valor rechazado por Jackson llegan al log. Cada request lleva un id
+  generado en el servidor (`RequestIdFilter`; `X-Request-Id` entrante se ignora)
+  y los filtros escriben errores con `ProblemResponses`. El parseo JSON es
+  estricto (`JacksonConfigTest`: propiedad extra, `"2"` por `2`, clave
+  duplicada, profundidad > 8, strings y nombres largos). **[Guarda pendiente]**
+  el recorrido HTTP completo (éxito, validación, malformado, CHECK forzado y 500
+  por el endpoint real) en `PiiLoggingIT`, cambio `checkout-http` S5c.
 - **Datos personales (Ley 25.326)**: se pide solo lo necesario; teléfono,
   dirección y email no van a los logs.
 

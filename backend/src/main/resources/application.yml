@@ -6,7 +6,28 @@ server:
     include-binding-errors: never
     include-exception: false
 
+logging:
+  pattern:
+    # Every log line of a request carries its server-generated id (RequestIdFilter puts it in the MDC).
+    level: "%5p [rid:%X{requestId:-}]"
+  level:
+    # Hibernate 7 logs SQL errors under these categories; a Postgres CHECK violation's DETAIL is the whole row
+    # (name, phone, address). Silencing SqlExceptionHelper does nothing in Hibernate 7 (verification U-8).
+    org.hibernate.orm.jdbc.error: "OFF"
+    org.hibernate.orm.jdbc.warn: "OFF"
+    # Spring MVC logs the exception message of malformed requests, and that message echoes the rejected value.
+    org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver: "OFF"
+    org.springframework.web.servlet.PageNotFound: "OFF"
+
 spring:
+  # The API serves no static files; unknown paths end in the standard 404 problem body.
+  web:
+    resources:
+      add-mappings: false
+  # The advice owns every error body (ApiExceptionHandler); Boot's ProblemDetail handler must not compete.
+  mvc:
+    problemdetails:
+      enabled: false
   jpa:
     open-in-view: false
     hibernate:
