@@ -5,11 +5,17 @@ import ar.cetobhb.common.domain.ValidationException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Server-side totals (CLAUDE.md section 4, rules 7 and 8): line total = unit price x quantity,
  * order total = sum of line totals, shipping excluded (D-20261006-03). Exact {@link BigDecimal}
  * arithmetic at scale 2; every amount must fit NUMERIC(12,2).
+ *
+ * <p>An invalid unit price (null, non-positive, scale above 2 or outside NUMERIC(12,2)) throws
+ * {@link IllegalArgumentException}: it means corrupted data or a bug upstream, since prices come from the
+ * catalog snapshot, and it must NOT be mapped to a business error. A {@code null} line is a
+ * {@link NullPointerException} for the same reason.
  */
 public record OrderTotals(List<BigDecimal> lineTotals, BigDecimal total) {
 
@@ -25,6 +31,7 @@ public record OrderTotals(List<BigDecimal> lineTotals, BigDecimal total) {
             throw new ValidationException(ReasonCode.EMPTY_CART);
         }
         List<BigDecimal> lineTotals = lines.stream()
+                .map(line -> Objects.requireNonNull(line, "lines must not contain null"))
                 .map(line -> lineTotal(line.unitPrice(), line.quantity()))
                 .toList();
         BigDecimal total = lineTotals.stream().reduce(BigDecimal.ZERO.setScale(SCALE), BigDecimal::add);

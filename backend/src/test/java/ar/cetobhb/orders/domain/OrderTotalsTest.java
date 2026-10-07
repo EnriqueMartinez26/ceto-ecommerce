@@ -55,6 +55,13 @@ class OrderTotalsTest {
                         e -> assertThat(e.reason()).isEqualTo(ReasonCode.EMPTY_CART));
     }
 
+    @Test
+    void aNullLineIsRejectedWithAClearMessage() {
+        assertThatThrownBy(() -> OrderTotals.of(java.util.Arrays.asList(line("1.00", 1), null)))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("lines must not contain null");
+    }
+
     @ParameterizedTest
     @CsvSource({"0", "-1"})
     void nonPositiveQuantityIsRejected(int qty) {

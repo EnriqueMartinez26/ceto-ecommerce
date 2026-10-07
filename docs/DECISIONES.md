@@ -28,3 +28,4 @@ reemplace y se marca la anterior como reemplazada.
 | D-20261007-07 | Postgres 16 en producción, la misma versión que la imagen de los tests. | Mateo | 2026-10-07 | Vigente |
 | D-20261007-08 | Un combo agrupa N ≥ 2 unidades del producto base (un "combo de 1" se resuelve con el precio tachado). Superar el tope de líneas por pedido (D-20261007-05) se rechaza con el código `TOO_MANY_LINES`. | Mateo | 2026-10-07 | Vigente |
 | D-20261007-09 | El núcleo (`core-catalog-stock-orders`) se entrega en PRs encadenados de hasta ~400 líneas cada uno, para que cada uno se pueda leer completo antes de aceptarlo. | Mateo | 2026-10-07 | Vigente |
+| D-20261007-10 | Cancelar un pedido `PAGADO` con motivo `EXPIRED` es `VALIDATION_ERROR(INVALID_CANCEL_REASON)`: la transición PAGADO→CANCELADO es legal, el motivo no. La legalidad de la transición se verifica antes que el motivo. | Mateo (delegado al asistente) | 2026-10-07 | Vigente |

@@ -35,16 +35,15 @@ public enum OrderStatus {
     }
 
     /**
-     * Validates a cancellation from this status and returns CANCELADO. EXPIRED is only valid from
-     * PAGO_PENDIENTE (D-20261006-12); a null reason is a validation error.
+     * Validates a cancellation from this status and returns CANCELADO. The edge is checked first: a status
+     * without a CANCELADO edge (DESPACHADO, ENTREGADO, CANCELADO) is an {@link IllegalOrderTransitionException}
+     * whatever the reason. Only then is the reason checked: null, or EXPIRED from PAGADO (the transition is
+     * legal, the reason is not; D-20261006-12, D-20261007-10), is a {@code VALIDATION_ERROR(INVALID_CANCEL_REASON)}.
      */
     public OrderStatus requireCancellation(CancelReason reason) {
-        if (reason == null) {
-            throw new ValidationException(ReasonCode.INVALID_CANCEL_REASON);
-        }
         OrderStatus target = requireTransitionTo(CANCELADO);
-        if (reason == CancelReason.EXPIRED && this != PAGO_PENDIENTE) {
-            throw new IllegalOrderTransitionException(this, target);
+        if (reason == null || (reason == CancelReason.EXPIRED && this != PAGO_PENDIENTE)) {
+            throw new ValidationException(ReasonCode.INVALID_CANCEL_REASON);
         }
         return target;
     }

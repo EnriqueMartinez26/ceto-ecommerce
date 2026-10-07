@@ -83,13 +83,18 @@ class OrderStatusGraphTest {
     void cancelReasonValidityPerSourceState(OrderStatus from, CancelReason reason) {
         boolean sourceCancellable = from == OrderStatus.PAGO_PENDIENTE || from == OrderStatus.PAGADO;
         boolean expired = reason == CancelReason.EXPIRED;
-        boolean legal = sourceCancellable && !(expired && from != OrderStatus.PAGO_PENDIENTE);
-        if (legal) {
-            assertThatCode(() -> assertThat(from.requireCancellation(reason)).isEqualTo(OrderStatus.CANCELADO))
-                    .doesNotThrowAnyException();
-        } else {
+        if (!sourceCancellable) {
+            // The edge is checked first: the reason is irrelevant when the transition does not exist.
             assertThatThrownBy(() -> from.requireCancellation(reason))
                     .isInstanceOf(IllegalOrderTransitionException.class);
+        } else if (expired && from == OrderStatus.PAGADO) {
+            // D-20261007-10: PAGADO -> CANCELADO is legal, the EXPIRED reason is not.
+            assertThatThrownBy(() -> from.requireCancellation(reason))
+                    .isInstanceOfSatisfying(ValidationException.class,
+                            e -> assertThat(e.reason()).isEqualTo(ReasonCode.INVALID_CANCEL_REASON));
+        } else {
+            assertThatCode(() -> assertThat(from.requireCancellation(reason)).isEqualTo(OrderStatus.CANCELADO))
+                    .doesNotThrowAnyException();
         }
     }
 
@@ -104,6 +109,10 @@ class OrderStatusGraphTest {
     void shippingZonesAreTheTwoDeclaredOnes() {
         assertThat(Arrays.stream(ShippingZone.values()).map(Enum::name))
                 .containsExactlyInAnyOrder("CORDOBA_CAPITAL", "RESTO_DEL_PAIS");
+    }
+
+    @Test
+    void orderNotFoundCarriesTheOrderIdInItsMessage() {
         assertThat(new OrderNotFoundException(7L).getMessage()).isEqualTo("ORDER_NOT_FOUND(7)");
     }
 }

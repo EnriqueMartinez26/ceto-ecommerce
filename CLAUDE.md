@@ -186,7 +186,9 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    una decisión de producto. El grafo (`OrderStatus`) lo recorre
    `OrderStatusGraphTest` sobre los 25 pares contra un conjunto de 5 aristas
    declarado aparte en el test; la razón `EXPIRED` solo vale desde
-   `PAGO_PENDIENTE` (`cancelReasonValidityPerSourceState`).
+   `PAGO_PENDIENTE`: desde `PAGADO` es `VALIDATION_ERROR(INVALID_CANCEL_REASON)`
+   y la legalidad de la arista se verifica antes que el motivo, D-20261007-10
+   (`cancelReasonValidityPerSourceState`).
    **[guarda pendiente: pares sobre pedidos reales y `status` sin setter
    público, en la entidad]**
 6. **Las líneas del pedido son una foto.** Guardan nombre, precio unitario,
