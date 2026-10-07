@@ -113,13 +113,20 @@ class OrderRequestNormalizerTest {
     }
 
     @Test
+    void anAmbiguousArgentineTenDigitPhoneIsNormalizedAsAMobile() {
+        // D-20261007-11: "11 5555 1234" used to be rejected; it now becomes the mobile +549...
+        Buyer buyer = new Buyer("Maria", "11 5555 1234", "Calle 1", ShippingZone.CORDOBA_CAPITAL);
+        assertThat(normalizer.normalize(command(buyer, line(1, 1))).phoneE164()).isEqualTo("+5491155551234");
+    }
+
+    @Test
     void rejectsAMissingZone() {
         assertRejected(command(new Buyer("Maria", PHONE, "Calle 1", null), line(1, 1)), ReasonCode.INVALID_ZONE);
     }
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {"abc", "11 5555 1234", "+1 650 253 0000"})
+    @ValueSource(strings = {"abc", "+1 650 253 0000", "+54 9 351 555 0000 ext 5"})
     void rejectsAnInvalidPhone(String phone) {
         assertRejected(command(new Buyer("Maria", phone, "Calle 1", ShippingZone.CORDOBA_CAPITAL), line(1, 1)),
                 ReasonCode.INVALID_PHONE);
