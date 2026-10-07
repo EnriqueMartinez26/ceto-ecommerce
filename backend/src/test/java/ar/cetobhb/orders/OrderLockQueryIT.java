@@ -100,6 +100,25 @@ class OrderLockQueryIT extends AbstractPostgresIT {
         }));
     }
 
+    /**
+     * Polls pg_stat_activity until a backend running the lockById query reports wait_event_type = Lock, which
+     * proves it is blocked on a row lock (not merely slow), instead of guessing with a fixed sleep.
+     */
+    private void awaitBackendBlockedOnARowLock() throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (System.nanoTime() < deadline) {
+            Integer blockedBackends = jdbc.queryForObject(
+                    "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"
+                            + " AND wait_event_type = 'Lock' AND query LIKE '%FROM orders WHERE id%FOR UPDATE%'",
+                    Integer.class);
+            if (blockedBackends != null && blockedBackends > 0) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        throw new AssertionError("no backend became blocked on the row lock within 15s");
+    }
+
     private void runInOtherThread(Runnable work) {
         try {
             executor.submit(work).get(10, TimeUnit.SECONDS);
@@ -126,7 +145,7 @@ class OrderLockQueryIT extends AbstractPostgresIT {
 
         assertThat(lockExpired(NOW, 2)).containsExactly(oldest, mid);
         assertThat(lockExpired(NOW, 1)).containsExactly(oldest);
-        assertThat(late).isNotEqualTo(oldest);
+        assertThat(lockExpired(NOW, 2)).doesNotContain(late);
     }
 
     @Test
@@ -172,12 +191,9 @@ class OrderLockQueryIT extends AbstractPostgresIT {
         Future<?> holder = holdLock(first, locked, release);
         assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
         try {
-            long started = System.nanoTime();
-            List<Long> ids = lockExpired(NOW, 10);
-            Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
-
-            assertThat(ids).containsExactly(second, third);
-            assertThat(elapsed).isLessThan(Duration.ofSeconds(2));
+            // If SKIP LOCKED did not skip, this call would block on the held row until the holder is released
+            // (only in the finally below), so returning at all with the other two rows is the proof.
+            assertThat(lockExpired(NOW, 10)).containsExactly(second, third);
         } finally {
             release.countDown();
             holder.get(10, TimeUnit.SECONDS);
@@ -213,7 +229,7 @@ class OrderLockQueryIT extends AbstractPostgresIT {
         try {
             Future<String> blocked = waiter.submit(() -> tx.execute(status ->
                     orders.lockById(id).orElseThrow().status().name()));
-            Thread.sleep(500);
+            awaitBackendBlockedOnARowLock();
             assertThat(blocked.isDone()).as("lockById blocks while another transaction holds the row").isFalse();
 
             release.countDown();
