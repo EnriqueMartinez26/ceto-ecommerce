@@ -67,8 +67,11 @@ public class OrderLifecycleService {
         order.cancel(reason, clock.instant());
         if (before == OrderStatus.PAGO_PENDIENTE) {
             inventory.release(demandOf(order));
-        } else {
+        } else if (before == OrderStatus.PAGADO) {
             inventory.restock(demandOf(order));
+        } else {
+            // Invariant: Order.cancel only accepts PAGO_PENDIENTE and PAGADO, so this branch is unreachable.
+            throw new IllegalStateException("Cancelled an order from unexpected status " + before);
         }
     }
 

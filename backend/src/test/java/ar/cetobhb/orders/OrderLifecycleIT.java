@@ -325,6 +325,25 @@ class OrderLifecycleIT extends AbstractPostgresIT {
     }
 
     @Test
+    void stockMovesByTheOrderSnapshotNotTheCurrentCatalog() {
+        long b = base("B", 40);
+        long combo = catalog.createCombo(product("Pack", "250.00"), b, 6).id();
+        long paid = order(line(combo, 2));
+        long cancelledPaid = order(line(combo, 1));
+        assertStock(b, 40, 18);
+        // The catalog changes after placement (no API for it yet, so SQL): units and price.
+        jdbc.update("UPDATE products SET combo_base_units = 10, price = 999.00 WHERE id = ?", combo);
+
+        lifecycle.markPaid(paid);
+        assertStock(b, 28, 6);
+
+        lifecycle.markPaid(cancelledPaid);
+        assertStock(b, 22, 0);
+        lifecycle.cancel(cancelledPaid, CancelReason.CANCELLED_BY_BUYER);
+        assertStock(b, 28, 0);
+    }
+
+    @Test
     void concurrentPayAndCancelOfOneOrderNeverDeadlockAndEndConsistent() {
         long b = base("B", 5);
         long id = order(line(b, 2));
@@ -349,9 +368,16 @@ class OrderLifecycleIT extends AbstractPostgresIT {
         assertThat(outcomes.stream().filter(o -> !o.succeeded()).map(Outcome::error))
                 .allMatch(e -> e instanceof IllegalOrderTransitionException);
         assertThat(outcomes.stream().filter(o -> o.succeeded() && "cancel".equals(o.value()))).hasSize(1);
-        assertThat(outcomes.stream().filter(o -> o.succeeded() && "pay".equals(o.value())).count())
-                .isLessThanOrEqualTo(1);
+        long paySuccesses = outcomes.stream().filter(o -> o.succeeded() && "pay".equals(o.value())).count();
+        assertThat(paySuccesses).isLessThanOrEqualTo(1);
         assertThat(status(id)).isEqualTo("CANCELADO");
+        // The final row agrees with who won: paid_at is set exactly when a pay succeeded before the cancel.
+        Timestamp paidAt = jdbc.queryForObject("SELECT paid_at FROM orders WHERE id = ?", Timestamp.class, id);
+        if (paySuccesses == 1) {
+            assertThat(paidAt).isNotNull();
+        } else {
+            assertThat(paidAt).isNull();
+        }
         assertStock(b, 5, 0);
     }
 
