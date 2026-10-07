@@ -2,24 +2,19 @@ package ar.cetobhb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ar.cetobhb.support.SchemaConfigScanner;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
-import java.util.Properties;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
-import org.springframework.core.io.support.PropertiesLoaderUtils;
 
-/** Static half of the ddl-auto guard: no config file in any profile may let Hibernate change the schema. */
+/** Static half of the schema guard: no config file in any profile may let Hibernate change the schema. */
 class DdlAutoConfigFilesTest {
 
-    private static final List<String> SCHEMA_KEYS =
-            List.of("spring.jpa.hibernate.ddl-auto", "spring.jpa.properties.hibernate.hbm2ddl.auto");
-    private static final Set<String> ALLOWED = Set.of("validate", "none");
     private static final List<String> PATTERNS = List.of(
             "classpath*:application*.yml", "classpath*:application*.yaml", "classpath*:application*.properties",
             "classpath*:config/application*.yml", "classpath*:config/application*.yaml",
@@ -27,39 +22,88 @@ class DdlAutoConfigFilesTest {
 
     @Test
     void noConfigFileOnTheClasspathEnablesSchemaGeneration() throws IOException {
-        List<Resource> files = configFiles();
-        assertThat(files).as("application config files found").isNotEmpty();
-
-        List<String> violations = new ArrayList<>();
-        for (Resource file : files) {
-            Properties properties = load(file);
-            for (String key : SCHEMA_KEYS) {
-                String value = properties.getProperty(key);
-                if (value != null && !ALLOWED.contains(value.trim().toLowerCase(Locale.ROOT))) {
-                    violations.add(file.getDescription() + " sets " + key + "=" + value);
-                }
-            }
-        }
-        assertThat(violations).as("forbidden schema generation settings").isEmpty();
-    }
-
-    private static List<Resource> configFiles() throws IOException {
         PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
         List<Resource> files = new ArrayList<>();
         for (String pattern : PATTERNS) {
             files.addAll(List.of(resolver.getResources(pattern)));
         }
-        return files;
+        assertThat(files).as("application config files found").isNotEmpty();
+
+        List<String> violations = new ArrayList<>();
+        for (Resource file : files) {
+            violations.addAll(SchemaConfigScanner.scan(file));
+        }
+        assertThat(violations).as("forbidden schema generation settings").isEmpty();
     }
 
-    private static Properties load(Resource file) throws IOException {
-        String name = String.valueOf(file.getFilename());
-        if (name.endsWith(".properties")) {
-            return PropertiesLoaderUtils.loadProperties(file);
-        }
-        YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
-        yaml.setResources(file);
-        Properties properties = yaml.getObject();
-        return properties == null ? new Properties() : properties;
+    @Test
+    void detectsViolationInAnEarlierDocumentOfAMultiDocumentYaml() throws IOException {
+        String yaml = """
+                spring:
+                  jpa:
+                    hibernate:
+                      ddl-auto: create
+                ---
+                spring:
+                  config:
+                    activate:
+                      on-profile: prod
+                  jpa:
+                    hibernate:
+                      ddl-auto: validate
+                """;
+        assertThat(SchemaConfigScanner.scan("application.yml", yaml))
+                .singleElement().asString().contains("ddl-auto").contains("create");
+    }
+
+    @Test
+    void detectsViolationInALaterDocumentOfAMultiDocumentYaml() throws IOException {
+        String yaml = """
+                spring.jpa.hibernate.ddl-auto: validate
+                ---
+                spring.jpa.hibernate.ddl-auto: update
+                """;
+        assertThat(SchemaConfigScanner.scan("application.yaml", yaml)).hasSize(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"spring.jpa.hibernate.ddl_auto", "spring.jpa.hibernate.ddlAuto",
+            "spring.jpa.hibernate.ddl-auto", "SPRING_JPA_HIBERNATE_DDL_AUTO"})
+    void detectsRelaxedDdlAutoKeysInProperties(String key) throws IOException {
+        assertThat(SchemaConfigScanner.scan("application-dev.properties", key + "=create-drop")).hasSize(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "spring.jpa.properties.jakarta.persistence.schema-generation.database.action",
+            "spring.jpa.properties.javax.persistence.schema-generation.database.action",
+            "spring.jpa.properties.hibernate.hbm2ddl.auto",
+            "jakarta.persistence.schema-generation.database.action",
+            "hibernate.hbm2ddl.auto"})
+    void detectsSchemaGenerationChannelsInProperties(String key) throws IOException {
+        assertThat(SchemaConfigScanner.scan("application.properties", key + "=drop-and-create")).hasSize(1);
+    }
+
+    @Test
+    void detectsSchemaGenerationChannelNestedInYaml() throws IOException {
+        String yaml = """
+                spring:
+                  jpa:
+                    properties:
+                      jakarta.persistence.schema-generation.database.action: create
+                """;
+        assertThat(SchemaConfigScanner.scan("application.yml", yaml)).hasSize(1);
+    }
+
+    @Test
+    void allowsValidateNoneAndMissingKeysInEveryDocument() throws IOException {
+        String yaml = """
+                spring.jpa.hibernate.ddl-auto: " Validate "
+                ---
+                spring.jpa.hibernate.ddl-auto: none
+                ---
+                server.port: 8080
+                """;
+        assertThat(SchemaConfigScanner.scan("application.yml", yaml)).isEmpty();
     }
 }
