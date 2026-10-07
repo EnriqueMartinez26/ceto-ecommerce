@@ -1,5 +1,7 @@
 package ar.cetobhb.inventory.repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -18,4 +20,12 @@ public interface InventoryStockRepository extends JpaRepository<InventoryStock, 
     @Transactional(propagation = Propagation.MANDATORY)
     @Query(value = "SELECT * FROM inventory_stock WHERE product_id = :id FOR UPDATE", nativeQuery = true)
     Optional<InventoryStock> lockByProductId(@Param("id") long productId);
+
+    /**
+     * Non-locking read of {@code [product_id, on_hand, reserved]} rows for the storefront. It selects columns, not
+     * entities, so no stock row becomes managed: a later {@link #lockByProductId} in the same transaction still
+     * reads the database instead of a stale instance.
+     */
+    @Query("SELECT s.productId, s.onHand, s.reserved FROM InventoryStock s WHERE s.productId IN :ids")
+    List<Object[]> findLevels(@Param("ids") Collection<Long> ids);
 }

@@ -4,6 +4,7 @@ import ar.cetobhb.catalog.domain.ProductSnapshot;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
+import ar.cetobhb.inventory.domain.Availability;
 import ar.cetobhb.inventory.domain.BaseUnitDemand;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
@@ -14,6 +15,8 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -135,6 +138,19 @@ public class InventoryService {
         InventoryStock row = stock.lockByProductId(productId)
                 .orElseThrow(() -> new StockNotConfiguredException(productId));
         row.adjustOnHand(newOnHand, clock.instant());
+    }
+
+    /**
+     * Free base units per base product for the storefront; a product without a stock row has no key. Takes no lock
+     * and leaves no managed stock row (see {@link InventoryStockRepository#findLevels}).
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, Long> availableByBase(Collection<Long> baseIds) {
+        Map<Long, Long> free = new LinkedHashMap<>();
+        for (Object[] row : stock.findLevels(baseIds)) {
+            free.put((Long) row[0], Availability.forBase((Integer) row[1], (Integer) row[2]));
+        }
+        return free;
     }
 
     /** Locks all rows ascending, then checks every row before the caller mutates any of them. */
