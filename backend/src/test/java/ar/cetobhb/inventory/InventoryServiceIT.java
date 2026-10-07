@@ -16,8 +16,14 @@ import ar.cetobhb.inventory.repository.InventoryStock;
 import ar.cetobhb.inventory.repository.InventoryStockRepository;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.support.AbstractPostgresIT;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -91,6 +97,41 @@ class InventoryServiceIT extends AbstractPostgresIT {
                 .isInstanceOfSatisfying(StockAlreadyConfiguredException.class,
                         e -> assertThat(e.productId()).isEqualTo(id));
         assertCounts(id, 5, 0);
+    }
+
+    @Test
+    void concurrentCreateStockLetsExactlyOneWin() throws Exception {
+        ProductSnapshot base = catalog.createBase(product("Raced", "100.00"));
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<Throwable>> attempts = new ArrayList<>();
+            for (int onHand : new int[] {5, 7}) {
+                attempts.add(pool.submit(() -> {
+                    start.await();
+                    try {
+                        inventory.createStock(base.id(), onHand);
+                        return null;
+                    } catch (Throwable e) {
+                        return e;
+                    }
+                }));
+            }
+            start.countDown();
+            List<Throwable> failures = new ArrayList<>();
+            for (Future<Throwable> attempt : attempts) {
+                Throwable failure = attempt.get(30, TimeUnit.SECONDS);
+                if (failure != null) {
+                    failures.add(failure);
+                }
+            }
+            assertThat(failures).singleElement().isInstanceOfSatisfying(StockAlreadyConfiguredException.class,
+                    e -> assertThat(e.productId()).isEqualTo(base.id()));
+            assertThat(jdbc.queryForObject(
+                    "SELECT count(*) FROM inventory_stock WHERE product_id = ?", Long.class, base.id())).isEqualTo(1L);
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test

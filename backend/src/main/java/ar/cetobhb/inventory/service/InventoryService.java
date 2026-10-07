@@ -10,6 +10,7 @@ import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
 import ar.cetobhb.inventory.repository.InventoryStock;
 import ar.cetobhb.inventory.repository.InventoryStockRepository;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -18,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.BiPredicate;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -42,6 +44,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class InventoryService {
 
+    private static final String UNIQUE_VIOLATION = "23505";
+    private static final String STOCK_PK = "inventory_stock_pk";
+
     private final InventoryStockRepository stock;
     private final CatalogService catalog;
     private final Clock clock;
@@ -64,8 +69,25 @@ public class InventoryService {
             // arbiter, which also covers two concurrent creations of the same row.
             stock.saveAndFlush(InventoryStock.create(productId, onHand, clock.instant()));
         } catch (DataIntegrityViolationException e) {
-            throw new StockAlreadyConfiguredException(productId);
+            if (isDuplicateStock(e)) {
+                throw new StockAlreadyConfiguredException(productId);
+            }
+            throw e;
         }
+    }
+
+    /** True only when the root cause is a unique/primary key violation (SQLState 23505 or the stock PK name). */
+    static boolean isDuplicateStock(DataIntegrityViolationException e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause() == cause ? null : cause.getCause()) {
+            if (cause instanceof SQLException sql && UNIQUE_VIOLATION.equals(sql.getSQLState())) {
+                return true;
+            }
+            if (cause instanceof ConstraintViolationException violation
+                    && STOCK_PK.equalsIgnoreCase(violation.getConstraintName())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
