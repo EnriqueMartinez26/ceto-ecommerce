@@ -46,12 +46,15 @@ import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.ErrorResponseException;
 import org.springframework.web.bind.MissingPathVariableException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -140,6 +143,31 @@ class ApiExceptionHandlerTest {
                 .andExpect(jsonPath("$.title").isNotEmpty())
                 .andExpect(jsonPath("$.instance").value("/boom"));
         assertThat(body(result)).doesNotContain("+54", "boom:", "UNMAPPED", "STOCK_", "42", "ORDER_NOT_FOUND");
+    }
+
+    static Stream<Arguments> clientErrorResponses() {
+        return Stream.of(
+                Arguments.of(HttpStatus.BAD_REQUEST, "BAD_REQUEST"),
+                Arguments.of(HttpStatus.NOT_FOUND, "NOT_FOUND"),
+                Arguments.of(HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED"),
+                Arguments.of(HttpStatus.NOT_ACCEPTABLE, "NOT_ACCEPTABLE"),
+                Arguments.of(HttpStatus.GONE, "BAD_REQUEST"),
+                Arguments.of(HttpStatus.CONTENT_TOO_LARGE, "PAYLOAD_TOO_LARGE"),
+                Arguments.of(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE"),
+                Arguments.of(HttpStatus.UNPROCESSABLE_CONTENT, "BAD_REQUEST"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("clientErrorResponses")
+    void otherFrameworkClientErrorsKeepTheirStatusWithACodeDerivedFromIt(HttpStatus status, String code)
+            throws Exception {
+        THROWN.set(new ErrorResponseException(status, ProblemDetail.forStatusAndDetail(status, SECRET), null));
+
+        ResultActions result = mvc.perform(get("/boom"));
+
+        result.andExpect(status().is(status.value())).andExpect(jsonPath("$.code").value(code))
+                .andExpect(jsonPath("$.status").value(status.value()));
+        assertThat(body(result)).doesNotContain("boom:", "+54");
     }
 
     static Stream<Throwable> serviceBusyFamily() {

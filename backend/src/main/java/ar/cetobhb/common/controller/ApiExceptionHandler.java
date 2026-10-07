@@ -22,7 +22,6 @@ import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -151,8 +150,7 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         if (ex instanceof NoHandlerFoundException || ex instanceof NoResourceFoundException) {
             return ApiErrorCatalog.NOT_FOUND;
         }
-        return new ApiError(HttpStatus.valueOf(status.value()), ApiErrorCatalog.MALFORMED.code(),
-                ApiErrorCatalog.MALFORMED.detail(), ApiErrorCatalog.MALFORMED.logLevel());
+        return ApiErrorCatalog.clientError(status);
     }
 
     /**

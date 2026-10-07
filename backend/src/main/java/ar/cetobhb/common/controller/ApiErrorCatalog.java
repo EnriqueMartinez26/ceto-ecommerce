@@ -13,6 +13,7 @@ import ar.cetobhb.orders.domain.ReservationNotExpiredException;
 import java.util.Map;
 import org.slf4j.event.Level;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 
 /**
  * Exception-to-response table (REQ-ERR-03). Every {@code detail} is a fixed neutral English string: it never carries a
@@ -33,6 +34,8 @@ final class ApiErrorCatalog {
             "The method is not allowed for this resource.", null);
     static final ApiError NOT_FOUND = new ApiError(HttpStatus.NOT_FOUND, "NOT_FOUND",
             "The resource was not found.", null);
+    static final ApiError PAYLOAD_TOO_LARGE = new ApiError(HttpStatus.CONTENT_TOO_LARGE, "PAYLOAD_TOO_LARGE",
+            "The request is too large.", null);
     static final ApiError CONFLICT = new ApiError(HttpStatus.CONFLICT, "CONFLICT",
             "The request conflicts with the current state.", Level.WARN);
     static final ApiError SERVICE_BUSY = new ApiError(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_BUSY",
@@ -58,6 +61,25 @@ final class ApiErrorCatalog {
             ReservationNotExpiredException.class, INTERNAL);
 
     private ApiErrorCatalog() {
+    }
+
+    /**
+     * Row for a framework 4xx that has no dedicated mapping: keeps the status and derives the code from it, so a 410 or
+     * 422 is never mislabelled as an unreadable body.
+     */
+    static ApiError clientError(HttpStatusCode status) {
+        return switch (status.value()) {
+            case 404 -> NOT_FOUND;
+            case 405 -> METHOD_NOT_ALLOWED;
+            case 406 -> NOT_ACCEPTABLE;
+            case 413 -> PAYLOAD_TOO_LARGE;
+            case 415 -> UNSUPPORTED_MEDIA_TYPE;
+            default -> {
+                HttpStatus known = HttpStatus.resolve(status.value());
+                yield new ApiError(known == null ? HttpStatus.BAD_REQUEST : known, "BAD_REQUEST",
+                        "The request cannot be processed.", Level.DEBUG);
+            }
+        };
     }
 
     static Map<Class<? extends DomainException>, ApiError> domainErrors() {
