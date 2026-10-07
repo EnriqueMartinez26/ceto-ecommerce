@@ -22,6 +22,10 @@ import ar.cetobhb.support.BurstRunner.Report;
 import ar.cetobhb.support.MutableClock;
 import ar.cetobhb.support.StockReconciliation;
 import ar.cetobhb.support.StockReconciliation.StockDrift;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -30,8 +34,10 @@ import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -363,6 +369,109 @@ class OrderExpiryIT extends AbstractPostgresIT {
             jdbc.update("INSERT INTO inventory_stock (product_id, on_hand, reserved) VALUES (?, 10, 3)", broken);
         }
     }
+
+    @Test
+    void expiryRejectsAnActiveCallerTransaction() {
+        long b = base("B", 5);
+        long id = order(line(b, 2));
+        at(RESERVATION);
+
+        assertThatThrownBy(() -> new TransactionTemplate(txManager).execute(status -> expire(BATCH)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("cannot run inside an active");
+
+        assertThat(status(id)).isEqualTo("PAGO_PENDIENTE");
+        assertStock(b, 5, 2);
+    }
+
+    @Test
+    void theFallbackErrorLogCarriesTheExceptionClassAndSqlStateButNoProductName() {
+        long healthy = base("H", 10);
+        long secret = base("SecretProductName", 10);
+        long h1 = order(line(healthy, 1));
+        long failing = order(line(secret, 2));
+        at(RESERVATION);
+        jdbc.execute("CREATE FUNCTION fail_expiry_for_test() RETURNS trigger AS $$ BEGIN"
+                + " RAISE EXCEPTION 'secret detail' USING ERRCODE = '23514'; END $$ LANGUAGE plpgsql");
+        jdbc.execute("CREATE TRIGGER fail_expiry_for_test BEFORE UPDATE ON orders FOR EACH ROW WHEN (OLD.id = "
+                + failing + ") EXECUTE FUNCTION fail_expiry_for_test()");
+        Logger logger = (Logger) LoggerFactory.getLogger(OrderLifecycleService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            ExpiryResult result = lifecycle.expireDueOrders(BATCH);
+
+            assertThat(result.expiredOrderIds()).containsExactly(h1);
+            assertThat(result.failedOrderIds()).containsExactly(failing);
+            List<String> errors = appender.list.stream().filter(e -> e.getLevel() == Level.ERROR)
+                    .map(ILoggingEvent::getFormattedMessage).toList();
+            assertThat(errors).singleElement().satisfies(message -> {
+                assertThat(message).matches("Could not expire order " + failing + ": \\w+ \\(SQLState 23514\\)");
+                assertThat(message).doesNotContain("SecretProductName").doesNotContain("secret detail");
+            });
+        } finally {
+            logger.detachAppender(appender);
+            jdbc.execute("DROP TRIGGER fail_expiry_for_test ON orders");
+            jdbc.execute("DROP FUNCTION fail_expiry_for_test()");
+        }
+    }
+
+    @Test
+    void theFallbackSkipsAnOrderPaidWhileItWaitedForItsLockInsteadOfFailingIt() {
+        long healthy = base("H", 10);
+        long broken = base("K", 10);
+        long corrupt = order(line(broken, 3));
+        long racing = order(line(healthy, 2));
+        at(RESERVATION);
+        jdbc.update("DELETE FROM inventory_stock WHERE product_id = ?", broken);
+        try {
+            // A payment transaction holds the racing order: the batch skips it (SKIP LOCKED), locks the corrupt one
+            // and fails, so the fallback reads both ids and blocks on the racing order until the payment commits.
+            AtomicReference<CompletableFuture<ExpiryResult>> run = new AtomicReference<>();
+            new TransactionTemplate(txManager).executeWithoutResult(status -> {
+                orders.lockById(racing).orElseThrow();
+                run.set(CompletableFuture.supplyAsync(() -> lifecycle.expireDueOrders(BATCH)));
+                awaitFallbackBlockedOnTheOrderLock();
+                lifecycle.markPaid(racing);
+            });
+
+            ExpiryResult result = run.get().orTimeout(30, TimeUnit.SECONDS).join();
+
+            assertThat(result.expiredOrderIds()).isEmpty();
+            assertThat(result.failedOrderIds()).containsExactly(corrupt);
+            assertThat(status(racing)).isEqualTo("PAGADO");
+            assertStock(healthy, 8, 0);
+        } finally {
+            jdbc.update("INSERT INTO inventory_stock (product_id, on_hand, reserved) VALUES (?, 10, 3)", broken);
+        }
+    }
+
+    /**
+     * Polls pg_stat_activity until a backend waits on a lock (no fixed sleeps). Not scoped to a query (a backend
+     * blocked on a transaction id reports an empty query text): the payment transaction is the only lock holder in
+     * the test, so the only possible waiter is the fallback.
+     */
+    private void awaitFallbackBlockedOnTheOrderLock() {
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (System.nanoTime() < deadline) {
+            Integer blocked = jdbc.queryForObject(
+                    "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"
+                            + " AND wait_event_type = 'Lock'",
+                    Integer.class);
+            if (blocked != null && blocked > 0) {
+                return;
+            }
+            try {
+                Thread.sleep(25);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        }
+        throw new AssertionError("the fallback never blocked on the order row lock within 15s");
+    }
+
     @Test
     void expiryRacingPaymentsOfPastDueOrdersLeavesEachOrderInExactlyOneFinalState() {
         long b = base("B", 100);
