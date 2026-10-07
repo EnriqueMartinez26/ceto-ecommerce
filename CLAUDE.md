@@ -214,8 +214,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    precios, descuentos y total salen de la base. El cálculo (`OrderTotals`)
    es `BigDecimal` exacto y rechaza lo que no entra en `NUMERIC(12,2)`
    (`OrderTotalsTest`). El contrato de entrada (`PlaceOrderCommand`) no tiene
-   campos de precio ni total (`PlaceOrderCommandContractTest`). **[guarda
-   pendiente: que el servicio use `OrderTotals` con precios de la base]**
+   campos de precio ni total (`PlaceOrderCommandContractTest`). El servicio
+   de alta (`OrderPlacementService`) toma precios y nombres de la base y
+   calcula el total con `OrderTotals`, aunque el precio cambie después
+   (`OrderPlacementIT.lineSnapshotsAndTotalsComeFromDatabasePrices`,
+   `aLaterPriceChangeDoesNotTouchPlacedLinesOrTotal`).
 8. **Dinero en `BigDecimal` / `NUMERIC(12,2)`**, nunca `double` ni `float`.
    Sumas y reportes se agregan en SQL, no cargando listas a memoria.
 9. **Número de pedido legible** (`CETO-000123`) separado del id interno: es
