@@ -12,12 +12,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.core.type.ClassMetadata;
@@ -31,14 +33,21 @@ import org.springframework.core.type.classreading.SimpleMetadataReaderFactory;
  * reach {@code JavaMigration} through abstract base classes or intermediate interfaces. This is a static
  * guard on the migration sources (a text scan, it does not parse SQL), not a runtime proof that no row exists
  * after migrating.
+ *
+ * <p>KNOWN LIMITS (accepted, this guard is final): string literals are not stripped, so {@code 'copy of'}
+ * inside a literal can false-positive, and {@code SELECT '--'; INSERT ...} on one line can hide an INSERT
+ * because the {@code --} inside the literal is treated as a comment start. The scan scope is pinned to
+ * {@code classpath:db/migration} by {@link #flywayLocationsResolveOnlyToTheScannedDirectory()}.
  */
 class NoSeedDataInMigrationsTest {
 
     private static final String JAVA_MIGRATION = "org.flywaydb.core.api.migration.JavaMigration";
+    private static final String DEFAULT_LOCATION = "classpath:db/migration";
     private static final Pattern BLOCK_COMMENT = Pattern.compile("/\\*.*?\\*/", Pattern.DOTALL);
     private static final Pattern LINE_COMMENT = Pattern.compile("--[^\\r\\n]*");
     private static final Pattern DATA_STATEMENT = Pattern.compile(
-            "\\b(?:insert\\s+into|merge\\s+into)\\b|\\bcopy\\s+", Pattern.CASE_INSENSITIVE);
+            "\\b(?:insert\\s+into|merge\\s+into)\\b|\\bcopy(?:\\s+[\\w\"]|\\s*\\()",
+            Pattern.CASE_INSENSITIVE);
 
     @TempDir
     Path tempDir;
@@ -48,6 +57,20 @@ class NoSeedDataInMigrationsTest {
         ClassLoader classLoader = NoSeedDataInMigrationsTest.class.getClassLoader();
         assertThat(migrationResources(classLoader, "sql")).as("SQL migrations on the classpath").isNotEmpty();
         assertThat(seedDataMigrations(classLoader)).as("migrations with INSERT/COPY/MERGE statements").isEmpty();
+    }
+
+    @Test
+    void flywayLocationsResolveOnlyToTheScannedDirectory() {
+        YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
+        yaml.setResources(new PathMatchingResourcePatternResolver().getResource("classpath:application.yml"));
+        Properties config = yaml.getObject();
+        assertThat(config).isNotNull();
+        String locations = config.getProperty("spring.flyway.locations");
+        assertThat(locations == null ? DEFAULT_LOCATION : locations.trim())
+                .as("effective spring.flyway.locations (Flyway default when unset)")
+                .isEqualTo(DEFAULT_LOCATION);
+        assertThat(config.stringPropertyNames()).as("no indexed flyway locations")
+                .noneMatch(name -> name.startsWith("spring.flyway.locations["));
     }
 
     @Test
@@ -96,6 +119,7 @@ class NoSeedDataInMigrationsTest {
             "COPY\tproducts FROM '/tmp/data.csv';",
             "COPY\r\nproducts FROM '/tmp/data.csv';",
             "COPY (SELECT 1) TO '/tmp/out.csv';",
+            "COPY(SELECT 1) TO '/tmp/out.csv';",
             "MERGE INTO products p USING src s ON p.id = s.id WHEN MATCHED THEN DELETE;",
             "CREATE TABLE t (id int);\n/* ok */ INSERT INTO t VALUES (1);"})
     void detectsDataStatementsRegardlessOfCaseAndWhitespace(String sql) {
