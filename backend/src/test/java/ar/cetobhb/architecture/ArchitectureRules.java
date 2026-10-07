@@ -7,8 +7,8 @@ import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.nam
 import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.nameMatching;
 import static com.tngtech.archunit.core.domain.properties.HasOwner.Predicates.With.owner;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
-import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 
 import ar.cetobhb.common.config.ClockConfig;
@@ -16,6 +16,7 @@ import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaConstructorCall;
+import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
@@ -32,6 +33,7 @@ import java.util.Locale;
 import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Rule definitions shared by the real-code check and the fixture-based "rule bites" proof. */
@@ -66,16 +68,38 @@ final class ArchitectureRules {
             .that().resideOutsideOfPackage(SERVICES)
             .should().beAnnotatedWith(Transactional.class);
 
-    private static final ArchRule NO_TRANSACTIONAL_METHODS_OUTSIDE_SERVICES = noMethods()
+    /**
+     * Narrow exemption: a repository method may carry @Transactional only with propagation MANDATORY, i.e. to
+     * require a transaction opened by the service (row-lock queries are meaningless without one) and never to open
+     * one itself. Any other propagation, or MANDATORY outside a repository package, still fails.
+     */
+    private static final ArchCondition<JavaMethod> BE_IN_SERVICE_OR_MANDATORY_IN_REPOSITORY =
+            new ArchCondition<>("be declared in a ..service.. package, or in a ..repository.. package with"
+                    + " propagation MANDATORY") {
+                @Override
+                public void check(JavaMethod method, ConditionEvents events) {
+                    JavaClass owner = method.getOwner();
+                    boolean inService = resideInAPackage(SERVICES).test(owner);
+                    boolean mandatoryInRepository = resideInAPackage(REPOSITORIES).test(owner)
+                            && method.getAnnotationOfType(Transactional.class).propagation() == Propagation.MANDATORY;
+                    if (!inService && !mandatoryInRepository) {
+                        events.add(SimpleConditionEvent.violated(method, method.getFullName()
+                                + " is @Transactional outside a service package (repositories may only use MANDATORY) in "
+                                + method.getSourceCodeLocation()));
+                    }
+                }
+            };
+
+    // Not allowEmptyShould: CatalogService carries @Transactional methods, so a rename or move
+    // that empties this rule must fail instead of passing silently.
+    private static final ArchRule NO_TRANSACTIONAL_METHODS_OUTSIDE_SERVICES = methods()
             .that().areAnnotatedWith(Transactional.class)
-            // Not allowEmptyShould: CatalogService carries @Transactional methods, so a rename or move
-            // that empties this rule must fail instead of passing silently.
-            .should().beDeclaredInClassesThat().resideOutsideOfPackage(SERVICES);
+            .should(BE_IN_SERVICE_OR_MANDATORY_IN_REPOSITORY);
 
     static final ArchRule TRANSACTIONAL_ONLY_IN_SERVICES = CompositeArchRule
             .of(NO_TRANSACTIONAL_CLASSES_OUTSIDE_SERVICES)
             .and(NO_TRANSACTIONAL_METHODS_OUTSIDE_SERVICES)
-            .as("@Transactional is only allowed in ..service.. packages");
+            .as("@Transactional is only allowed in ..service.. packages (repositories: propagation MANDATORY only)");
 
     static final ArchRule DOMAIN_IS_FRAMEWORK_FREE = noClasses()
             .that().resideInAPackage(DOMAIN)

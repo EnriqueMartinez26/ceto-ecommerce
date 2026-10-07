@@ -59,6 +59,29 @@ class ArchitectureRulesTest {
                 .hasMessageContaining("boundaryMethod");
     }
 
+    @Test
+    void transactionalRuleFailsOnRepositoryMethodsThatAreNotMandatory() {
+        assertThatThrownBy(() -> ArchitectureRules.TRANSACTIONAL_ONLY_IN_SERVICES.check(fixtures("txrepo")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("NonMandatoryRepository")
+                .hasMessageContaining("defaultPropagation")
+                .hasMessageContaining("requiresNew");
+    }
+
+    @Test
+    void transactionalRuleAllowsMandatoryOnRepositoryMethods() {
+        assertThatCode(() -> ArchitectureRules.TRANSACTIONAL_ONLY_IN_SERVICES.check(fixtures("txmandatory")))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void transactionalRuleStillFailsOnMandatoryOutsideRepositories() {
+        assertThatThrownBy(() -> ArchitectureRules.TRANSACTIONAL_ONLY_IN_SERVICES.check(fixtures("txmandatoryweb")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("MandatoryOutsideRepository")
+                .hasMessageContaining("mandatoryInTheWrongLayer");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
             "instantNow", "localDateTimeNow", "localDateNow", "localDateNowWithZone",

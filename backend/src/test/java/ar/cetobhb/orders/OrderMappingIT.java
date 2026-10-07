@@ -29,6 +29,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -131,27 +132,49 @@ class OrderMappingIT extends AbstractPostgresIT {
         assertThat(second.lineTotal()).isEqualTo(new BigDecimal("250.50"));
     }
 
-    private void walk(Consumer<Order> path, Consumer<Order> assertions) {
+    /** One lifecycle step and the status Postgres must hold right after it is committed. */
+    private record Step(OrderStatus statusAfter, Consumer<Order> action) {}
+
+    private static Step step(OrderStatus statusAfter, Consumer<Order> action) {
+        return new Step(statusAfter, action);
+    }
+
+    /**
+     * Applies each step in its own transaction (flush, then commit), so every intermediate state is written to
+     * Postgres and checked by the V3 CHECKs, not only the final one. After each step the stored status is read
+     * back with plain SQL and the version must have advanced by exactly one.
+     */
+    private void walk(List<Step> steps, Consumer<Order> assertions) {
         long id = persist(Order.place(newOrder(UUID.randomUUID(), RESERVED_UNTIL), CREATED));
-        tx.executeWithoutResult(status -> {
-            Order order = orders.findById(id).orElseThrow();
-            path.accept(order);
-        });
+        long expectedVersion = 0;
+        for (Step step : steps) {
+            tx.executeWithoutResult(status -> {
+                Order order = orders.findById(id).orElseThrow();
+                step.action().accept(order);
+                em.flush();
+                em.clear();
+            });
+            expectedVersion++;
+
+            assertThat(jdbc.queryForObject("SELECT status FROM orders WHERE id = ?", String.class, id))
+                    .isEqualTo(step.statusAfter().name());
+            assertThat(jdbc.queryForObject("SELECT version FROM orders WHERE id = ?", Long.class, id))
+                    .isEqualTo(expectedVersion);
+        }
 
         Order after = reload(id);
 
         assertions.accept(after);
         assertThat(after.reservedUntil()).isEqualTo(RESERVED_UNTIL);
-        assertThat(after.version()).isEqualTo(1L);
+        assertThat(after.version()).isEqualTo(expectedVersion);
     }
 
     @Test
     void happyPathIsPersistedAndSatisfiesEveryCheck() {
-        walk(order -> {
-            order.markPaid(LATER);
-            order.dispatch(LATER.plusSeconds(60));
-            order.deliver(LATER.plusSeconds(120));
-        }, order -> {
+        walk(List.of(
+                step(OrderStatus.PAGADO, order -> order.markPaid(LATER)),
+                step(OrderStatus.DESPACHADO, order -> order.dispatch(LATER.plusSeconds(60))),
+                step(OrderStatus.ENTREGADO, order -> order.deliver(LATER.plusSeconds(120)))), order -> {
             assertThat(order.status()).isEqualTo(OrderStatus.ENTREGADO);
             assertThat(order.paidAt()).isEqualTo(LATER);
             assertThat(order.dispatchedAt()).isEqualTo(LATER.plusSeconds(60));
@@ -163,7 +186,7 @@ class OrderMappingIT extends AbstractPostgresIT {
     @Test
     void payingAfterReservedUntilIsPersisted() {
         Instant afterDeadline = RESERVED_UNTIL.plusSeconds(30);
-        walk(order -> order.markPaid(afterDeadline), order -> {
+        walk(List.of(step(OrderStatus.PAGADO, order -> order.markPaid(afterDeadline))), order -> {
             assertThat(order.status()).isEqualTo(OrderStatus.PAGADO);
             assertThat(order.paidAt()).isEqualTo(afterDeadline);
         });
@@ -172,7 +195,7 @@ class OrderMappingIT extends AbstractPostgresIT {
     @ParameterizedTest
     @EnumSource(value = CancelReason.class, names = {"CANCELLED_BY_ADMIN", "CANCELLED_BY_BUYER"})
     void cancellingAPendingOrderIsPersistedWithItsPair(CancelReason reason) {
-        walk(order -> order.cancel(reason, LATER), order -> {
+        walk(List.of(step(OrderStatus.CANCELADO, order -> order.cancel(reason, LATER))), order -> {
             assertThat(order.status()).isEqualTo(OrderStatus.CANCELADO);
             assertThat(order.cancelReason()).isEqualTo(reason);
             assertThat(order.cancelledAt()).isEqualTo(LATER);
@@ -182,10 +205,10 @@ class OrderMappingIT extends AbstractPostgresIT {
 
     @Test
     void cancellingAPaidOrderKeepsPaidAtAndSetsThePair() {
-        walk(order -> {
-            order.markPaid(LATER);
-            order.cancel(CancelReason.CANCELLED_BY_ADMIN, LATER.plusSeconds(5));
-        }, order -> {
+        walk(List.of(
+                step(OrderStatus.PAGADO, order -> order.markPaid(LATER)),
+                step(OrderStatus.CANCELADO,
+                        order -> order.cancel(CancelReason.CANCELLED_BY_ADMIN, LATER.plusSeconds(5)))), order -> {
             assertThat(order.status()).isEqualTo(OrderStatus.CANCELADO);
             assertThat(order.paidAt()).isEqualTo(LATER);
             assertThat(order.cancelledAt()).isEqualTo(LATER.plusSeconds(5));
@@ -194,7 +217,7 @@ class OrderMappingIT extends AbstractPostgresIT {
 
     @Test
     void expiringAPendingOrderIsPersistedAsUnpaidExpired() {
-        walk(order -> order.expire(RESERVED_UNTIL), order -> {
+        walk(List.of(step(OrderStatus.CANCELADO, order -> order.expire(RESERVED_UNTIL))), order -> {
             assertThat(order.status()).isEqualTo(OrderStatus.CANCELADO);
             assertThat(order.cancelReason()).isEqualTo(CancelReason.EXPIRED);
             assertThat(order.cancelledAt()).isEqualTo(RESERVED_UNTIL);
@@ -256,6 +279,23 @@ class OrderMappingIT extends AbstractPostgresIT {
 
         assertThat(orders.findByIdempotencyKey(key)).get().extracting(Order::id).isEqualTo(id);
         assertThat(orders.findByIdempotencyKey(UUID.randomUUID())).isEmpty();
+    }
+
+    @Test
+    void lockQueriesWithoutATransactionAreRejected() {
+        assertThatThrownBy(() -> orders.lockById(1L)).isInstanceOf(IllegalTransactionStateException.class);
+        assertThatThrownBy(() -> orders.lockExpiredBatch(CREATED, 10))
+                .isInstanceOf(IllegalTransactionStateException.class);
+    }
+
+    @Test
+    void lockQueriesInsideATransactionStillWork() {
+        long id = persist(Order.place(newOrder(UUID.randomUUID(), RESERVED_UNTIL), CREATED));
+
+        tx.executeWithoutResult(status -> {
+            assertThat(orders.lockById(id)).isPresent();
+            assertThat(orders.lockExpiredBatch(RESERVED_UNTIL, 10)).extracting(Order::id).containsExactly(id);
+        });
     }
 
     @Test
