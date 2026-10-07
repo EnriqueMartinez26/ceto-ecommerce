@@ -1,0 +1,13 @@
+{
+  "id": 1,
+  "name": "Solid shampoo",
+  "kind": "BASE",
+  "comboUnits": null,
+  "price": "45000.00",
+  "compareAtPrice": "50000.00",
+  "availability": "AVAILABLE",
+  "maxQuantity": 30,
+  "presentation": "100 g bar",
+  "ingredients": "Coconut oil, shea butter",
+  "usage": "Lather on wet hair"
+}

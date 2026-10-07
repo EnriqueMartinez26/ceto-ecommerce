@@ -1,0 +1,34 @@
+{
+  "products": [
+    {
+      "id": 1,
+      "name": "Solid shampoo",
+      "kind": "BASE",
+      "comboUnits": null,
+      "price": "45000.00",
+      "compareAtPrice": "50000.00",
+      "availability": "AVAILABLE",
+      "maxQuantity": 30
+    },
+    {
+      "id": 2,
+      "name": "Shampoo pack",
+      "kind": "COMBO",
+      "comboUnits": 3,
+      "price": "120000.50",
+      "compareAtPrice": null,
+      "availability": "AVAILABLE",
+      "maxQuantity": 30
+    },
+    {
+      "id": 3,
+      "name": "Cream",
+      "kind": "BASE",
+      "comboUnits": null,
+      "price": "100.00",
+      "compareAtPrice": null,
+      "availability": "SOLD_OUT",
+      "maxQuantity": 30
+    }
+  ]
+}
