@@ -11,7 +11,7 @@ spring:
 ceto:
   orders:
     reservation-hours: ${ORDER_RESERVATION_HOURS:48}
-    max-units-per-line: ${ORDER_MAX_UNITS_PER_LINE:10}
+    max-units-per-line: ${ORDER_MAX_UNITS_PER_LINE:30}
     max-lines-per-order: 20
     expiry:
       batch-size: 100

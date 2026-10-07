@@ -13,7 +13,7 @@ import org.springframework.validation.annotation.Validated;
  * expiry block is rejected by {@code @NotNull}). Defaults live in application.yml.
  *
  * @param reservationHours   hours a PAGO_PENDIENTE order keeps its reservation (D-20261006-09)
- * @param maxUnitsPerLine    maximum quantity of one line (D-20261007-02)
+ * @param maxUnitsPerLine    maximum quantity of one line (D-20261007-13)
  * @param maxLinesPerOrder   maximum number of lines per order (D-20261007-05)
  * @param expiry             settings of the expiry job
  */

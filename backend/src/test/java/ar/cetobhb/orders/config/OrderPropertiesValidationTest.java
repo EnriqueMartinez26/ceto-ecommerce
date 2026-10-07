@@ -97,7 +97,7 @@ class OrderPropertiesValidationTest {
             assertThat(context).hasNotFailed();
             OrderProperties p = context.getBean(OrderProperties.class);
             assertThat(p.reservationHours()).isEqualTo(48);
-            assertThat(p.maxUnitsPerLine()).isEqualTo(10);
+            assertThat(p.maxUnitsPerLine()).isEqualTo(30);
             assertThat(p.maxLinesPerOrder()).isEqualTo(20);
             assertThat(p.expiry().batchSize()).isEqualTo(100);
             assertThat(p.expiry().fixedDelayMs()).isEqualTo(60_000);

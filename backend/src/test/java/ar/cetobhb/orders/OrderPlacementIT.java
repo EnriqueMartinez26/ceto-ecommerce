@@ -289,7 +289,7 @@ class OrderPlacementIT extends AbstractPostgresIT {
         return Stream.of(
                 scenario("quantity 0", ReasonCode.QUANTITY_BELOW_MIN, id -> withLines(List.of(line(id, 0)))),
                 scenario("quantity -1", ReasonCode.QUANTITY_BELOW_MIN, id -> withLines(List.of(line(id, -1)))),
-                scenario("quantity 11", ReasonCode.QUANTITY_ABOVE_MAX, id -> withLines(List.of(line(id, 11)))),
+                scenario("quantity 31", ReasonCode.QUANTITY_ABOVE_MAX, id -> withLines(List.of(line(id, 31)))),
                 scenario("empty cart", ReasonCode.EMPTY_CART, id -> withLines(List.of())),
                 scenario("duplicate line", ReasonCode.DUPLICATE_PRODUCT_LINE,
                         id -> withLines(List.of(line(id, 1), line(id, 2)))),

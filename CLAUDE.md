@@ -468,9 +468,9 @@ No se implementa nada de esta lista asumiendo una respuesta: se pregunta.
   mensual y del desarrollo.
 - Permiso de cada persona para usar los testimonios de Instagram.
 - Datos legales y del producto (§6).
-- Tope de unidades por línea (10, D-20261007-02) pendiente de OK de la
-  clienta. En el cambio del checkout: límite de pedidos `PAGO_PENDIENTE`
-  por teléfono e IP, porque una reserva sin pago bloquea stock 48 h.
+- Tope de unidades por línea: 30 (D-20261007-13, configurable). En el cambio
+  del checkout: límite de pedidos `PAGO_PENDIENTE` por teléfono e IP, porque
+  una reserva sin pago bloquea stock 48 h.
 - Del lado técnico, todavía no existen: CI, pre-commit, backups ni las
   guardas que siguen marcadas como pendientes (los topes de la carga de
   reseñas y la configuración de producción fuera de `OrderProperties`).
