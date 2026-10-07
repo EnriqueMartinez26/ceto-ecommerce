@@ -197,8 +197,9 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 7. **El total lo calcula el servidor.** El cliente manda ids y cantidades;
    precios, descuentos y total salen de la base. El cálculo (`OrderTotals`)
    es `BigDecimal` exacto y rechaza lo que no entra en `NUMERIC(12,2)`
-   (`OrderTotalsTest`). **[guarda pendiente: que el servicio lo use y que el
-   contrato no acepte precios]**
+   (`OrderTotalsTest`). El contrato de entrada (`PlaceOrderCommand`) no tiene
+   campos de precio ni total (`PlaceOrderCommandContractTest`). **[guarda
+   pendiente: que el servicio use `OrderTotals` con precios de la base]**
 8. **Dinero en `BigDecimal` / `NUMERIC(12,2)`**, nunca `double` ni `float`.
    Sumas y reportes se agregan en SQL, no cargando listas a memoria.
 9. **Número de pedido legible** (`CETO-000123`) separado del id interno: es
@@ -206,8 +207,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    `OrderNumber.format` usa `Locale.ROOT` y no trunca por encima de 999999
    (`OrderNumberTest`).
 10. **Checkout idempotente**: el front manda una clave de idempotencia por
-    intento; un doble tap no crea dos pedidos ni reserva dos veces.
-    **[guarda pendiente]**
+    intento; un doble tap no crea dos pedidos ni reserva dos veces. La huella
+    del pedido (`OrderRequestFingerprint` v1, SHA-256 de la forma canónica
+    normalizada, sin la clave ni precios) está fijada por un valor de oro en
+    `OrderRequestFingerprintTest`: no cambiar la forma canónica sin subir la
+    versión. **[guarda pendiente: test de ráfaga con la misma clave, S9b]**
 
 ### Checkout, WhatsApp y envío
 
