@@ -144,8 +144,12 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 1. **El stock se cuenta en unidades del producto base.** Cada producto base
    tiene `on_hand` (físico) y `reserved` (comprometido en pedidos sin
    pagar). La base lo sostiene: `CHECK (on_hand >= 0 AND reserved >= 0 AND
-   reserved <= on_hand)`. Si el código falla, la base aborta la sobreventa.
-   **[guarda pendiente: migración + test con Postgres real]**
+   reserved <= on_hand)` (`inventory_stock_rule1_ck`, migración
+   `V2__create_inventory_stock.sql`). Si el código falla, la base aborta la
+   sobreventa: `InventoryStockConstraintIT` viola cada rama con SQL crudo
+   sobre Postgres real. `InventoryService` valida antes en Java
+   (`InsufficientStockException`), la base es la red de seguridad
+   (`InventoryServiceIT`).
 2. **Un combo no tiene stock propio.** Es un producto con precio propio y una
    relación "N unidades del producto base". Su disponible se deriva:
    `⌊(on_hand − reserved) / N⌋`. "Agotado" se calcula, no se guarda como
