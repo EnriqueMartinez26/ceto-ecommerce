@@ -3,7 +3,9 @@ package ar.cetobhb.catalog.service;
 import ar.cetobhb.catalog.domain.CatalogRules;
 import ar.cetobhb.catalog.domain.NewProduct;
 import ar.cetobhb.catalog.domain.ProductNotAvailableException;
+import ar.cetobhb.catalog.domain.ProductNotFoundException;
 import ar.cetobhb.catalog.domain.ProductSnapshot;
+import ar.cetobhb.catalog.domain.ProductView;
 import ar.cetobhb.catalog.repository.Product;
 import ar.cetobhb.catalog.repository.ProductRepository;
 import ar.cetobhb.common.domain.ReasonCode;
@@ -12,8 +14,10 @@ import java.time.Clock;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -94,5 +98,21 @@ public class CatalogService {
             throw new ProductNotAvailableException(unavailable);
         }
         return found;
+    }
+
+    /**
+     * Storefront list (REQ-STO-02): visible products by id ascending, at most {@code limit}. Read-only, no locks.
+     *
+     * @throws IllegalArgumentException when {@code limit} is below 1
+     */
+    @Transactional(readOnly = true)
+    public List<ProductView> listVisible(int limit) {
+        return products.findVisible(PageRequest.of(0, limit)).stream().map(Product::toView).toList();
+    }
+
+    /** One visible product; inactive, hidden and nonexistent ids are the same {@link ProductNotFoundException}. */
+    @Transactional(readOnly = true)
+    public ProductView findVisible(long id) {
+        return products.findVisibleById(id).map(Product::toView).orElseThrow(() -> new ProductNotFoundException(id));
     }
 }

@@ -1,6 +1,7 @@
 package ar.cetobhb.common.controller;
 
 import ar.cetobhb.catalog.domain.ProductNotAvailableException;
+import ar.cetobhb.catalog.domain.ProductNotFoundException;
 import ar.cetobhb.common.domain.DomainException;
 import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
@@ -58,6 +59,7 @@ final class ApiErrorCatalog {
             Map.entry(IllegalOrderTransitionException.class, CONFLICT),
             Map.entry(StockAlreadyConfiguredException.class, CONFLICT),
             Map.entry(OrderNotFoundException.class, NOT_FOUND),
+            Map.entry(ProductNotFoundException.class, NOT_FOUND),
             Map.entry(ReservationNotExpiredException.class, INTERNAL));
 
     private ApiErrorCatalog() {

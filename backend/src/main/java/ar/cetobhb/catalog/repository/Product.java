@@ -2,6 +2,7 @@ package ar.cetobhb.catalog.repository;
 
 import ar.cetobhb.catalog.domain.NewProduct;
 import ar.cetobhb.catalog.domain.ProductSnapshot;
+import ar.cetobhb.catalog.domain.ProductView;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -101,5 +102,10 @@ public class Product {
 
     public ProductSnapshot toSnapshot() {
         return new ProductSnapshot(id, name, price, compareAtPrice, comboBaseProductId, comboBaseUnits);
+    }
+
+    public ProductView toView() {
+        return new ProductView(id, name, price, compareAtPrice, comboBaseProductId, comboBaseUnits, presentation,
+                ingredients, usage);
     }
 }

@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ar.cetobhb.catalog.domain.ProductNotAvailableException;
+import ar.cetobhb.catalog.domain.ProductNotFoundException;
 import ar.cetobhb.common.domain.DomainException;
 import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
@@ -109,6 +110,7 @@ class ApiExceptionHandlerTest {
                         "CONFLICT"),
                 Arguments.of(new StockAlreadyConfiguredException(7L), 409, "CONFLICT"),
                 Arguments.of(new OrderNotFoundException(9L), 404, "NOT_FOUND"),
+                Arguments.of(new ProductNotFoundException(9L), 404, "NOT_FOUND"),
                 Arguments.of(new ReservationNotExpiredException(), 500, "INTERNAL_ERROR"),
                 Arguments.of(new DomainException("UNMAPPED"), 500, "INTERNAL_ERROR"),
                 Arguments.of(new DataIntegrityViolationException(SECRET), 409, "CONFLICT"),
