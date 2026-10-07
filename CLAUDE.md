@@ -91,10 +91,14 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   disponibilidad de combos, cálculo de totales) viven en clases de dominio
   sin Spring ni JPA, testeables con tests unitarios simples.
 - **Esquema solo por Flyway.** `spring.jpa.hibernate.ddl-auto=validate` (o
-  `none`) en todos los perfiles; nunca `update` ni `create`. Guardas:
-  `SchemaManagementGuardTest` (el arranque falla con otro valor, también por
-  variable de entorno) y `DdlAutoConfigFilesTest` (recorre los
-  `application*` del classpath).
+  `none`) en todos los perfiles; nunca `update` ni `create`. Tampoco se
+  admite generar esquema por las propiedades de JPA/Hibernate
+  (`schema-generation.database.action`, `hbm2ddl.auto`). Guardas: la
+  `SchemaManagementGuard` (`EnvironmentPostProcessor` registrado en
+  `META-INF/spring.factories`) aborta el arranque antes de crear cualquier
+  bean; la lógica está probada en `SchemaManagementCheckTest`, el cableado
+  en la app real en `SchemaGuardWiringIT`, y `DdlAutoConfigFilesTest`
+  recorre cada documento de los `application*` del classpath.
 - **Mails y avisos por outbox**: el servicio escribe una fila en
   `outbox_messages` en la misma transacción del cambio; un job la toma con
   `FOR UPDATE SKIP LOCKED`, la marca y recién después del commit manda.
