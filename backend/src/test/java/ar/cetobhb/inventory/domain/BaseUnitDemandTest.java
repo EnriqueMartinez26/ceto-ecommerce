@@ -43,6 +43,16 @@ class BaseUnitDemandTest {
     }
 
     @Test
+    void isEmptyOnlyUntilTheFirstLineIsAdded() {
+        BaseUnitDemand demand = new BaseUnitDemand();
+        assertThat(demand.isEmpty()).isTrue();
+
+        demand.addLine(1L, 1, 1);
+
+        assertThat(demand.isEmpty()).isFalse();
+    }
+
+    @Test
     void exposedViewIsReadOnly() {
         BaseUnitDemand demand = new BaseUnitDemand();
         demand.addLine(1L, 1, 1);

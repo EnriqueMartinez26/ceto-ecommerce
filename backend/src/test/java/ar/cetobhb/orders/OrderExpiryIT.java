@@ -216,6 +216,22 @@ class OrderExpiryIT extends AbstractPostgresIT {
     }
 
     @Test
+    void aBatchSizeOfExactlyOneIsAcceptedAndExpiresOneOrderPerRun() {
+        long b = base("B", 10);
+        long first = order(line(b, 1));
+        long second = order(line(b, 1));
+        at(RESERVATION.plusHours(1));
+
+        assertThat(expire(1)).isEqualTo(1);
+        assertThat(status(first)).isEqualTo("CANCELADO");
+        assertThat(status(second)).isEqualTo("PAGO_PENDIENTE");
+
+        assertThat(expire(1)).isEqualTo(1);
+        assertThat(status(second)).isEqualTo("CANCELADO");
+        assertStock(b, 10, 0);
+    }
+
+    @Test
     void aBatchSizeBelowOneIsRejected() {
         assertThatThrownBy(() -> expire(0)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> expire(-1)).isInstanceOf(IllegalArgumentException.class);

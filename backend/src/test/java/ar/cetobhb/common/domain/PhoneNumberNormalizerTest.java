@@ -56,6 +56,94 @@ class PhoneNumberNormalizerTest {
         assertThat(normalizer.normalize(input)).isEqualTo("+5493515551234");
     }
 
+    // Boundary tests for the Unicode ranges: first and last code point of each range are folded, the neighbours
+    // just outside are left untouched and rejected by the charset check.
+
+    @ParameterizedTest
+    @ValueSource(ints = {0x200E, 0x200F, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069})
+    void dropsEveryBidiMarkIncludingTheFirstAndLastOfEachRange(int codePoint) {
+        String input = "+54 9 351 555" + Character.toString(codePoint) + "1234";
+
+        assertThat(normalizer.normalize(input)).isEqualTo("+5493515551234");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0x2029, 0x2065, 0x206A})
+    void doesNotDropCodePointsJustOutsideTheBidiRanges(int codePoint) {
+        String input = "+54 9 351 555" + Character.toString(codePoint) + "1234";
+
+        assertInvalidPhone(input);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2015, 0x2212, 0xFF0D})
+    void foldsEveryDashToAHyphenIncludingTheFirstAndLastOfTheRange(int codePoint) {
+        String input = "+54 9 351 555" + Character.toString(codePoint) + "1234";
+
+        assertThat(normalizer.normalize(input)).isEqualTo("+5493515551234");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0x2016, 0x2211, 0xFF0E})
+    void doesNotFoldCodePointsJustOutsideTheDashSet(int codePoint) {
+        String input = "+54 9 351 555" + Character.toString(codePoint) + "1234";
+
+        assertInvalidPhone(input);
+    }
+
+    @Test
+    void foldsTheFirstAndLastFullwidthDigit() {
+        // U+FF10 (0) and U+FF19 (9) are the edges of the fullwidth digit range.
+        assertThat(normalizer.normalize("+54 9 351 555 ０９０９")).isEqualTo("+5493515550909");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0xFF0F, 0xFF1A})
+    void doesNotFoldCodePointsJustOutsideTheFullwidthDigits(int codePoint) {
+        String input = "+54 9 351 555 123" + Character.toString(codePoint);
+
+        assertInvalidPhone(input);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "+66 2 123 4567",   // Thai Bangkok landline: "+66 9 2123 4567" would be a valid mobile
+        "+51 1 123 4567",   // Peruvian Lima landline: "+51 9 1123 4567" would be a valid mobile
+        "+385 1 234 5678"   // Croatian Zagreb landline: "+385 9 1234 5678" would be a valid mobile
+    })
+    void doesNotTreatForeignFixedLinesAsAmbiguousArgentineNumbers(String landline) throws Exception {
+        // D-20261007-11 applies to Argentine numbers only. Each of these becomes a valid MOBILE if a 9 is
+        // inserted after the country code, so a normalizer that applied the rule to any region would accept them.
+        PhoneNumberUtil util = PhoneNumberUtil.getInstance();
+        assertThat(util.getNumberType(util.parse(landline, "AR"))).isEqualTo(PhoneNumberType.FIXED_LINE);
+
+        assertInvalidPhone(landline);
+    }
+
+    @Test
+    void rejectsAnArgentineTollFreeNumberAndDoesNotReadItAsAMobile() throws Exception {
+        PhoneNumberUtil util = PhoneNumberUtil.getInstance();
+        assertThat(util.getNumberType(util.parse("0800 555 1234", "AR"))).isEqualTo(PhoneNumberType.TOLL_FREE);
+
+        assertInvalidPhone("0800 555 1234");
+        assertInvalidPhone("+54 800 555 1234");
+    }
+
+    @Test
+    void readsAnArgentineTenDigitFixedLineAsTheMobileWithTheNinePrefix() throws Exception {
+        // Typed FIXED_LINE (no 15, no 9): ambiguous, so it is read as +54 9 plus the national number.
+        PhoneNumberUtil util = PhoneNumberUtil.getInstance();
+        assertThat(util.getNumberType(util.parse("+54 351 555 1234", "AR"))).isEqualTo(PhoneNumberType.FIXED_LINE);
+
+        assertThat(normalizer.normalize("+54 351 555 1234")).isEqualTo("+5493515551234");
+    }
+
+    private void assertInvalidPhone(String input) {
+        assertThatThrownBy(() -> normalizer.normalize(input))
+                .isInstanceOfSatisfying(ValidationException.class,
+                        e -> assertThat(e.reason()).isEqualTo(ReasonCode.INVALID_PHONE));
+    }
+
     @Test
     void stillRejectsLettersHiddenAmongLookalikes() {
         assertThatThrownBy(() -> normalizer.normalize("\u202A+54 9 351 555 CASA\u202C"))

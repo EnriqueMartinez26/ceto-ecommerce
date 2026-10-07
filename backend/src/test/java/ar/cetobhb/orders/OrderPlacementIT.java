@@ -349,6 +349,24 @@ class OrderPlacementIT extends AbstractPostgresIT {
     }
 
     @Test
+    void placingInTheCallersTransactionReturnsTheOrderItCreated() {
+        long b = base("Base", "100.00", 5);
+        TransactionTemplate outer = new TransactionTemplate(txManager);
+
+        PlacedOrder placed = outer.execute(status -> placement.placeInCurrentTransaction(command(line(b, 2))));
+
+        assertThat(placed).isNotNull();
+        assertThat(placed.orderNumber()).isEqualTo("CETO-000001");
+        assertThat(placed.total()).isEqualByComparingTo("200.00");
+        assertThat(placed.reservedUntil()).isEqualTo(MutableClock.START.plus(Duration.ofHours(48)));
+        assertThat(placed.replayed()).isFalse();
+        Map<String, Object> stored = jdbc.queryForMap("SELECT id, order_number FROM orders");
+        assertThat(placed.orderId()).isEqualTo(((Number) stored.get("id")).longValue());
+        assertThat(stored).containsEntry("order_number", placed.orderNumber());
+        assertThat(reserved(b)).isEqualTo(2);
+    }
+
+    @Test
     void placingInAReadOnlyTransactionIsRejected() {
         long b = base("Base", "100.00", 5);
         PlaceOrderCommand cmd = command(line(b, 1));

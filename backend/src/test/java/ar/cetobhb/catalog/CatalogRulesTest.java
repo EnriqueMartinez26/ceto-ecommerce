@@ -49,6 +49,48 @@ class CatalogRulesTest {
                 .doesNotThrowAnyException();
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "0.00", "-0.01", "-1"})
+    void zeroOrNegativePriceIsRejected(String price) {
+        assertInvalid(ReasonCode.INVALID_PRICE_PAIR,
+                () -> CatalogRules.requireValidPrices(new BigDecimal(price), null));
+        assertInvalid(ReasonCode.INVALID_PRICE_PAIR,
+                () -> CatalogRules.requireValidPrices(new BigDecimal("5.00"), new BigDecimal(price)));
+    }
+
+    @Test
+    void theSmallestPositivePriceIsAccepted() {
+        assertThatCode(() -> CatalogRules.requireValidPrices(new BigDecimal("0.01"), null))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> CatalogRules.requireValidPrices(new BigDecimal("0.01"), new BigDecimal("0.02")))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void priceWithMoreThanTwoDecimalsIsRejectedButTrailingZerosAreFine() {
+        assertInvalid(ReasonCode.INVALID_PRICE_PAIR,
+                () -> CatalogRules.requireValidPrices(new BigDecimal("1.001"), null));
+        assertThatCode(() -> CatalogRules.requireValidPrices(new BigDecimal("1.500"), null))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void compareAtPriceMustBeStrictlyGreaterThanThePrice() {
+        assertInvalid(ReasonCode.INVALID_PRICE_PAIR,
+                () -> CatalogRules.requireValidPrices(new BigDecimal("10.00"), new BigDecimal("10.00")));
+        assertInvalid(ReasonCode.INVALID_PRICE_PAIR,
+                () -> CatalogRules.requireValidPrices(new BigDecimal("10.00"), new BigDecimal("9.99")));
+        assertThatCode(() -> CatalogRules.requireValidPrices(new BigDecimal("10.00"), new BigDecimal("10.01")))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void comboUnitsMustBeAtLeastTwo() {
+        assertInvalid(ReasonCode.INVALID_COMBO_LINK, () -> CatalogRules.requireComboUnits(1));
+        assertInvalid(ReasonCode.INVALID_COMBO_LINK, () -> CatalogRules.requireComboUnits(0));
+        assertThatCode(() -> CatalogRules.requireComboUnits(2)).doesNotThrowAnyException();
+    }
+
     private static void assertInvalid(ReasonCode reason, org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
         assertThatThrownBy(call).isInstanceOfSatisfying(ValidationException.class,
                 e -> org.assertj.core.api.Assertions.assertThat(e.reason()).isEqualTo(reason));

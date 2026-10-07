@@ -155,6 +155,13 @@ class CatalogServiceIT extends AbstractPostgresIT {
     }
 
     @Test
+    void deactivatingAMissingProductNamesItsId() {
+        assertThatThrownBy(() -> catalog.deactivate(9999L))
+                .isInstanceOfSatisfying(ProductNotAvailableException.class,
+                        e -> assertThat(e.productIds()).containsExactly(9999L));
+    }
+
+    @Test
     void deactivateKeepsTheRowAndNoDeleteIsExposed() {
         ProductSnapshot base = catalog.createBase(product("Base", "100.00"));
 
