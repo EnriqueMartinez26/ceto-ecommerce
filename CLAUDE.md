@@ -84,9 +84,14 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   (auth de la única cuenta), `payments` (solo si entra Mercado Pago).
 - Capas por paquete: `controller` (solo HTTP y validación de entrada) →
   `service` (orquestación y **dueño de la transacción**: `@Transactional`
-  solo acá) → `repository` (consultas, sin reglas de negocio). Un controller
-  no llama a un repository. **[guarda pendiente: test de arquitectura con
-  ArchUnit]**
+  solo acá) → `repository` (consultas, sin reglas de negocio). Las entidades
+  JPA viven en `<funcionalidad>.repository`. Un controller
+  no llama a un repository. Guardas: `ArchitectureTest` aplica sobre el
+  código real las reglas de capas, `@Transactional` solo en `..service..` y
+  dominio sin Spring/JPA/Hibernate; `ArchitectureRulesTest` prueba con
+  fixtures que cada regla falla ante una violación. La regla de capas usa
+  `allowEmptyShould(true)` mientras no existan controllers; se quita en el
+  cambio HTTP.
 - Las reglas de negocio puras (transiciones de estado, cálculo de
   disponibilidad de combos, cálculo de totales) viven en clases de dominio
   sin Spring ni JPA, testeables con tests unitarios simples.
@@ -228,7 +233,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 
 21. **Persistencia y cálculo en UTC; la hora local es presentación**
     (`America/Argentina/Cordoba`). Nunca `LocalDateTime.now()` sin zona: se
-    usa `Instant` o `Clock` inyectado (los tests lo controlan).
+    usa `Instant` o `Clock` inyectado (los tests lo controlan). Guarda:
+    `ArchitectureTest.noSystemClock` prohíbe `Instant.now()`,
+    `LocalDateTime.now()`, `LocalDate.now()`, `ZonedDateTime.now()`,
+    `OffsetDateTime.now()`, `Clock.systemDefaultZone()` y
+    `ZoneId.systemDefault()` fuera de `ClockConfig`.
 
 ## 5. Seguridad
 
@@ -295,7 +304,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   idempotencia.
 - **Un bug de producción se reproduce con un test antes de arreglarse**, con
   fecha y síntoma en el comentario.
-- **Un pipe a `tail` esconde el exit code.** `./mvnw verify | tail -5` da el
+- **Un pipe a `tail` esconde el exit code.** `./mvnw clean verify | tail -5` da el
   estado de `tail`. Los comandos del gate se encadenan sin pipe.
 - **CI es la verdad.** Si local pasa y CI falla, la diferencia es el bug.
 - No se apilan builds y suites pesadas a la vez en la máquina de
@@ -325,17 +334,19 @@ No se implementa nada de esta lista asumiendo una respuesta: se pregunta.
 - Tope de unidades por línea (10, D-20261007-02) pendiente de OK de la
   clienta. En el cambio del checkout: límite de pedidos `PAGO_PENDIENTE`
   por teléfono e IP, porque una reserva sin pago bloquea stock 48 h.
-- Del lado técnico, todavía no existen: CI, pre-commit, backups, test de
-  arquitectura ni las demás guardas marcadas como pendientes.
+- Del lado técnico, todavía no existen: CI, pre-commit, backups ni las demás
+  guardas marcadas como pendientes.
 
 ## 10. Compuertas de proceso
 
 Objetivo; se activan a medida que existe el código. **[pendiente]**
 
-- Backend: `./mvnw verify` (compila, tests unitarios e integración con
+- Backend: `./mvnw clean verify` (compila, tests unitarios e integración con
   Testcontainers, ArchUnit). Cero warnings del compilador como línea base.
-  Ya existe y corre con Postgres 16 real; ArchUnit se suma con el test de
-  arquitectura **[pendiente]**.
+  Siempre con `clean`: un `target/classes` viejo conserva el
+  `META-INF/spring.factories` y puede ocultar un registro eliminado (la
+  guarda de esquema depende de él).
+  Ya existe y corre con Postgres 16 real, con ArchUnit incluido.
 - Frontend: `npm run lint`, `npm run typecheck`, `npm test`,
   `npm run build`.
 - CI (GitHub Actions) corre lo mismo, con los mismos comandos, en cada push
