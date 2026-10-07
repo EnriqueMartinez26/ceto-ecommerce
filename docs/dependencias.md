@@ -14,6 +14,11 @@ Mateo** sobre esta evidencia.
 | `com.tngtech.archunit:archunit-junit5:1.5.1` | `maven-metadata.xml`: latest/release 1.5.1, actualizado 2026-09-25; versiones previas 1.5.0, 1.4.2, 1.4.1, 1.4.0. POM: url y scm `https://github.com/TNG/ArchUnit`. | TNG Technology Consulting GmbH (Peter Gafert, Roland Weisleder, Manfred Hanke y otros) | Apache 2.0 |
 | `com.googlecode.libphonenumber:libphonenumber:9.0.40` | `maven-metadata.xml`: latest/release 9.0.40, actualizado 2026-09-23; versiones previas 9.0.39 a 9.0.36. POM padre `libphonenumber-parent:9.0.40`: url `https://github.com/google/libphonenumber/`, scm `github.com/google/libphonenumber.git`. | Google (Shaopeng Jia, Lara Rennie) | Apache 2.0 |
 
+Estado en el `pom.xml`: `archunit-junit5` 1.5.1 (slice S2) y
+`libphonenumber` 9.0.40 (slice S6) ya están declaradas con versión fija.
+`spring-boot-starter-validation` está gestionada por el BOM de Spring Boot
+y no requiere verificación aparte.
+
 Fuentes:
 - https://repo.maven.apache.org/maven2/com/tngtech/archunit/archunit-junit5/maven-metadata.xml
 - https://repo.maven.apache.org/maven2/com/tngtech/archunit/archunit-junit5/1.5.1/archunit-junit5-1.5.1.pom
