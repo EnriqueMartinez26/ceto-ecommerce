@@ -22,7 +22,9 @@
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Windows JVMs may report the legacy zone id America/Buenos_Aires, which Postgres 16 rejects as a
-             session TimeZone. Tests run in UTC (the app stores timestamptz/UTC anyway). -->
+             session TimeZone. Tests run in UTC (the app stores timestamptz/UTC anyway).
+             IDE runs and `java -jar` on this Windows machine need the same VM option (-Duser.timezone=UTC).
+             Production must pin the JVM to UTC too; that belongs to the Docker/compose change, not done here. -->
         <argLine>-Duser.timezone=UTC</argLine>
     </properties>
 
