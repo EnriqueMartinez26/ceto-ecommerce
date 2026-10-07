@@ -43,10 +43,18 @@ class ArchitectureRulesTest {
     }
 
     @Test
-    void transactionalRuleFailsOutsideServicePackages() {
-        assertThatThrownBy(() -> ArchitectureRules.TRANSACTIONAL_ONLY_IN_SERVICES.check(fixtures("tx")))
+    void transactionalRuleFailsOnClassLevelAnnotationOutsideServices() {
+        assertThatThrownBy(() -> ArchitectureRules.TRANSACTIONAL_ONLY_IN_SERVICES.check(fixtures("txclass")))
                 .isInstanceOf(AssertionError.class)
-                .hasMessageContaining("TxOutsideService");
+                .hasMessageContaining("TxClassOnly");
+    }
+
+    @Test
+    void transactionalRuleFailsOnMethodLevelAnnotationOutsideServices() {
+        assertThatThrownBy(() -> ArchitectureRules.TRANSACTIONAL_ONLY_IN_SERVICES.check(fixtures("txmethod")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("TxMethodOnly")
+                .hasMessageContaining("boundaryMethod");
     }
 
     @Test
