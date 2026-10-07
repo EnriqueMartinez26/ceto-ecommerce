@@ -3,7 +3,9 @@ package ar.cetobhb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ar.cetobhb.support.AbstractPostgresIT;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.Clock;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
@@ -22,6 +24,9 @@ class ApplicationContextIT extends AbstractPostgresIT {
     @Autowired
     private Environment environment;
 
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
+
     @Test
     void contextBootsWithFlywayAndValidatedSchema() {
         assertThat(context.getBean(Clock.class)).isNotNull();
@@ -32,6 +37,14 @@ class ApplicationContextIT extends AbstractPostgresIT {
                         + "WHERE table_schema = 'public' AND table_name = 'flyway_schema_history'",
                 Integer.class);
         assertThat(historyTables).isEqualTo(1);
+    }
+
+    @Test
+    void effectiveHibernateConfigNeverGeneratesSchema() {
+        Map<String, Object> properties = entityManagerFactory.getProperties();
+        assertThat(properties.get("hibernate.hbm2ddl.auto")).isEqualTo("validate");
+        assertThat(properties).doesNotContainKey("jakarta.persistence.schema-generation.database.action");
+        assertThat(properties).doesNotContainKey("javax.persistence.schema-generation.database.action");
     }
 
     @Test
