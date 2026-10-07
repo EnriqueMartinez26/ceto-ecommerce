@@ -24,7 +24,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Spike for verification item 8 (UNCONFIRMED until this passes): a native
  * {@code ... LIMIT :limit FOR UPDATE SKIP LOCKED} query returning entities under Hibernate 7 / Boot 4.1.1.
- * Production code is not involved; the same query shape is re-proved on the real repository in the orders slice.
+ * It maps rows onto the production {@code InventoryStock} entity but exercises no production repository or
+ * service; the same query shape is re-proved on the real repository in the orders slice.
  * Real concurrency: this test is deliberately NOT @Transactional.
  */
 class NativeLockQuerySpikeIT extends AbstractPostgresIT {
