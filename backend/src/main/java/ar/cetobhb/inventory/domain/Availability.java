@@ -17,6 +17,7 @@ public final class Availability {
     }
 
     public static long forCombo(long onHand, long reserved, int baseUnitsPerUnit) {
+        // The domain accepts N >= 1 because base lines use N = 1; the DB and the spec enforce N >= 2 for combos.
         if (baseUnitsPerUnit <= 0) {
             throw new ValidationException(ReasonCode.INVALID_COMBO_LINK);
         }

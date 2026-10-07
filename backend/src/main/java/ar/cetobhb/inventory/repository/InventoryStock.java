@@ -1,13 +1,19 @@
 package ar.cetobhb.inventory.repository;
 
+import ar.cetobhb.common.domain.ReasonCode;
+import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.Set;
+import org.springframework.data.domain.Persistable;
 
 /**
  * Stock of a base product. Every mutation validates in Java first; the database CHECK
@@ -15,7 +21,7 @@ import java.util.Set;
  */
 @Entity
 @Table(name = "inventory_stock")
-public class InventoryStock {
+public class InventoryStock implements Persistable<Long> {
 
     @Id
     @Column(name = "product_id")
@@ -34,6 +40,10 @@ public class InventoryStock {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /** Assigned ids make Spring Data merge (an extra SELECT); this flag makes it persist a new row directly. */
+    @Transient
+    private boolean fresh = true;
+
     protected InventoryStock() {
     }
 
@@ -48,12 +58,38 @@ public class InventoryStock {
         return stock;
     }
 
+    @Override
+    public Long getId() {
+        return productId;
+    }
+
+    @Override
+    public boolean isNew() {
+        return fresh;
+    }
+
+    @PostPersist
+    @PostLoad
+    void markNotNew() {
+        fresh = false;
+    }
+
     public long free() {
         return (long) onHand - reserved;
     }
 
     public boolean canReserve(long units) {
         return units > 0 && free() >= units;
+    }
+
+    /** True when {@code units} of this row are reserved, so they can be released or committed. */
+    public boolean hasReserved(long units) {
+        return units > 0 && reserved >= units;
+    }
+
+    /** True when adding {@code units} keeps on_hand within the int column. */
+    public boolean canRestock(long units) {
+        return units > 0 && (long) onHand + units <= Integer.MAX_VALUE;
     }
 
     public void reserve(long units, Instant now) {
@@ -87,10 +123,13 @@ public class InventoryStock {
         touch(now);
     }
 
-    /** Admin correction of the physical count; it can never drop below what is already reserved. */
+    /**
+     * Admin correction of the physical count; it can never drop below what is already reserved. Breaking that is a
+     * business-rule rejection (VALIDATION_ERROR), not a programming error.
+     */
     public void adjustOnHand(int newOnHand, Instant now) {
         if (newOnHand < reserved) {
-            throw new IllegalArgumentException("on_hand cannot be lower than reserved");
+            throw new ValidationException(ReasonCode.STOCK_BELOW_RESERVED);
         }
         onHand = newOnHand;
         touch(now);
@@ -102,6 +141,7 @@ public class InventoryStock {
         }
     }
 
+    /** Taking more than is reserved is an invariant bug in the caller, hence IllegalStateException. */
     private void requireReservedAtLeast(long units) {
         requirePositive(units);
         if (reserved < units) {

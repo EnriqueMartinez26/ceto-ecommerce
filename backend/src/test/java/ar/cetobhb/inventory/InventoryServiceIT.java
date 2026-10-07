@@ -10,16 +10,21 @@ import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.inventory.domain.BaseUnitDemand;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
+import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
+import ar.cetobhb.inventory.repository.InventoryStock;
+import ar.cetobhb.inventory.repository.InventoryStockRepository;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.support.AbstractPostgresIT;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.UnexpectedRollbackException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Real commits, no @Transactional on the test: the service joins a transaction the test owns. */
@@ -30,6 +35,9 @@ class InventoryServiceIT extends AbstractPostgresIT {
 
     @Autowired
     private CatalogService catalog;
+
+    @Autowired
+    private InventoryStockRepository stockRepository;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -79,7 +87,9 @@ class InventoryServiceIT extends AbstractPostgresIT {
     @Test
     void createStockTwiceIsRefused() {
         long id = baseWithStock(5);
-        assertThatThrownBy(() -> inventory.createStock(id, 7)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> inventory.createStock(id, 7))
+                .isInstanceOfSatisfying(StockAlreadyConfiguredException.class,
+                        e -> assertThat(e.productId()).isEqualTo(id));
         assertCounts(id, 5, 0);
     }
 
@@ -146,6 +156,64 @@ class InventoryServiceIT extends AbstractPostgresIT {
         assertCounts(id, 5, 1);
     }
 
+    /**
+     * The failing operation is caught INSIDE the caller's transaction on purpose: that is the only place where a
+     * mutation made before the failure would still be visible (a rollback would hide it). The service exception
+     * also marks the transaction rollback-only, so the commit is refused.
+     */
+    private void assertFailsWithoutTouchingTheFirstRow(long firstId, Runnable failingOperation) {
+        AtomicReference<RuntimeException> failure = new AtomicReference<>();
+        int[] delta = new int[2];
+
+        assertThatThrownBy(() -> inTx(() -> {
+            InventoryStock first = stockRepository.findById(firstId).orElseThrow();
+            int onHand = first.onHand();
+            int reserved = first.reserved();
+            try {
+                failingOperation.run();
+            } catch (RuntimeException e) {
+                failure.set(e);
+            }
+            delta[0] = first.onHand() - onHand;
+            delta[1] = first.reserved() - reserved;
+        })).isInstanceOf(UnexpectedRollbackException.class);
+
+        assertThat(failure.get()).as("the operation fails").isInstanceOf(IllegalStateException.class);
+        assertThat(delta).as("first row on_hand/reserved delta before the failure").containsExactly(0, 0);
+    }
+
+    @Test
+    void releaseValidatesEveryRowBeforeMutatingAny() {
+        long a = baseWithStock(5);
+        long b = baseWithStock(5);
+        inTx(() -> inventory.reserve(demand(a, 2, b, 1)));
+
+        assertFailsWithoutTouchingTheFirstRow(a, () -> inventory.release(demand(a, 1, b, 2)));
+        assertCounts(a, 5, 2);
+        assertCounts(b, 5, 1);
+    }
+
+    @Test
+    void commitSaleValidatesEveryRowBeforeMutatingAny() {
+        long a = baseWithStock(5);
+        long b = baseWithStock(5);
+        inTx(() -> inventory.reserve(demand(a, 2, b, 1)));
+
+        assertFailsWithoutTouchingTheFirstRow(a, () -> inventory.commitSale(demand(a, 1, b, 2)));
+        assertCounts(a, 5, 2);
+        assertCounts(b, 5, 1);
+    }
+
+    @Test
+    void restockValidatesEveryRowBeforeMutatingAny() {
+        long a = baseWithStock(5);
+        long b = baseWithStock(Integer.MAX_VALUE);
+
+        assertFailsWithoutTouchingTheFirstRow(a, () -> inventory.restock(demand(a, 1, b, 1)));
+        assertCounts(a, 5, 0);
+        assertCounts(b, Integer.MAX_VALUE, 0);
+    }
+
     @Test
     void effectsRollBackWithTheCallersTransaction() {
         long id = baseWithStock(5);
@@ -176,8 +244,10 @@ class InventoryServiceIT extends AbstractPostgresIT {
         inventory.adjust(id, 10);
         assertCounts(id, 10, 3);
 
-        assertThatThrownBy(() -> inventory.adjust(id, 2)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> inventory.adjust(id, -1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> inventory.adjust(id, 2)).isInstanceOfSatisfying(ValidationException.class,
+                e -> assertThat(e.reason()).isEqualTo(ReasonCode.STOCK_BELOW_RESERVED));
+        assertThatThrownBy(() -> inventory.adjust(id, -1)).isInstanceOfSatisfying(ValidationException.class,
+                e -> assertThat(e.reason()).isEqualTo(ReasonCode.STOCK_BELOW_RESERVED));
         assertCounts(id, 10, 3);
         assertThatThrownBy(() -> inventory.adjust(9999L, 1)).isInstanceOf(StockNotConfiguredException.class);
     }

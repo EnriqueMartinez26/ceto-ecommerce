@@ -4,5 +4,6 @@ package ar.cetobhb.common.domain;
 public enum ReasonCode {
     INVALID_COMBO_LINK,
     INVALID_PRICE_PAIR,
-    INVALID_PRODUCT_NAME
+    INVALID_PRODUCT_NAME,
+    STOCK_BELOW_RESERVED
 }

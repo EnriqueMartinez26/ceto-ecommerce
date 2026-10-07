@@ -6,6 +6,7 @@ import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.inventory.domain.BaseUnitDemand;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
+import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
 import ar.cetobhb.inventory.repository.InventoryStock;
 import ar.cetobhb.inventory.repository.InventoryStockRepository;
@@ -16,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.BiPredicate;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,8 +26,18 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Stock primitives (CLAUDE.md section 4, rules 1, 3, 4). The demand operations are MANDATORY: they join the
  * caller's transaction, which already holds the order row lock, and lock the stock rows one by one in ascending
- * product id (the key order of {@link BaseUnitDemand}). A shortage is a domain exception raised before any
- * mutation, so the database CHECK stays a backstop.
+ * product id (the key order of {@link BaseUnitDemand}). Every demand operation has the same all-or-nothing shape:
+ * lock all rows ascending, VALIDATE all, then MUTATE; nothing is touched when any row is invalid. A shortage is a
+ * domain exception raised before any mutation, so the database CHECK stays a backstop.
+ *
+ * <p>Failure contract: every exception here is a {@link RuntimeException}, so Spring marks the CALLER's transaction
+ * rollback-only as soon as it leaves a service method. Callers (order services, the expiry job) must NOT catch one
+ * and continue inside the same transaction; the commit would fail with an UnexpectedRollbackException. Handle it
+ * in a new transaction or let it propagate.
+ *
+ * <p>Exception choice: a business-rule rejection (shortage, adjusting below reserved, duplicate or missing stock)
+ * is a {@link ar.cetobhb.common.domain.DomainException}. Releasing or committing more than is reserved, or an
+ * on_hand overflow, means the caller broke an invariant (a bug), so it stays an IllegalStateException.
  */
 @Service
 public class InventoryService {
@@ -46,10 +59,13 @@ public class InventoryService {
         if (product.isCombo()) {
             throw new ValidationException(ReasonCode.INVALID_COMBO_LINK);
         }
-        if (stock.existsById(productId)) {
-            throw new IllegalStateException("stock already configured for product " + productId);
+        try {
+            // The entity is Persistable, so this is a plain INSERT (no merge SELECT); the primary key is the one
+            // arbiter, which also covers two concurrent creations of the same row.
+            stock.saveAndFlush(InventoryStock.create(productId, onHand, clock.instant()));
+        } catch (DataIntegrityViolationException e) {
+            throw new StockAlreadyConfiguredException(productId);
         }
-        stock.saveAndFlush(InventoryStock.create(productId, onHand, clock.instant()));
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -70,22 +86,25 @@ public class InventoryService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void release(BaseUnitDemand demand) {
+        List<InventoryStock> rows = lockAndValidate(demand, InventoryStock::hasReserved, "release beyond reserved");
         Instant now = clock.instant();
-        lockAscending(demand).forEach(row -> row.release(demand.asMap().get(row.productId()), now));
+        rows.forEach(row -> row.release(demand.asMap().get(row.productId()), now));
     }
 
     /** Payment: reserved units leave the shelf for good. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void commitSale(BaseUnitDemand demand) {
+        List<InventoryStock> rows = lockAndValidate(demand, InventoryStock::hasReserved, "commit beyond reserved");
         Instant now = clock.instant();
-        lockAscending(demand).forEach(row -> row.commitReserved(demand.asMap().get(row.productId()), now));
+        rows.forEach(row -> row.commitReserved(demand.asMap().get(row.productId()), now));
     }
 
     /** Cancelling a paid order returns its units to on_hand. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void restock(BaseUnitDemand demand) {
+        List<InventoryStock> rows = lockAndValidate(demand, InventoryStock::canRestock, "restock overflow");
         Instant now = clock.instant();
-        lockAscending(demand).forEach(row -> row.restock(demand.asMap().get(row.productId()), now));
+        rows.forEach(row -> row.restock(demand.asMap().get(row.productId()), now));
     }
 
     /** Admin correction of the physical count. */
@@ -94,6 +113,18 @@ public class InventoryService {
         InventoryStock row = stock.lockByProductId(productId)
                 .orElseThrow(() -> new StockNotConfiguredException(productId));
         row.adjustOnHand(newOnHand, clock.instant());
+    }
+
+    /** Locks all rows ascending, then checks every row before the caller mutates any of them. */
+    private List<InventoryStock> lockAndValidate(
+            BaseUnitDemand demand, BiPredicate<InventoryStock, Long> valid, String failure) {
+        List<InventoryStock> rows = lockAscending(demand);
+        for (InventoryStock row : rows) {
+            if (!valid.test(row, demand.asMap().get(row.productId()))) {
+                throw new IllegalStateException(failure + " for product " + row.productId());
+            }
+        }
+        return rows;
     }
 
     private List<InventoryStock> lockAscending(BaseUnitDemand demand) {
