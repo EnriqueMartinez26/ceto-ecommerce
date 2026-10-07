@@ -1,4 +1,4 @@
-package ar.cetobhb.architecture.fixtures.clean.domain;
+package archfixtures.ar.cetobhb.clean.domain;
 
 import java.time.Clock;
 import java.time.Instant;

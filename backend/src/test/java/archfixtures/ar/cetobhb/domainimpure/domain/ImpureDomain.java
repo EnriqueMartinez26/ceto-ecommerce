@@ -1,11 +1,11 @@
-package ar.cetobhb.architecture.fixtures.domainimpure.domain;
+package archfixtures.ar.cetobhb.domainimpure.domain;
 
 import jakarta.persistence.EntityManager;
 
 /**
  * Deliberate violation: a domain class tied to JPA. Only imported by ArchitectureRulesTest.
- * Not annotated with @Entity on purpose: the fixtures sit under the app package, and an entity
- * without an id would break entity scanning in the integration tests.
+ * Fixtures live under the {@code archfixtures} root, outside the application base package
+ * ({@code ar.cetobhb}), so Spring component and entity scanning never sees them.
  */
 public class ImpureDomain {
 

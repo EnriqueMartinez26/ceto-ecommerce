@@ -13,10 +13,14 @@ import org.junit.jupiter.api.Test;
 /**
  * Proves each rule bites: it must fail on a deliberately violating fixture and pass on a compliant one.
  * Fixtures live in test sources only; {@link ArchitectureTest} never sees them (DoNotIncludeTests).
+ * They sit under the {@code archfixtures} root, deliberately OUTSIDE the application base package
+ * ({@code ar.cetobhb}): Spring Boot scans that package for components and entities, so a fixture
+ * placed there could be picked up by the integration tests. The {@code controller/service/repository/domain}
+ * package names are kept so the {@code ..x..} rule patterns still match.
  */
 class ArchitectureRulesTest {
 
-    private static final String FIXTURES = "ar.cetobhb.architecture.fixtures.";
+    private static final String FIXTURES = "archfixtures.ar.cetobhb.";
 
     private static JavaClasses fixtures(String subPackage) {
         return new ClassFileImporter().importPackages(FIXTURES + subPackage);

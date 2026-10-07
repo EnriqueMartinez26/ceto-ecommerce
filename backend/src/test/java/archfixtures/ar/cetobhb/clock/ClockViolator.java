@@ -1,4 +1,4 @@
-package ar.cetobhb.architecture.fixtures.clock;
+package archfixtures.ar.cetobhb.clock;
 
 import java.time.Clock;
 import java.time.Instant;

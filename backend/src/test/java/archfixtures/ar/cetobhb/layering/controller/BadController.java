@@ -1,6 +1,6 @@
-package ar.cetobhb.architecture.fixtures.layering.controller;
+package archfixtures.ar.cetobhb.layering.controller;
 
-import ar.cetobhb.architecture.fixtures.layering.repository.BadRepository;
+import archfixtures.ar.cetobhb.layering.repository.BadRepository;
 
 /** Deliberate violation: a controller reaching a repository directly. */
 public class BadController {

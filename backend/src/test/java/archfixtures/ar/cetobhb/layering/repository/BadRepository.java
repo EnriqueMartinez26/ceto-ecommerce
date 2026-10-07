@@ -1,4 +1,4 @@
-package ar.cetobhb.architecture.fixtures.layering.repository;
+package archfixtures.ar.cetobhb.layering.repository;
 
 /** Target of the forbidden controller to repository dependency. */
 public class BadRepository {

@@ -1,4 +1,4 @@
-package ar.cetobhb.architecture.fixtures.tx.web;
+package archfixtures.ar.cetobhb.tx.web;
 
 import org.springframework.transaction.annotation.Transactional;
 
