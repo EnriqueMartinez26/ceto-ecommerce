@@ -164,7 +164,9 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 3. **Lock pesimista antes de reservar.** `SELECT ... FOR UPDATE` sobre la
    fila del producto base antes de leer disponibilidad. Prohibido "verificar
    y luego actuar" sin lock. Varias filas se lockean siempre en orden de id
-   para no generar deadlocks. **[guarda pendiente: test de ráfaga, §7]**
+   para no generar deadlocks. Ráfaga de la última unidad: `OrderStockBurstIT`
+   (`lastUnitGoesToExactlyOneOfManyConcurrentBuyers`). **[guarda pendiente:
+   orden de locks, S11]**
 4. **Ciclo de la reserva**: crear el pedido suma a `reserved`; pasar a
    pagado descuenta en firme (`on_hand −= n`, `reserved −= n`); cancelar o
    vencer libera (`reserved −= n`). Una reserva sin pago vence sola a las
@@ -234,8 +236,17 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     `OrderRequestFingerprintTest`: no cambiar la forma canónica sin subir la
     versión. La clave es `UUID` con `UNIQUE` (`orders_idempotency_key_uk`) y la
     huella un `VARCHAR(64)` hexadecimal en minúsculas (`orders_fingerprint_ck`),
-    ambos probados en `OrderConstraintsIT`. **[guarda pendiente: test de
-    ráfaga con la misma clave, S9b]**
+    ambos probados en `OrderConstraintsIT`. El reintento con la misma clave y
+    el mismo contenido devuelve el pedido existente (aunque el producto se haya
+    desactivado, el stock se haya agotado o el pedido esté cancelado); con otro
+    contenido, `IdempotencyConflictException` (D-20261006-11, D-20261007-04).
+    La búsqueda por clave va antes de tocar catálogo o stock; si dos pedidos
+    compiten, el perdedor choca con `orders_idempotency_key_uk` al insertar la
+    fila (antes de reservar) y repite la búsqueda en otra transacción. Pruebas:
+    `OrderIdempotencyIT` (reintentos secuenciales y ráfagas con la misma clave:
+    `sameKeyBurstWithTheSamePayloadCreatesOneOrderAndReservesOnce`,
+    `sameKeyBurstOnTheLastUnitStillCreatesOneOrder`,
+    `sameKeyBurstWithDifferentPayloadsKeepsTheWinnerAndRejectsTheOthers`).
 
 ### Checkout, WhatsApp y envío
 
@@ -370,7 +381,9 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 - **El checkout tiene prueba de ráfaga**: con stock de 1 unidad, N compras
   simultáneas → 1 éxito, N−1 conflictos, cero 5xx, `reserved` correcto al
   final. Lo mismo para N confirmaciones idénticas con la misma clave de
-  idempotencia.
+  idempotencia. Existen: `OrderStockBurstIT` (última unidad) y
+  `OrderIdempotencyIT` (misma clave); el pool de Hikari del perfil `test` es
+  mayor que los hilos para que la contención sea de locks y no del pool.
 - **Un bug de producción se reproduce con un test antes de arreglarse**, con
   fecha y síntoma en el comentario.
 - **Un pipe a `tail` esconde el exit code.** `./mvnw clean verify | tail -5` da el
