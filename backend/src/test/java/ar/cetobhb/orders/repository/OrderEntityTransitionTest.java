@@ -80,6 +80,43 @@ class OrderEntityTransitionTest {
     }
 
     @Test
+    void placeRejectsANullClock() {
+        assertThatThrownBy(() -> Order.place(newOrder(), null)).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void aNullNowIsRejectedBeforeAnyMutatorTouchesTheOrder() {
+        Order pending = inStatus(OrderStatus.PAGO_PENDIENTE);
+        assertThatThrownBy(() -> pending.markPaid(null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> pending.cancel(CancelReason.CANCELLED_BY_ADMIN, null))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> pending.expire(null)).isInstanceOf(NullPointerException.class);
+        assertUntouched(pending, OrderStatus.PAGO_PENDIENTE, CREATED);
+
+        Order paid = inStatus(OrderStatus.PAGADO);
+        assertThatThrownBy(() -> paid.dispatch(null)).isInstanceOf(NullPointerException.class);
+        assertUntouched(paid, OrderStatus.PAGADO, LATER);
+
+        Order dispatched = inStatus(OrderStatus.DESPACHADO);
+        assertThatThrownBy(() -> dispatched.deliver(null)).isInstanceOf(NullPointerException.class);
+        assertUntouched(dispatched, OrderStatus.DESPACHADO, LATER);
+    }
+
+    private static void assertUntouched(Order order, OrderStatus status, Instant updatedAt) {
+        assertThat(order.status()).isEqualTo(status);
+        assertThat(order.updatedAt()).isEqualTo(updatedAt);
+        assertThat(order.cancelReason()).isNull();
+        assertThat(order.cancelledAt()).isNull();
+        assertThat(order.deliveredAt()).isNull();
+        if (status == OrderStatus.PAGO_PENDIENTE) {
+            assertThat(order.paidAt()).isNull();
+        }
+        if (status == OrderStatus.PAGADO) {
+            assertThat(order.dispatchedAt()).isNull();
+        }
+    }
+
+    @Test
     void placeRejectsAReservationThatIsNotInTheFuture() {
         NewOrder data = newOrder();
         NewOrder past = new NewOrder(data.orderNumber(), data.idempotencyKey(), data.requestFingerprint(),

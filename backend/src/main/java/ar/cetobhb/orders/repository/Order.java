@@ -27,6 +27,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -34,6 +35,9 @@ import java.util.UUID;
  * no setter and no generic mutator, every change goes through an intent method that validates the edge first and
  * stamps the matching timestamps together, so the DB CHECKs (cancel pair, paid_at) are a backstop.
  * {@code reserved_until} is fixed at creation and never changes (REQ-LIF-07). Timestamps come from the caller.
+ *
+ * <p>Entities deliberately define no {@code equals}/{@code hashCode}: they have identity semantics, so do not put
+ * them in a {@code Set} or use them as map keys. Mutators reject a null {@code now} before touching any state.
  */
 @Entity
 @Table(name = "orders")
@@ -110,6 +114,7 @@ public class Order {
 
     /** Builds a PAGO_PENDIENTE order with server-computed totals and snapshot lines numbered from 1. */
     public static Order place(NewOrder data, Instant now) {
+        Objects.requireNonNull(now, "now");
         if (!data.reservedUntil().isAfter(now)) {
             throw new IllegalArgumentException("reserved_until must be after created_at");
         }
@@ -137,18 +142,21 @@ public class Order {
 
     /** Payment is accepted even after reserved_until while the expiry job has not run (D-20261007-04). */
     public void markPaid(Instant now) {
+        Objects.requireNonNull(now, "now");
         status = status.requireTransitionTo(OrderStatus.PAGADO);
         paidAt = now;
         updatedAt = now;
     }
 
     public void dispatch(Instant now) {
+        Objects.requireNonNull(now, "now");
         status = status.requireTransitionTo(OrderStatus.DESPACHADO);
         dispatchedAt = now;
         updatedAt = now;
     }
 
     public void deliver(Instant now) {
+        Objects.requireNonNull(now, "now");
         status = status.requireTransitionTo(OrderStatus.ENTREGADO);
         deliveredAt = now;
         updatedAt = now;
@@ -156,6 +164,7 @@ public class Order {
 
     /** Manual cancellation. EXPIRED is reserved for {@link #expire(Instant)} and is rejected here. */
     public void cancel(CancelReason reason, Instant now) {
+        Objects.requireNonNull(now, "now");
         status.requireCancellation(reason);
         if (reason == CancelReason.EXPIRED) {
             throw new ValidationException(ReasonCode.INVALID_CANCEL_REASON);
@@ -165,6 +174,7 @@ public class Order {
 
     /** Expiry of an unpaid reservation; due when {@code now >= reservedUntil} (inclusive). */
     public void expire(Instant now) {
+        Objects.requireNonNull(now, "now");
         status.requireCancellation(CancelReason.EXPIRED);
         if (now.isBefore(reservedUntil)) {
             throw new ReservationNotExpiredException();
@@ -173,6 +183,7 @@ public class Order {
     }
 
     private void applyCancellation(CancelReason reason, Instant now) {
+        Objects.requireNonNull(now, "now");
         status = status.requireTransitionTo(OrderStatus.CANCELADO);
         cancelReason = reason;
         cancelledAt = now;
