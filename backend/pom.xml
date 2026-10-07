@@ -28,6 +28,8 @@
         <argLine>-Duser.timezone=UTC</argLine>
         <!-- Not managed by the Boot BOM, so pinned explicitly. 1.5.1 verified on Maven Central (docs/dependencias.md). -->
         <archunit.version>1.5.1</archunit.version>
+        <!-- Not managed by the Boot BOM. 9.0.40 verified on Maven Central (docs/dependencias.md, G0). -->
+        <libphonenumber.version>9.0.40</libphonenumber.version>
     </properties>
 
     <dependencies>
@@ -43,6 +45,16 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        <!-- Boot-managed. Needed for @Validated @ConfigurationProperties (OrderProperties, fail-closed config). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.googlecode.libphonenumber</groupId>
+            <artifactId>libphonenumber</artifactId>
+            <version>${libphonenumber.version}</version>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
