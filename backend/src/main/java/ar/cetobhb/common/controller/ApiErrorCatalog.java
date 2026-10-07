@@ -43,22 +43,22 @@ final class ApiErrorCatalog {
     static final ApiError INTERNAL = new ApiError(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
             "An unexpected error occurred.", Level.ERROR);
 
-    private static final Map<Class<? extends DomainException>, ApiError> DOMAIN_ERRORS = Map.of(
-            ValidationException.class, VALIDATION,
-            ProductNotAvailableException.class, new ApiError(HttpStatus.CONFLICT, "PRODUCT_UNAVAILABLE",
-                    "One or more products are not available.", Level.DEBUG),
+    private static final Map<Class<? extends DomainException>, ApiError> DOMAIN_ERRORS = Map.ofEntries(
+            Map.entry(ValidationException.class, VALIDATION),
+            Map.entry(ProductNotAvailableException.class, new ApiError(HttpStatus.CONFLICT, "PRODUCT_UNAVAILABLE",
+                    "One or more products are not available.", Level.DEBUG)),
             // The buyer sees "unavailable"; the operator gets the ERROR line to fix the missing stock row.
-            StockNotConfiguredException.class, new ApiError(HttpStatus.CONFLICT, "PRODUCT_UNAVAILABLE",
-                    "One or more products are not available.", Level.ERROR),
-            InsufficientStockException.class, new ApiError(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK",
-                    "There is not enough stock for this order.", Level.DEBUG),
-            IdempotencyConflictException.class, new ApiError(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT",
-                    "The idempotency key was already used for a different order.", Level.INFO),
+            Map.entry(StockNotConfiguredException.class, new ApiError(HttpStatus.CONFLICT, "PRODUCT_UNAVAILABLE",
+                    "One or more products are not available.", Level.ERROR)),
+            Map.entry(InsufficientStockException.class, new ApiError(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK",
+                    "There is not enough stock for this order.", Level.DEBUG)),
+            Map.entry(IdempotencyConflictException.class, new ApiError(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT",
+                    "The idempotency key was already used for a different order.", Level.INFO)),
             // No public endpoint reaches these three yet; explicit rows keep a future endpoint from returning 500.
-            IllegalOrderTransitionException.class, CONFLICT,
-            StockAlreadyConfiguredException.class, CONFLICT,
-            OrderNotFoundException.class, NOT_FOUND,
-            ReservationNotExpiredException.class, INTERNAL);
+            Map.entry(IllegalOrderTransitionException.class, CONFLICT),
+            Map.entry(StockAlreadyConfiguredException.class, CONFLICT),
+            Map.entry(OrderNotFoundException.class, NOT_FOUND),
+            Map.entry(ReservationNotExpiredException.class, INTERNAL));
 
     private ApiErrorCatalog() {
     }
