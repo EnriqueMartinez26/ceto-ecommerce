@@ -15,6 +15,7 @@ import java.time.ZonedDateTime;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.Locale;
 import java.util.TimeZone;
 
 /**
@@ -105,5 +106,17 @@ public class ClockViolator {
 
     Object calendarGetInstance() {
         return Calendar.getInstance();
+    }
+
+    Object newGregorianCalendarWithTimeZone(TimeZone zone) {
+        return new GregorianCalendar(zone);
+    }
+
+    Object newGregorianCalendarWithLocale(Locale locale) {
+        return new GregorianCalendar(locale);
+    }
+
+    Object newGregorianCalendarWithTimeZoneAndLocale(TimeZone zone, Locale locale) {
+        return new GregorianCalendar(zone, locale);
     }
 }

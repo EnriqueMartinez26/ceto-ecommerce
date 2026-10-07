@@ -14,21 +14,22 @@ import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 import ar.cetobhb.common.config.ClockConfig;
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.Dependency;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaConstructorCall;
 import com.tngtech.archunit.core.domain.JavaMethodCall;
-import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.CompositeArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
-import com.tngtech.archunit.lang.CompositeArchRule;
 import java.time.Clock;
 import java.time.ZoneId;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
-import java.util.TimeZone;
 import java.util.List;
+import java.util.Locale;
+import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.transaction.annotation.Transactional;
@@ -95,14 +96,22 @@ final class ArchitectureRules {
                 }
             };
 
-    /** {@code new Date()} and {@code new GregorianCalendar()} read the clock; {@code new Date(long)} does not. */
-    private static final DescribedPredicate<JavaConstructorCall> NO_ARG_DATE_OR_GREGORIAN_CALENDAR =
-            new DescribedPredicate<>("call a no-arg Date or GregorianCalendar constructor") {
+    /**
+     * {@code new Date()} reads the clock; {@code new Date(long)} does not. {@code new GregorianCalendar()} and the
+     * {@code TimeZone}/{@code Locale} constructors also read system time; only the explicit-field constructors
+     * ({@code int} year, month, day...) are allowed.
+     */
+    private static final DescribedPredicate<JavaConstructorCall> SYSTEM_TIME_DATE_OR_GREGORIAN_CALENDAR =
+            new DescribedPredicate<>("call a Date or GregorianCalendar constructor that reads system time") {
                 @Override
                 public boolean test(JavaConstructorCall call) {
-                    return call.getTarget().getRawParameterTypes().isEmpty()
-                            && (call.getTargetOwner().isEquivalentTo(Date.class)
-                            || call.getTargetOwner().isEquivalentTo(GregorianCalendar.class));
+                    List<JavaClass> parameters = call.getTarget().getRawParameterTypes();
+                    if (call.getTargetOwner().isEquivalentTo(Date.class)) {
+                        return parameters.isEmpty();
+                    }
+                    return call.getTargetOwner().isEquivalentTo(GregorianCalendar.class)
+                            && (parameters.isEmpty() || parameters.stream().anyMatch(
+                            type -> type.isEquivalentTo(TimeZone.class) || type.isEquivalentTo(Locale.class)));
                 }
             };
 
@@ -110,10 +119,12 @@ final class ArchitectureRules {
      * CLAUDE.md rule 21 (REQ-GRD-06): only ClockConfig (and its inner and lambda classes) may touch the system
      * clock or zone. Bans every {@code now} overload on {@code java.time} classes except {@code now(Clock)},
      * the {@code Clock.system*} factories, {@code ZoneId.systemDefault}, {@code TimeZone.getDefault},
-     * {@code System.currentTimeMillis}, the no-arg {@code Date} and {@code GregorianCalendar} constructors
-     * and {@code Calendar.getInstance}. Allowed: the injected {@code Clock} ({@code clock.instant()},
-     * {@code X.now(clock)}, {@code X.now(clock.withZone(...))}) and {@code new Date(long)}. This is a best-effort guard for the common entry points, not a proof that no
-     * code can reach the system clock (for example through other libraries or reflection).
+     * {@code System.currentTimeMillis}, the no-arg {@code Date} constructor, the {@code GregorianCalendar}
+     * constructors that take no argument, a {@code TimeZone} or a {@code Locale}, and {@code Calendar.getInstance}.
+     * Allowed: the injected {@code Clock} ({@code clock.instant()}, {@code X.now(clock)},
+     * {@code X.now(clock.withZone(...))}), {@code new Date(long)} and the explicit-field {@code GregorianCalendar}
+     * constructors. This is a best-effort guard for the common entry points, not a proof that no code can reach the
+     * system clock (for example through other libraries or reflection).
      */
     static final ArchRule NO_SYSTEM_CLOCK = noClasses()
             .that().haveNameNotMatching(CLOCK_CONFIG_NAMES)
@@ -122,7 +133,7 @@ final class ArchitectureRules {
             .orShould().callMethod(ZoneId.class, "systemDefault")
             .orShould().callMethod(System.class, "currentTimeMillis")
             .orShould().callMethod(TimeZone.class, "getDefault")
-            .orShould().callConstructorWhere(NO_ARG_DATE_OR_GREGORIAN_CALENDAR)
+            .orShould().callConstructorWhere(SYSTEM_TIME_DATE_OR_GREGORIAN_CALENDAR)
             .orShould().callMethodWhere(target(owner(type(Calendar.class))).and(target(name("getInstance"))))
             .as("the system clock and zone are read only in ClockConfig; inject Clock everywhere else");
 
