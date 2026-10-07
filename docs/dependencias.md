@@ -17,7 +17,7 @@ Mateo** sobre esta evidencia.
 Estado en el `pom.xml`: `archunit-junit5` 1.5.1 (slice S2) y
 `libphonenumber` 9.0.40 (slice S6) ya están declaradas con versión fija.
 `spring-boot-starter-validation` está gestionada por el BOM de Spring Boot
-y no requiere verificación aparte.
+y no requiere verificación aparte (criterio del asistente, a confirmar por Mateo).
 
 Fuentes:
 - https://repo.maven.apache.org/maven2/com/tngtech/archunit/archunit-junit5/maven-metadata.xml
