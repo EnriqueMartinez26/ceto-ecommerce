@@ -97,10 +97,13 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   repository solo desde el service de la misma funcionalidad y dominio sin
   Spring/JPA/Hibernate; `ArchitectureRulesTest` prueba con fixtures (bajo
   `archfixtures`, fuera del paquete escaneado por Spring) que cada regla
-  falla ante una violación. Seguimiento: la regla de capas usa
-  `allowEmptyShould(true)` mientras no existan controllers (se quita en el
-  cambio HTTP). Las reglas de `@Transactional` en métodos y de acceso al
-  repository ya no lo usan porque `CatalogService` y `ProductRepository`
+  falla ante una violación. La regla de capas ya no usa `allowEmptyShould` ni
+  capas opcionales porque existen controllers (`StorefrontController`): si un
+  renombre o movimiento deja una capa vacía, el build falla
+  (`layeringRuleFailsWhenNoLayerHasAnyClassSoARenameCannotEmptyIt`) y los
+  fixtures conformes traen las tres capas (`clean/catalog/controller`). Las
+  reglas de `@Transactional` en métodos y de acceso al
+  repository tampoco lo usan porque `CatalogService` y `ProductRepository`
   existen: si un renombre o movimiento las vacía, el build falla.
 - Las reglas de negocio puras (transiciones de estado, cálculo de
   disponibilidad de combos, cálculo de totales) viven en clases de dominio
@@ -167,7 +170,8 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    (`StorefrontService`) expone solo un estado derivado, `AVAILABLE` o
    `SOLD_OUT`, nunca cifras de stock (D-20261007-20, pendiente de OK de la
    clienta): `StockStatusTest` (combo por piso, fila de stock ausente =
-   agotado) y `StorefrontServiceIT`. Esa lectura no bloquea filas ni deja filas
+   agotado) y `StorefrontServiceIT`; en HTTP, `StorefrontHttpIT` fija el JSON
+   exacto con goldens (`contract/storefront-*.json`, sin campos de stock). Esa lectura no bloquea filas ni deja filas
    de stock en el contexto de persistencia, así que un lock posterior en la misma
    transacción lee la base y no una copia vieja (`InventoryAvailabilityIT`:
    `doesNotWaitForARowLockHeldByAnotherTransaction`,

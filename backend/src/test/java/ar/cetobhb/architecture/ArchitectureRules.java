@@ -51,9 +51,9 @@ final class ArchitectureRules {
     }
 
     /**
-     * controller -> service -> repository. Layers are optional because the first feature packages arrive in
-     * later changes; allowEmptyShould keeps the rule green until then. Tracked for the HTTP change: once real
-     * controllers exist, drop allowEmptyShould(true) so a rename or move cannot silently empty the rule.
+     * controller -> service -> repository. All three layers are required (neither withOptionalLayers nor
+     * allowEmptyShould): real controllers exist (StorefrontController, ApiExceptionHandler), so a rename or move that
+     * empties a layer must fail instead of passing silently. Compliant fixtures therefore hold all three layers.
      * JPA entities live in {@code <feature>.repository} (AD-1), so they sit inside the repository layer.
      */
     static final ArchRule LAYERS = layeredArchitecture().consideringAllDependencies()
@@ -62,9 +62,7 @@ final class ArchitectureRules {
             .layer("Repository").definedBy(REPOSITORIES)
             .whereLayer("Controller").mayNotBeAccessedByAnyLayer()
             .whereLayer("Service").mayOnlyBeAccessedByLayers("Controller")
-            .whereLayer("Repository").mayOnlyBeAccessedByLayers("Service")
-            .withOptionalLayers(true)
-            .allowEmptyShould(true);
+            .whereLayer("Repository").mayOnlyBeAccessedByLayers("Service");
 
     private static final ArchRule NO_TRANSACTIONAL_CLASSES_OUTSIDE_SERVICES = noClasses()
             .that().resideOutsideOfPackage(SERVICES)

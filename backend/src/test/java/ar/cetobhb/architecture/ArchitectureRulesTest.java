@@ -45,6 +45,17 @@ class ArchitectureRulesTest {
     }
 
     @Test
+    void layeringRuleFailsWhenNoLayerHasAnyClassSoARenameCannotEmptyIt() {
+        assertThatThrownBy(() -> ArchitectureRules.LAYERS.check(fixtures("clean.domain")))
+                .isInstanceOf(AssertionError.class);
+    }
+
+    @Test
+    void layeringRuleAcceptsAControllerThatOnlyCallsItsService() {
+        assertThatCode(() -> ArchitectureRules.LAYERS.check(fixtures("clean.catalog"))).doesNotThrowAnyException();
+    }
+
+    @Test
     void transactionalRuleFailsOnClassLevelAnnotationOutsideServices() {
         assertThatThrownBy(() -> ArchitectureRules.TRANSACTIONAL_ONLY_IN_SERVICES.check(fixtures("txclass")))
                 .isInstanceOf(AssertionError.class)
