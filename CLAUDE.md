@@ -485,6 +485,9 @@ Objetivo; se activan a medida que existe el código. **[pendiente]**
   `META-INF/spring.factories` y puede ocultar un registro eliminado (la
   guarda de esquema depende de él).
   Ya existe y corre con Postgres 16 real, con ArchUnit incluido.
+- Pruebas de mutación (PIT): corrida **manual**, fuera del gate y del CI, con
+  `./mvnw -Pmutation ...` (~18 min). Mide cuántos errores detectan los tests y
+  señala dónde leer. Cómo correrla y la línea base: `docs/testing.md`.
 - Frontend: `npm run lint`, `npm run typecheck`, `npm test`,
   `npm run build`.
 - CI (GitHub Actions) corre lo mismo, con los mismos comandos, en cada push
