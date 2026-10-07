@@ -399,8 +399,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   persistencia o Jackson (`SafeErrors` emite clases, SQLState y restricción;
   `SafeErrorsTest`), el logger de errores SQL de Hibernate 7
   (`org.hibernate.orm.jdbc.error`) está apagado en `application.yml`, y
-  `PiiLoggingIT` fija con un teléfono centinela que ni una violación CHECK real
-  ni un valor rechazado por Jackson llegan al log. Cada request lleva un id
+  `PiiLoggingIT` fija con un teléfono centinela, a nivel de Hibernate/JPA y del
+  advice (no del recorrido HTTP completo), que ni una violación CHECK real
+  provocada por un repositorio ni un valor rechazado por Jackson llegan al log,
+  y que los cuatro loggers silenciados siguen apagados en la configuración
+  efectiva. Cada request lleva un id
   generado en el servidor (`RequestIdFilter`; `X-Request-Id` entrante se ignora)
   y los filtros escriben errores con `ProblemResponses`. El parseo JSON es
   estricto (`JacksonConfigTest`: propiedad extra, `"2"` por `2`, clave
