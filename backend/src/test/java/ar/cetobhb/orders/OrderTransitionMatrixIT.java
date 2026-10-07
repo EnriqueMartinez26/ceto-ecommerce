@@ -127,7 +127,8 @@ class OrderTransitionMatrixIT extends AbstractPostgresIT {
                 .map(Method::getName)
                 .collect(Collectors.toSet());
 
-        assertThat(publicOperations).containsExactlyInAnyOrder("markPaid", "dispatch", "deliver", "cancel");
+        assertThat(publicOperations)
+                .containsExactlyInAnyOrder("markPaid", "dispatch", "deliver", "cancel", "expireDueOrders");
     }
 
     private void driveTo(long id, OrderStatus target) {

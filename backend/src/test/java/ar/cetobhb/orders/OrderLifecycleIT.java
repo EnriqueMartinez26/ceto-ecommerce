@@ -267,11 +267,11 @@ class OrderLifecycleIT extends AbstractPostgresIT {
     void payingAnOrderCancelledByExpiryIsIllegalAndStockStaysPut() {
         long b = base("B", 5);
         long id = order(line(b, 2));
-        // Expiry is S11's job; until it exists the cancelled-by-EXPIRED row is a SQL fixture, like the real job's result.
-        jdbc.update("""
-                UPDATE orders SET status = 'CANCELADO', cancel_reason = 'EXPIRED', cancelled_at = ? WHERE id = ?""",
-                Timestamp.from(MutableClock.START.plus(Duration.ofHours(49))), id);
-        jdbc.update("UPDATE inventory_stock SET reserved = 0 WHERE product_id = ?", b);
+        clock.set(MutableClock.START.plus(Duration.ofHours(49)));
+        assertThat(lifecycle.expireDueOrders(100)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT cancel_reason FROM orders WHERE id = ?", String.class, id))
+                .isEqualTo("EXPIRED");
+        assertStock(b, 5, 0);
 
         assertThatThrownBy(() -> lifecycle.markPaid(id)).isInstanceOf(IllegalOrderTransitionException.class);
 

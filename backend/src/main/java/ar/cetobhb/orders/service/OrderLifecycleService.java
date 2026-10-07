@@ -6,9 +6,10 @@ import ar.cetobhb.orders.domain.CancelReason;
 import ar.cetobhb.orders.domain.OrderNotFoundException;
 import ar.cetobhb.orders.domain.OrderStatus;
 import ar.cetobhb.orders.repository.Order;
-import ar.cetobhb.orders.repository.OrderItem;
 import ar.cetobhb.orders.repository.OrderRepository;
 import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,7 +44,7 @@ public class OrderLifecycleService {
     public void markPaid(long orderId) {
         Order order = lock(orderId);
         order.markPaid(clock.instant());
-        inventory.commitSale(demandOf(order));
+        inventory.commitSale(OrderStockDemand.of(order));
     }
 
     @Transactional
@@ -66,25 +67,50 @@ public class OrderLifecycleService {
         OrderStatus before = order.status();
         order.cancel(reason, clock.instant());
         if (before == OrderStatus.PAGO_PENDIENTE) {
-            inventory.release(demandOf(order));
+            inventory.release(OrderStockDemand.of(order));
         } else if (before == OrderStatus.PAGADO) {
-            inventory.restock(demandOf(order));
+            inventory.restock(OrderStockDemand.of(order));
         } else {
             // Invariant: Order.cancel only accepts PAGO_PENDIENTE and PAGADO, so this branch is unreachable.
             throw new IllegalStateException("Cancelled an order from unexpected status " + before);
         }
     }
 
-    private Order lock(long orderId) {
-        return orders.lockById(orderId).orElseThrow(() -> new OrderNotFoundException(orderId));
+    /**
+     * Expires up to {@code batchSize} due reservations (REQ-LIF-06, AD-11) and returns how many were expired.
+     *
+     * <p>ONE transaction per batch. Lock order is the global one (rule 3): the order rows first, taken only through
+     * {@link OrderRepository#lockExpiredBatch} (oldest deadline first, {@code FOR UPDATE SKIP LOCKED}, so an order a
+     * payment or a concurrent run holds is skipped, not waited on) as the first read of those rows; then the stock
+     * rows, ascending by base product id across the WHOLE batch: the demand of every order is merged into a single
+     * {@link BaseUnitDemand} and released with one call, so no order-by-order interleaving can lock stock rows in
+     * another sequence than a concurrent placement or payment does.
+     *
+     * <p>{@link Order#expire} rechecks status and {@code reserved_until} under the lock, and the release follows the
+     * item snapshots, exactly like a manual cancel of a pending order. A failure (a broken stock invariant) is NOT
+     * caught: the whole batch rolls back, nothing is half-released, and the job logs it loudly and retries on the
+     * next tick (AD-11). Never catch an exception here and carry on in the same transaction: the stock service
+     * marks it rollback-only.
+     */
+    @Transactional
+    public int expireDueOrders(int batchSize) {
+        if (batchSize < 1) {
+            throw new IllegalArgumentException("batchSize must be at least 1");
+        }
+        Instant now = clock.instant();
+        List<Order> due = orders.lockExpiredBatch(now, batchSize);
+        BaseUnitDemand demand = new BaseUnitDemand();
+        for (Order order : due) {
+            order.expire(now);
+            OrderStockDemand.add(demand, order);
+        }
+        if (!demand.isEmpty()) {
+            inventory.release(demand);
+        }
+        return due.size();
     }
 
-    /** Base units of the order's line snapshots, aggregated per base product (ascending ids by construction). */
-    private static BaseUnitDemand demandOf(Order order) {
-        BaseUnitDemand demand = new BaseUnitDemand();
-        for (OrderItem item : order.items()) {
-            demand.addLine(item.baseProductId(), item.baseUnitsPerUnit(), item.quantity());
-        }
-        return demand;
+    private Order lock(long orderId) {
+        return orders.lockById(orderId).orElseThrow(() -> new OrderNotFoundException(orderId));
     }
 }
