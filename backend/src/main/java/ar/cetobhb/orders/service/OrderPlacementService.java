@@ -3,9 +3,11 @@ package ar.cetobhb.orders.service;
 import ar.cetobhb.catalog.domain.ProductSnapshot;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.common.domain.PhoneNumberNormalizer;
+import ar.cetobhb.common.persistence.ConstraintViolations;
 import ar.cetobhb.inventory.domain.BaseUnitDemand;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.config.OrderProperties;
+import ar.cetobhb.orders.domain.IdempotencyConflictException;
 import ar.cetobhb.orders.domain.NewOrder;
 import ar.cetobhb.orders.domain.NewOrderLine;
 import ar.cetobhb.orders.domain.NormalizedOrderRequest;
@@ -22,26 +24,28 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Places orders (CLAUDE.md rules 3, 6, 7). Prices and totals come from the catalog, never from the request.
+ * Places orders (CLAUDE.md rules 3, 6, 7, 10). Prices and totals come from the catalog, never from the request.
  *
  * <p>Everything persistent happens in ONE transaction with a fixed lock order: the order row is inserted and
- * flushed first (the future idempotency claim, AD-7), then stock rows are locked in ascending base-product id by
+ * flushed first (the idempotency claim, AD-7), then stock rows are locked in ascending base-product id by
  * {@link InventoryService#reserve}. Nothing reads a stock row before that lock query, so no stale instance can sit
  * in the persistence context. A business failure (unavailable product, shortage) is a runtime exception that rolls
  * back the order row too: nothing partial survives.
  *
- * <p>Seam for the idempotency slice: {@link #placeOrder} is the only place that opens the transaction, so a
- * same-key lookup and a replay in a second transaction wrap it without touching
- * {@link #placeInCurrentTransaction}.
+ * <p>{@link #placeOrder} is the only place that opens transactions: it wraps this work with the idempotency
+ * lookup and the replay after a lost race.
  */
 @Service
 public class OrderPlacementService {
+
+    private static final String IDEMPOTENCY_KEY_CONSTRAINT = "orders_idempotency_key_uk";
 
     private final OrderRequestNormalizer normalizer;
     private final CatalogService catalog;
@@ -63,19 +67,58 @@ public class OrderPlacementService {
         this.transaction = new TransactionTemplate(transactionManager);
     }
 
-    /** Places the order in its own transaction. Validation, availability and shortage errors propagate as is. */
+    /**
+     * Places the order, idempotently by key (CLAUDE.md rule 10, D-20261006-11, D-20261007-04).
+     *
+     * <p>The key lookup runs FIRST, in its own short transaction and before the catalog or stock are touched, so a
+     * retry of an order that already exists is replayed even if the product was deactivated or the stock is gone
+     * since. A hit with the same fingerprint is a replay (whatever the order status), with another one an
+     * {@link IdempotencyConflictException}. On a miss the order is created in one transaction; if a concurrent
+     * request with the same key committed in between, the unique constraint fires when the order row is inserted
+     * (before any stock is reserved, AD-7), that transaction rolls back and the lookup is repeated in a NEW
+     * transaction. Any other failure propagates as is. A failed placement leaves no order row, so it never burns
+     * the key.
+     */
     public PlacedOrder placeOrder(PlaceOrderCommand command) {
-        return transaction.execute(status -> placeInCurrentTransaction(command));
+        NormalizedOrderRequest request = normalizer.normalize(command);
+        String fingerprint = OrderRequestFingerprint.of(request);
+        PlacedOrder existing = transaction.execute(status -> replayOrNull(request, fingerprint));
+        if (existing != null) {
+            return existing;
+        }
+        try {
+            return transaction.execute(status -> place(request, fingerprint));
+        } catch (DataIntegrityViolationException e) {
+            if (!ConstraintViolations.isConstraint(e, IDEMPOTENCY_KEY_CONSTRAINT)) {
+                throw e;
+            }
+            PlacedOrder winner = transaction.execute(status -> replayOrNull(request, fingerprint));
+            if (winner == null) {
+                throw e;
+            }
+            return winner;
+        }
+    }
+
+    /** The existing order of this key as a replay, null when the key is free; conflict when the request differs. */
+    private PlacedOrder replayOrNull(NormalizedOrderRequest request, String fingerprint) {
+        return orders.findByIdempotencyKey(request.idempotencyKey()).map(order -> {
+            if (!order.requestFingerprint().equals(fingerprint)) {
+                throw new IdempotencyConflictException(order.id());
+            }
+            return placed(order, true);
+        }).orElse(null);
     }
 
     /**
-     * Same work as {@link #placeOrder} inside the caller's transaction, which must already be open: the repository
-     * calls would otherwise commit on their own and break the all-or-nothing contract. The caller owns the
-     * rollback decision. A read-only transaction is rejected as well: placement writes.
+     * Creates the order inside the caller's transaction, which must already be open: the repository calls would
+     * otherwise commit on their own and break the all-or-nothing contract. The caller owns the rollback decision.
+     * A read-only transaction is rejected as well: placement writes.
      *
      * <p>Domain exceptions (unavailable product, shortage) leave the transactional collaborators and mark the
      * caller's transaction rollback-only. Callers must not catch one and carry on in the same transaction: the commit
      * would fail with an {@code UnexpectedRollbackException}.
+     * Does no idempotency lookup: use {@link #placeOrder} for that.
      */
     public PlacedOrder placeInCurrentTransaction(PlaceOrderCommand command) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
@@ -85,7 +128,10 @@ public class OrderPlacementService {
             throw new IllegalStateException("placeInCurrentTransaction cannot run in a read-only transaction");
         }
         NormalizedOrderRequest request = normalizer.normalize(command);
-        String fingerprint = OrderRequestFingerprint.of(request);
+        return place(request, OrderRequestFingerprint.of(request));
+    }
+
+    private PlacedOrder place(NormalizedOrderRequest request, String fingerprint) {
         Instant now = clock.instant();
 
         List<Long> productIds = request.lines().stream().map(PlaceOrderCommand.Line::productId).toList();
@@ -105,6 +151,10 @@ public class OrderPlacementService {
                 now.plus(reservationTime), lines);
         Order order = orders.saveAndFlush(Order.place(data, now));
         inventory.reserve(demand);
-        return new PlacedOrder(order.id(), order.orderNumber(), order.total(), order.reservedUntil());
+        return placed(order, false);
+    }
+
+    private static PlacedOrder placed(Order order, boolean replayed) {
+        return new PlacedOrder(order.id(), order.orderNumber(), order.total(), order.reservedUntil(), replayed);
     }
 }

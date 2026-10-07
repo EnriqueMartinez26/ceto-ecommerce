@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
+    @Transactional(propagation = Propagation.MANDATORY)
     @Query(value = "SELECT nextval('order_number_seq')", nativeQuery = true)
     long nextOrderNumber();
 

@@ -286,6 +286,7 @@ class OrderMappingIT extends AbstractPostgresIT {
         assertThatThrownBy(() -> orders.lockById(1L)).isInstanceOf(IllegalTransactionStateException.class);
         assertThatThrownBy(() -> orders.lockExpiredBatch(CREATED, 10))
                 .isInstanceOf(IllegalTransactionStateException.class);
+        assertThatThrownBy(() -> orders.nextOrderNumber()).isInstanceOf(IllegalTransactionStateException.class);
     }
 
     @Test
@@ -300,7 +301,12 @@ class OrderMappingIT extends AbstractPostgresIT {
 
     @Test
     void nextOrderNumberDrawsFromTheSequence() {
-        assertThat(orders.nextOrderNumber()).isEqualTo(1L);
-        assertThat(orders.nextOrderNumber()).isEqualTo(2L);
+        assertThat(nextNumberInTx()).isEqualTo(1L);
+        assertThat(nextNumberInTx()).isEqualTo(2L);
+    }
+
+    private long nextNumberInTx() {
+        Long number = tx.execute(status -> orders.nextOrderNumber());
+        return number;
     }
 }
