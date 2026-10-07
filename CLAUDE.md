@@ -220,7 +220,10 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     **[guarda pendiente]**
 18. **Prohibido cargar reseñas inventadas**, en código, seeds o fixtures que
     lleguen a producción. Los testimonios de Instagram se usan solo con
-    permiso de cada persona.
+    permiso de cada persona. Guarda parcial: `NoSeedDataInMigrationsTest`
+    detecta `INSERT INTO`, `COPY` y `MERGE INTO` en las migraciones SQL (sin
+    contar comentarios) y rechaza migraciones Java; no prueba que no haya
+    reseñas inventadas en código o fixtures, eso queda para la revisión.
 
 ### Notificaciones
 
