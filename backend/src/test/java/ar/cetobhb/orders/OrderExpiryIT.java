@@ -12,6 +12,7 @@ import ar.cetobhb.orders.domain.IllegalOrderTransitionException;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
 import ar.cetobhb.orders.domain.ShippingZone;
 import ar.cetobhb.orders.repository.OrderRepository;
+import ar.cetobhb.orders.service.ExpiryResult;
 import ar.cetobhb.orders.service.OrderLifecycleService;
 import ar.cetobhb.orders.service.OrderPlacementService;
 import ar.cetobhb.support.AbstractPostgresIT;
@@ -20,6 +21,7 @@ import ar.cetobhb.support.BurstRunner.Outcome;
 import ar.cetobhb.support.BurstRunner.Report;
 import ar.cetobhb.support.MutableClock;
 import ar.cetobhb.support.StockReconciliation;
+import ar.cetobhb.support.StockReconciliation.StockDrift;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -110,6 +112,10 @@ class OrderExpiryIT extends AbstractPostgresIT {
         assertThat(reserved(productId)).as("reserved").isEqualTo(reserved);
     }
 
+    private int expire(int batchSize) {
+        return lifecycle.expireDueOrders(batchSize).expired();
+    }
+
     private void at(Duration sinceStart) {
         clock.set(MutableClock.START.plus(sinceStart));
     }
@@ -120,12 +126,12 @@ class OrderExpiryIT extends AbstractPostgresIT {
         long id = order(line(b, 2));
 
         at(Duration.ofHours(47).plusMinutes(59));
-        assertThat(lifecycle.expireDueOrders(BATCH)).isZero();
+        assertThat(expire(BATCH)).isZero();
         assertThat(status(id)).isEqualTo("PAGO_PENDIENTE");
         assertStock(b, 5, 2);
 
         at(RESERVATION);
-        assertThat(lifecycle.expireDueOrders(BATCH)).isEqualTo(1);
+        assertThat(expire(BATCH)).isEqualTo(1);
 
         assertThat(status(id)).isEqualTo("CANCELADO");
         assertThat(jdbc.queryForObject("SELECT cancel_reason FROM orders WHERE id = ?", String.class, id))
@@ -141,9 +147,9 @@ class OrderExpiryIT extends AbstractPostgresIT {
         long id = order(line(b, 2));
         at(RESERVATION);
 
-        assertThat(lifecycle.expireDueOrders(BATCH)).isEqualTo(1);
-        assertThat(lifecycle.expireDueOrders(BATCH)).isZero();
-        assertThat(lifecycle.expireDueOrders(BATCH)).isZero();
+        assertThat(expire(BATCH)).isEqualTo(1);
+        assertThat(expire(BATCH)).isZero();
+        assertThat(expire(BATCH)).isZero();
 
         assertThat(status(id)).isEqualTo("CANCELADO");
         assertStock(b, 5, 0);
@@ -168,7 +174,7 @@ class OrderExpiryIT extends AbstractPostgresIT {
         assertStock(b, 16, 3);
 
         at(Duration.ofHours(100));
-        assertThat(lifecycle.expireDueOrders(BATCH)).isEqualTo(1);
+        assertThat(expire(BATCH)).isEqualTo(1);
 
         assertThat(status(paid)).isEqualTo("PAGADO");
         assertThat(status(dispatched)).isEqualTo("DESPACHADO");
@@ -190,14 +196,14 @@ class OrderExpiryIT extends AbstractPostgresIT {
         assertStock(b, 100, 12);
         at(Duration.ofHours(100));
 
-        assertThat(lifecycle.expireDueOrders(5)).isEqualTo(5);
+        assertThat(expire(5)).isEqualTo(5);
         assertThat(ids.subList(0, 5)).allMatch(id -> status(id).equals("CANCELADO"));
         assertThat(ids.subList(5, 12)).allMatch(id -> status(id).equals("PAGO_PENDIENTE"));
         assertStock(b, 100, 7);
 
-        assertThat(lifecycle.expireDueOrders(5)).isEqualTo(5);
-        assertThat(lifecycle.expireDueOrders(5)).isEqualTo(2);
-        assertThat(lifecycle.expireDueOrders(5)).isZero();
+        assertThat(expire(5)).isEqualTo(5);
+        assertThat(expire(5)).isEqualTo(2);
+        assertThat(expire(5)).isZero();
 
         assertThat(ids).allMatch(id -> status(id).equals("CANCELADO"));
         assertStock(b, 100, 0);
@@ -205,8 +211,8 @@ class OrderExpiryIT extends AbstractPostgresIT {
 
     @Test
     void aBatchSizeBelowOneIsRejected() {
-        assertThatThrownBy(() -> lifecycle.expireDueOrders(0)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> lifecycle.expireDueOrders(-1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> expire(0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> expire(-1)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -220,7 +226,7 @@ class OrderExpiryIT extends AbstractPostgresIT {
         jdbc.update("UPDATE products SET combo_base_units = 9 WHERE id = ?", combo);
         at(RESERVATION);
 
-        assertThat(lifecycle.expireDueOrders(BATCH)).isEqualTo(1);
+        assertThat(expire(BATCH)).isEqualTo(1);
 
         assertStock(x, 10, 0);
         assertStock(y, 10, 0);
@@ -248,7 +254,7 @@ class OrderExpiryIT extends AbstractPostgresIT {
 
     private int drain(int batchSize) {
         int total = 0;
-        for (int n = lifecycle.expireDueOrders(batchSize); n > 0; n = lifecycle.expireDueOrders(batchSize)) {
+        for (int n = expire(batchSize); n > 0; n = expire(batchSize)) {
             total += n;
         }
         return total;
@@ -265,7 +271,7 @@ class OrderExpiryIT extends AbstractPostgresIT {
         TransactionTemplate tx = new TransactionTemplate(txManager);
         int expiredWhileLocked = tx.execute(status -> {
             orders.lockById(locked).orElseThrow();
-            return CompletableFuture.supplyAsync(() -> lifecycle.expireDueOrders(BATCH))
+            return CompletableFuture.supplyAsync(() -> expire(BATCH))
                     .orTimeout(10, TimeUnit.SECONDS).join();
         });
 
@@ -274,27 +280,89 @@ class OrderExpiryIT extends AbstractPostgresIT {
         assertThat(status(free1)).isEqualTo("CANCELADO");
         assertThat(status(free2)).isEqualTo("CANCELADO");
         assertStock(b, 10, 1);
-        assertThat(lifecycle.expireDueOrders(BATCH)).isEqualTo(1);
+        assertThat(expire(BATCH)).isEqualTo(1);
         assertStock(b, 10, 0);
     }
 
     @Test
-    void payingAfterExpiryFailsAndExpiryNeverTouchesAPaidOrder() {
+    void expiryNeverTouchesAPaidOrderEvenPastItsReservedUntil() {
         long b = base("B", 10);
-        long expired = order(line(b, 2));
         long paid = order(line(b, 3));
         at(RESERVATION.minusMinutes(1));
         lifecycle.markPaid(paid);
-        at(RESERVATION);
+        at(RESERVATION.plusHours(1));
 
-        assertThat(lifecycle.expireDueOrders(BATCH)).isEqualTo(1);
+        assertThat(expire(BATCH)).isZero();
 
-        assertThatThrownBy(() -> lifecycle.markPaid(expired)).isInstanceOf(IllegalOrderTransitionException.class);
         assertThat(status(paid)).isEqualTo("PAGADO");
-        assertThat(status(expired)).isEqualTo("CANCELADO");
         assertStock(b, 7, 0);
     }
 
+    @Test
+    void payingAnOrderThatAlreadyExpiredFailsAsAnIllegalTransitionAndLeavesTheStockReleased() {
+        long b = base("B", 10);
+        long expired = order(line(b, 2));
+        at(RESERVATION);
+        assertThat(expire(BATCH)).isEqualTo(1);
+
+        assertThatThrownBy(() -> lifecycle.markPaid(expired)).isInstanceOf(IllegalOrderTransitionException.class);
+
+        assertThat(status(expired)).isEqualTo("CANCELADO");
+        assertStock(b, 10, 0);
+    }
+
+    @Test
+    void aCorruptOrderRollsTheBatchBackAndTheFallbackExpiresEveryHealthyOrderOneByOne() {
+        long healthy = base("H", 10);
+        long broken = base("K", 10);
+        long h1 = order(line(healthy, 2));
+        long corrupt = order(line(broken, 3));
+        long h2 = order(line(healthy, 1));
+        at(RESERVATION);
+        // Corruption: the stock row of one product vanishes, so releasing that order fails (StockNotConfigured).
+        jdbc.update("DELETE FROM inventory_stock WHERE product_id = ?", broken);
+        try {
+            ExpiryResult result = lifecycle.expireDueOrders(BATCH);
+
+            assertThat(result.expiredOrderIds()).containsExactlyInAnyOrder(h1, h2);
+            assertThat(result.failedOrderIds()).containsExactly(corrupt);
+            assertThat(status(h1)).isEqualTo("CANCELADO");
+            assertThat(status(h2)).isEqualTo("CANCELADO");
+            assertThat(status(corrupt)).isEqualTo("PAGO_PENDIENTE");
+            // Exactly released once: a half-committed batch followed by the fallback would release twice and fail.
+            assertStock(healthy, 10, 0);
+            assertThat(StockReconciliation.stockDrift(jdbc)).extracting(StockDrift::productId)
+                    .containsExactly(broken);
+        } finally {
+            jdbc.update("INSERT INTO inventory_stock (product_id, on_hand, reserved) VALUES (?, 10, 3)", broken);
+        }
+    }
+
+    @Test
+    void aYoungerHealthyOrderBehindACorruptOldestOrderStillExpiresOnTheNextRun() {
+        long healthy = base("H", 10);
+        long broken = base("K", 10);
+        long corrupt = order(line(broken, 3));
+        long h1 = order(line(healthy, 1));
+        long h2 = order(line(healthy, 2));
+        at(RESERVATION.plusHours(1));
+        jdbc.update("DELETE FROM inventory_stock WHERE product_id = ?", broken);
+        try {
+            ExpiryResult first = lifecycle.expireDueOrders(2);
+            assertThat(first.expiredOrderIds()).containsExactly(h1);
+            assertThat(first.failedOrderIds()).containsExactly(corrupt);
+            assertThat(status(h2)).isEqualTo("PAGO_PENDIENTE");
+
+            ExpiryResult second = lifecycle.expireDueOrders(2);
+
+            assertThat(second.expiredOrderIds()).containsExactly(h2);
+            assertThat(second.failedOrderIds()).containsExactly(corrupt);
+            assertThat(status(corrupt)).isEqualTo("PAGO_PENDIENTE");
+            assertStock(healthy, 10, 0);
+        } finally {
+            jdbc.update("INSERT INTO inventory_stock (product_id, on_hand, reserved) VALUES (?, 10, 3)", broken);
+        }
+    }
     @Test
     void expiryRacingPaymentsOfPastDueOrdersLeavesEachOrderInExactlyOneFinalState() {
         long b = base("B", 100);
@@ -339,7 +407,7 @@ class OrderExpiryIT extends AbstractPostgresIT {
         lifecycle.cancel(second, CancelReason.CANCELLED_BY_BUYER);
         long c = order(line(b, 4));
         at(RESERVATION);
-        assertThat(lifecycle.expireDueOrders(BATCH)).isEqualTo(1);
+        assertThat(expire(BATCH)).isEqualTo(1);
         long d = order(line(b, 5));
 
         assertThat(status(c)).isEqualTo("CANCELADO");

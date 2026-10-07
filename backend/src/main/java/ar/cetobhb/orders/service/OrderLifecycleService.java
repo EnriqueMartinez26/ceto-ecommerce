@@ -9,9 +9,14 @@ import ar.cetobhb.orders.repository.Order;
 import ar.cetobhb.orders.repository.OrderRepository;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Order lifecycle operations with their stock effects (CLAUDE.md rules 3, 4, 5). Each operation is ONE transaction
@@ -29,14 +34,19 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrderLifecycleService {
 
+    private static final Logger LOG = LoggerFactory.getLogger(OrderLifecycleService.class);
+
     private final OrderRepository orders;
     private final InventoryService inventory;
     private final Clock clock;
+    private final TransactionTemplate transactions;
 
-    public OrderLifecycleService(OrderRepository orders, InventoryService inventory, Clock clock) {
+    public OrderLifecycleService(OrderRepository orders, InventoryService inventory, Clock clock,
+            PlatformTransactionManager transactionManager) {
         this.orders = orders;
         this.inventory = inventory;
         this.clock = clock;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
     /** PAGO_PENDIENTE to PAGADO: reserved units leave the shelf for good ({@code on_hand} and {@code reserved}). */
@@ -77,27 +87,47 @@ public class OrderLifecycleService {
     }
 
     /**
-     * Expires up to {@code batchSize} due reservations (REQ-LIF-06, AD-11) and returns how many were expired.
+     * Expires up to {@code batchSize} due reservations (REQ-LIF-06, AD-11) and reports which orders were expired
+     * and which failed.
      *
-     * <p>ONE transaction per batch. Lock order is the global one (rule 3): the order rows first, taken only through
-     * {@link OrderRepository#lockExpiredBatch} (oldest deadline first, {@code FOR UPDATE SKIP LOCKED}, so an order a
-     * payment or a concurrent run holds is skipped, not waited on) as the first read of those rows; then the stock
-     * rows, ascending by base product id across the WHOLE batch: the demand of every order is merged into a single
-     * {@link BaseUnitDemand} and released with one call, so no order-by-order interleaving can lock stock rows in
-     * another sequence than a concurrent placement or payment does.
+     * <p>Fast path, ONE transaction per batch. Lock order is the global one (rule 3): the order rows first, taken
+     * only through {@link OrderRepository#lockExpiredBatch} (oldest deadline first, {@code FOR UPDATE SKIP LOCKED},
+     * so an order a payment or a concurrent run holds is skipped, not waited on) as the first read of those rows;
+     * then the stock rows, ascending by base product id across the WHOLE batch: the demand of every order is merged
+     * into a single {@link BaseUnitDemand} and released with one call, so no order-by-order interleaving can lock
+     * stock rows in another sequence than a concurrent placement or payment does.
      *
-     * <p>{@link Order#expire} rechecks status and {@code reserved_until} under the lock, and the release follows the
-     * item snapshots, exactly like a manual cancel of a pending order. A failure (a broken stock invariant) is NOT
-     * caught: the whole batch rolls back, nothing is half-released, and the job logs it loudly and retries on the
-     * next tick (AD-11). Never catch an exception here and carry on in the same transaction: the stock service
-     * marks it rollback-only.
+     * <p>Poison-batch fallback (D-20261007-12). If the batch transaction fails with a {@link RuntimeException} (a
+     * broken stock invariant such as a missing stock row or {@code reserved} below the demand) it rolls back
+     * entirely, nothing is half-released. One corrupt order must not stop every younger order from ever expiring, so
+     * the method then reads the candidate ids WITHOUT locks ({@link OrderRepository#findDueIds}, same filter and
+     * ordering, same limit) and expires each order in its OWN transaction: {@code lockById} as the first read of
+     * the row, {@link Order#expire} rechecks status and deadline under the lock (an order paid or cancelled in the
+     * meantime is skipped, not a failure), then that order's snapshot demand is released, ascending by base product
+     * id. The global lock order holds in both paths. An order that still fails is logged at ERROR with its id only
+     * (no PII), collected in {@link ExpiryResult#failedOrderIds()} and left PAGO_PENDIENTE until it is repaired by
+     * hand; the others advance. A failed order keeps occupying a slot of the oldest-due window, so as many corrupt
+     * orders as the batch size would starve the younger ones: that is what the ERROR log is for.
+     *
+     * <p>This method is deliberately NOT {@code @Transactional}: the batch and each order run in their own
+     * transactions through a {@link TransactionTemplate}. Never catch an exception inside one of them and carry on
+     * in the same transaction: the stock service marks it rollback-only.
      */
-    @Transactional
-    public int expireDueOrders(int batchSize) {
+    public ExpiryResult expireDueOrders(int batchSize) {
         if (batchSize < 1) {
             throw new IllegalArgumentException("batchSize must be at least 1");
         }
         Instant now = clock.instant();
+        try {
+            List<Long> expired = transactions.execute(status -> expireBatch(now, batchSize));
+            return new ExpiryResult(expired, List.of());
+        } catch (RuntimeException batchFailure) {
+            LOG.warn("Expiry batch rolled back ({}); retrying order by order", batchFailure.getClass().getSimpleName());
+            return expireOneByOne(now, batchSize);
+        }
+    }
+
+    private List<Long> expireBatch(Instant now, int batchSize) {
         List<Order> due = orders.lockExpiredBatch(now, batchSize);
         BaseUnitDemand demand = new BaseUnitDemand();
         for (Order order : due) {
@@ -107,7 +137,35 @@ public class OrderLifecycleService {
         if (!demand.isEmpty()) {
             inventory.release(demand);
         }
-        return due.size();
+        return due.stream().map(Order::id).toList();
+    }
+
+    private ExpiryResult expireOneByOne(Instant now, int batchSize) {
+        List<Long> expired = new ArrayList<>();
+        List<Long> failed = new ArrayList<>();
+        for (long id : orders.findDueIds(now, batchSize)) {
+            try {
+                if (Boolean.TRUE.equals(transactions.execute(status -> expireOne(id, now)))) {
+                    expired.add(id);
+                }
+            } catch (RuntimeException failure) {
+                // Id and exception type only: the message of a domain exception may carry business data.
+                LOG.error("Could not expire order {}: {}", id, failure.getClass().getSimpleName());
+                failed.add(id);
+            }
+        }
+        return new ExpiryResult(expired, failed);
+    }
+
+    /** One order in its own transaction; false when it is no longer due (paid, cancelled or gone meanwhile). */
+    private boolean expireOne(long id, Instant now) {
+        Order order = orders.lockById(id).orElse(null);
+        if (order == null || order.status() != OrderStatus.PAGO_PENDIENTE || now.isBefore(order.reservedUntil())) {
+            return false;
+        }
+        order.expire(now);
+        inventory.release(OrderStockDemand.of(order));
+        return true;
     }
 
     private Order lock(long orderId) {

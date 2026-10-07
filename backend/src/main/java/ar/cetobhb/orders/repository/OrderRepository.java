@@ -48,5 +48,16 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
              FOR UPDATE SKIP LOCKED""", nativeQuery = true)
     List<Order> lockExpiredBatch(@Param("now") Instant now, @Param("limit") int limit);
 
+    /**
+     * Ids of the due unpaid orders, same filter, ordering and limit as {@link #lockExpiredBatch} but WITHOUT locks:
+     * the expiry fallback reads the candidates here and then locks and rechecks each order in its own transaction.
+     */
+    @Query(value = """
+            SELECT id FROM orders
+             WHERE status = 'PAGO_PENDIENTE' AND reserved_until <= :now
+             ORDER BY reserved_until, id
+             LIMIT :limit""", nativeQuery = true)
+    List<Long> findDueIds(@Param("now") Instant now, @Param("limit") int limit);
+
     Optional<Order> findByIdempotencyKey(UUID idempotencyKey);
 }

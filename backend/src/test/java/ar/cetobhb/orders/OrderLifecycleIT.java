@@ -268,7 +268,7 @@ class OrderLifecycleIT extends AbstractPostgresIT {
         long b = base("B", 5);
         long id = order(line(b, 2));
         clock.set(MutableClock.START.plus(Duration.ofHours(49)));
-        assertThat(lifecycle.expireDueOrders(100)).isEqualTo(1);
+        assertThat(lifecycle.expireDueOrders(100).expired()).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT cancel_reason FROM orders WHERE id = ?", String.class, id))
                 .isEqualTo("EXPIRED");
         assertStock(b, 5, 0);
