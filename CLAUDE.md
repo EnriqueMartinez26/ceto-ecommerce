@@ -285,8 +285,8 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 - **Configuración de producción que falla cerrada**: sin secretos por
   defecto en el repo, CORS sin `*`, docs de la API apagados. Un proceso con
   configuración inválida no arranca. Hecho para `OrderProperties`
-  (`OrderPropertiesValidationTest`: valores fuera de rango o ausentes
-  frenan el arranque); el resto de la configuración **[guarda pendiente]**
+  (`OrderPropertiesValidationTest`: valores fuera de rango, ausentes o en blanco,
+  incluido el bloque `expiry` entero, frenan el arranque); el resto de la configuración **[guarda pendiente]**
 - **Todo parámetro numérico de la API lleva mínimo Y máximo**
   (`@Min`/`@Max`, cantidades, paginado, estrellas). Un solo lado deja un 500
   alcanzable. Las propiedades de `ceto.orders.*` ya cumplen la regla
