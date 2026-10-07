@@ -26,8 +26,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * Concurrency on stock with real commits (no @Transactional on the test): CLAUDE.md rules 1 and 3. The Hikari pool
- * of the test profile is larger than the thread count, so contention happens on row locks, never on the pool.
+ * Concurrency on stock with real commits (no @Transactional on the test): CLAUDE.md rules 1 and 3. The last-unit
+ * burst proves no oversell and a correct {@code reserved} (rule 1); by itself it does not prove the row lock, since
+ * {@code @Version} and the stock CHECK also stop an oversell. The test that fails without {@code FOR UPDATE} is the
+ * opposite-order one (S9b mutation evidence); the ascending lock ORDER specifically stays pending for S11 (rule 3).
+ * Every burst asserts that more than one task was in flight at once. The Hikari pool of the test profile is larger
+ * than the thread count, so contention happens on row locks, never on the pool.
  */
 class OrderStockBurstIT extends AbstractPostgresIT {
 

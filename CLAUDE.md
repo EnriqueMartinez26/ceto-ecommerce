@@ -165,8 +165,13 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    fila del producto base antes de leer disponibilidad. Prohibido "verificar
    y luego actuar" sin lock. Varias filas se lockean siempre en orden de id
    para no generar deadlocks. Ráfaga de la última unidad: `OrderStockBurstIT`
-   (`lastUnitGoesToExactlyOneOfManyConcurrentBuyers`). **[guarda pendiente:
-   orden de locks, S11]**
+   (`lastUnitGoesToExactlyOneOfManyConcurrentBuyers`) prueba que no hay
+   sobreventa y que `reserved` queda correcto, pero por sí sola no prueba el
+   lock (`@Version` y el CHECK de stock también la frenan). La prueba que falla
+   sin `FOR UPDATE` es `oppositeOrderMultiProductCartsNeverDeadlock` (evidencia
+   por mutación, S9b: sin el lock en `lockByProductId` fallaron 11 de 12 hilos
+   con `ObjectOptimisticLockingFailureException`). **[guarda pendiente: orden
+   de locks ascendente, S11]** para probar específicamente el ORDEN.
 4. **Ciclo de la reserva**: crear el pedido suma a `reserved`; pasar a
    pagado descuenta en firme (`on_hand −= n`, `reserved −= n`); cancelar o
    vencer libera (`reserved −= n`). Una reserva sin pago vence sola a las
@@ -228,7 +233,9 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    `OrderNumber.format` usa `Locale.ROOT` y no trunca por encima de 999999
    (`OrderNumberTest`). El número sale de `order_number_seq` y la base lo
    protege con `orders_order_number_uk` y `orders_order_number_ck`
-   (`OrderConstraintsIT`).
+   (`OrderConstraintsIT`). La secuencia se consume antes del insert y no se
+   devuelve: un pedido fallido o perdedor deja un hueco; el número es legible
+   y creciente, no correlativo sin huecos.
 10. **Checkout idempotente**: el front manda una clave de idempotencia por
     intento; un doble tap no crea dos pedidos ni reserva dos veces. La huella
     del pedido (`OrderRequestFingerprint` v1, SHA-256 de la forma canónica
@@ -246,7 +253,8 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     `OrderIdempotencyIT` (reintentos secuenciales y ráfagas con la misma clave:
     `sameKeyBurstWithTheSamePayloadCreatesOneOrderAndReservesOnce`,
     `sameKeyBurstOnTheLastUnitStillCreatesOneOrder`,
-    `sameKeyBurstWithDifferentPayloadsKeepsTheWinnerAndRejectsTheOthers`).
+    `sameKeyBurstWithDifferentPayloadsKeepsTheWinnerAndRejectsTheOthers`,
+    `sameKeyBurstWhoseWinnerRollsBackLeavesNoOrderAndDoesNotBurnTheKey`).
 
 ### Checkout, WhatsApp y envío
 
