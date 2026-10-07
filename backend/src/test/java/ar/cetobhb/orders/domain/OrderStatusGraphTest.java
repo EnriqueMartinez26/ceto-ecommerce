@@ -12,6 +12,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 class OrderStatusGraphTest {
@@ -103,6 +104,20 @@ class OrderStatusGraphTest {
         assertThatThrownBy(() -> OrderStatus.PAGO_PENDIENTE.requireCancellation(null))
                 .isInstanceOfSatisfying(ValidationException.class,
                         e -> assertThat(e.reason()).isEqualTo(ReasonCode.INVALID_CANCEL_REASON));
+    }
+
+    @ParameterizedTest(name = "null reason from {0} is a validation error")
+    @EnumSource(value = OrderStatus.class, names = {"PAGO_PENDIENTE", "PAGADO"})
+    void nullCancelReasonFromCancellableStateIsInvalidCancelReason(OrderStatus from) {
+        assertThatThrownBy(() -> from.requireCancellation(null))
+                .isInstanceOfSatisfying(ValidationException.class,
+                        e -> assertThat(e.reason()).isEqualTo(ReasonCode.INVALID_CANCEL_REASON));
+    }
+
+    @Test
+    void nullCancelReasonFromDespachadoIsAnIllegalTransitionBecauseTheEdgeIsCheckedFirst() {
+        assertThatThrownBy(() -> OrderStatus.DESPACHADO.requireCancellation(null))
+                .isInstanceOf(IllegalOrderTransitionException.class);
     }
 
     @Test
