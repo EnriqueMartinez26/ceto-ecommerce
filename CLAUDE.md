@@ -197,14 +197,17 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    pueda intentar se rechaza sin tocar el estado en `OrderEntityTransitionTest`
    (`everyIllegalEdgeThrowsAndLeavesTheStatusAlone`), fija `paid_at`,
    `dispatched_at`, `delivered_at` y el par `cancel_reason`/`cancelled_at` en
-   la misma operación, y se persiste cumpliendo los `CHECK` por cada camino
-   legal (`OrderMappingIT`). `status` no tiene setter público: lo verifican
+   la misma operación, y se persiste paso a paso: cada estado intermedio de cada
+   camino legal (`PAGADO`, `DESPACHADO`, etc.) se escribe en Postgres y cumple
+   los `CHECK`, no solo el estado final (`OrderMappingIT`, una transacción por
+   paso). `status` no tiene setter público: lo verifican
    un escaneo por reflexión (`ordersAndItemsExposeNoPublicSetterOrGenericStatusMutator`)
    y la regla ArchUnit `ENTITIES_HAVE_NO_PUBLIC_SETTERS` sobre todas las
    entidades (`ArchitectureTest`, con fixture en `ArchitectureRulesTest`).
 6. **Las líneas del pedido son una foto.** Guardan nombre, precio unitario,
-   combo, unidades base y cupón aplicados al momento de comprar. Editar un
-   producto después no cambia pedidos existentes. `OrderItem` no tiene
+   combo, unidades base y cupón aplicados al momento de comprar (cupón: cambio
+   posterior; no se guarda en este cambio). Editar un producto después no
+   cambia pedidos existentes. `OrderItem` no tiene
    setters y es `@Immutable`: Hibernate no emite `UPDATE` aunque se altere el
    campo (`OrderMappingIT.orderItemsAreImmutableOnceStored`).
 7. **El total lo calcula el servidor.** El cliente manda ids y cantidades;
