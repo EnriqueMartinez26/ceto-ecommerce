@@ -26,6 +26,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -35,6 +36,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.beans.ConversionNotSupportedException;
+import org.springframework.core.MethodParameter;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -49,6 +52,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.MissingPathVariableException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -107,7 +111,19 @@ class ApiExceptionHandlerTest {
                 Arguments.of(new DataIntegrityViolationException(SECRET), 409, "CONFLICT"),
                 Arguments.of(new OptimisticLockingFailureException(SECRET), 409, "CONFLICT"),
                 Arguments.of(new NoResourceFoundException(HttpMethod.GET, "/nope", "nope"), 404, "NOT_FOUND"),
-                Arguments.of(new RuntimeException(SECRET), 500, "INTERNAL_ERROR"));
+                Arguments.of(new RuntimeException(SECRET), 500, "INTERNAL_ERROR"),
+                // Server-side framework faults extend 4xx-family exception types but are 500s (REQ-ERR-01).
+                Arguments.of(new ConversionNotSupportedException(SECRET, Long.class, null), 500, "INTERNAL_ERROR"),
+                Arguments.of(missingPathVariable(), 500, "INTERNAL_ERROR"));
+    }
+
+    private static MissingPathVariableException missingPathVariable() {
+        try {
+            Method method = ThrowingController.class.getDeclaredMethod("item", long.class);
+            return new MissingPathVariableException("id", new MethodParameter(method, 0));
+        } catch (NoSuchMethodException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @ParameterizedTest

@@ -124,6 +124,14 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     private static ApiError classify(Exception ex, HttpStatusCode status) {
+        if (ex instanceof AsyncRequestTimeoutException) {
+            return ApiErrorCatalog.SERVICE_BUSY;
+        }
+        // Server faults first: ConversionNotSupportedException extends TypeMismatchException and
+        // MissingPathVariableException extends ServletRequestBindingException, yet both are 500s.
+        if (status.is5xxServerError()) {
+            return ApiErrorCatalog.INTERNAL;
+        }
         if (ex instanceof MethodArgumentNotValidException || ex instanceof HandlerMethodValidationException
                 || ex instanceof TypeMismatchException) {
             return ApiErrorCatalog.VALIDATION;
@@ -142,12 +150,6 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         }
         if (ex instanceof NoHandlerFoundException || ex instanceof NoResourceFoundException) {
             return ApiErrorCatalog.NOT_FOUND;
-        }
-        if (ex instanceof AsyncRequestTimeoutException) {
-            return ApiErrorCatalog.SERVICE_BUSY;
-        }
-        if (status.is5xxServerError()) {
-            return ApiErrorCatalog.INTERNAL;
         }
         return new ApiError(HttpStatus.valueOf(status.value()), ApiErrorCatalog.MALFORMED.code(),
                 ApiErrorCatalog.MALFORMED.detail(), ApiErrorCatalog.MALFORMED.logLevel());
