@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import ar.cetobhb.common.domain.PhoneNumberNormalizer;
 import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.IntStream;
@@ -164,6 +165,61 @@ class OrderRequestNormalizerTest {
         assertRejected(command(longAddress, line(1, 1)), ReasonCode.ADDRESS_TOO_LONG);
         Buyer atLimit = new Buyer("a".repeat(120), PHONE, "b".repeat(500), ShippingZone.CORDOBA_CAPITAL);
         assertThat(normalizer.normalize(command(atLimit, line(1, 1))).address()).hasSize(500);
+    }
+
+    @Test
+    void rejectsANullLineWithoutThrowingANullPointer() {
+        assertRejected(new PlaceOrderCommand(KEY, BUYER, Arrays.asList(null, line(1, 1))), ReasonCode.INVALID_LINE);
+        assertRejected(new PlaceOrderCommand(KEY, BUYER, Arrays.asList(line(1, 1), null)), ReasonCode.INVALID_LINE);
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0, -1, Long.MIN_VALUE})
+    void rejectsANonPositiveProductId(long productId) {
+        assertRejected(command(BUYER, line(productId, 1)), ReasonCode.INVALID_LINE);
+    }
+
+    @Test
+    void anInvalidLineIsReportedBeforeItsQuantityAndBeforeDuplicates() {
+        assertRejected(command(BUYER, line(0, 0)), ReasonCode.INVALID_LINE);
+        assertRejected(command(BUYER, line(5, 1), line(5, 1), line(-1, 1)), ReasonCode.INVALID_LINE);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Mar\u0000ia", "\u0000", "Mar\u0007ia", "Mar\u001Fia", "Mar\u007Fia", "Maria\u0000\u0085",
+        "Mar‮ia", "‪", "Mar⁦ia", "⁩", "Mar​ia", "Mar‌ia", "Mar‍ia", "﻿Maria",
+        "Mar\uD800ia", "Maria\uDC00", "Mar\uDC00\uD800ia"})
+    void rejectsControlFormatAndUnpairedSurrogateCharactersInTheName(String name) {
+        assertRejected(command(new Buyer(name, PHONE, "Calle 1", ShippingZone.CORDOBA_CAPITAL), line(1, 1)),
+                ReasonCode.INVALID_CHARACTERS);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Calle\u0000 1", "Calle 1‮", "Calle​1", "﻿Calle 1", "Calle \uD800 1",
+        "Calle\u0001"})
+    void rejectsControlFormatAndUnpairedSurrogateCharactersInTheAddress(String address) {
+        assertRejected(command(new Buyer("Maria", PHONE, address, ShippingZone.CORDOBA_CAPITAL), line(1, 1)),
+                ReasonCode.INVALID_CHARACTERS);
+    }
+
+    @Test
+    void whitespaceControlsCollapseButNulIsRejectedAndPairedSurrogatesAreKept() {
+        // Tab, newline, CR, NEL and NBSP are whitespace: they collapse to one space (see the class Javadoc).
+        Buyer buyer = new Buyer("Ana\t\r\n\u0085 Maria 😀", PHONE, "Calle\u000B1", ShippingZone.CORDOBA_CAPITAL);
+        NormalizedOrderRequest request = normalizer.normalize(command(buyer, line(1, 1)));
+        assertThat(request.name()).isEqualTo("Ana Maria 😀");
+        assertThat(request.address()).isEqualTo("Calle 1");
+    }
+
+    @Test
+    void invalidCharactersAreReportedBeforeTheBlankAndLengthChecksOfTheSameField() {
+        assertRejected(command(new Buyer("\u0000", PHONE, "Calle 1", ShippingZone.CORDOBA_CAPITAL), line(1, 1)),
+                ReasonCode.INVALID_CHARACTERS);
+        assertRejected(command(new Buyer("a".repeat(121) + "‮", PHONE, "Calle 1", ShippingZone.CORDOBA_CAPITAL),
+                line(1, 1)), ReasonCode.INVALID_CHARACTERS);
+        // The name is checked before the phone, the phone before the address.
+        assertRejected(command(new Buyer("M\u0000", "bad", "C\u0000", null), line(1, 1)), ReasonCode.INVALID_CHARACTERS);
+        assertRejected(command(new Buyer("M", "bad", "C\u0000", null), line(1, 1)), ReasonCode.INVALID_PHONE);
     }
 
     @Test
