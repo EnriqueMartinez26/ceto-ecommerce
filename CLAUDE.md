@@ -193,11 +193,20 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    `cancel_reason` y `cancelled_at` existen solo si el estado es `CANCELADO`;
    `orders_expired_unpaid_ck`, `orders_paid_at_ck`), probados con SQL crudo en
    `OrderConstraintsIT`.
-   **[guarda pendiente: pares sobre pedidos reales y `status` sin setter
-   público, en la entidad]**
+   La entidad `Order` aplica el grafo: toda arista ilegal que una operación
+   pueda intentar se rechaza sin tocar el estado en `OrderEntityTransitionTest`
+   (`everyIllegalEdgeThrowsAndLeavesTheStatusAlone`), fija `paid_at`,
+   `dispatched_at`, `delivered_at` y el par `cancel_reason`/`cancelled_at` en
+   la misma operación, y se persiste cumpliendo los `CHECK` por cada camino
+   legal (`OrderMappingIT`). `status` no tiene setter público: lo verifican
+   un escaneo por reflexión (`ordersAndItemsExposeNoPublicSetterOrGenericStatusMutator`)
+   y la regla ArchUnit `ENTITIES_HAVE_NO_PUBLIC_SETTERS` sobre todas las
+   entidades (`ArchitectureTest`, con fixture en `ArchitectureRulesTest`).
 6. **Las líneas del pedido son una foto.** Guardan nombre, precio unitario,
    combo, unidades base y cupón aplicados al momento de comprar. Editar un
-   producto después no cambia pedidos existentes.
+   producto después no cambia pedidos existentes. `OrderItem` no tiene
+   setters y es `@Immutable`: Hibernate no emite `UPDATE` aunque se altere el
+   campo (`OrderMappingIT.orderItemsAreImmutableOnceStored`).
 7. **El total lo calcula el servidor.** El cliente manda ids y cantidades;
    precios, descuentos y total salen de la base. El cálculo (`OrderTotals`)
    es `BigDecimal` exacto y rechaza lo que no entra en `NUMERIC(12,2)`

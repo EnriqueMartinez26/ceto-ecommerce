@@ -9,6 +9,7 @@ import static com.tngtech.archunit.core.domain.properties.HasOwner.Predicates.Wi
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 
 import ar.cetobhb.common.config.ClockConfig;
@@ -23,6 +24,7 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.CompositeArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import jakarta.persistence.Entity;
 import java.time.Clock;
 import java.time.ZoneId;
 import java.util.Calendar;
@@ -160,6 +162,17 @@ final class ArchitectureRules {
             .orShould().callConstructorWhere(SYSTEM_TIME_DATE_OR_GREGORIAN_CALENDAR)
             .orShould().callMethodWhere(target(owner(type(Calendar.class))).and(target(name("getInstance"))))
             .as("the system clock and zone are read only in ClockConfig; inject Clock everywhere else");
+
+    /**
+     * CLAUDE.md section 4, rule 5: an entity changes state through intent methods (markPaid, cancel, ...), never a
+     * public setter, so status transitions cannot bypass the graph. Not allowEmptyShould: Order and InventoryStock
+     * exist, so a rename or move that empties the rule must fail instead of passing silently.
+     */
+    static final ArchRule ENTITIES_HAVE_NO_PUBLIC_SETTERS = noMethods()
+            .that().areDeclaredInClassesThat().areAnnotatedWith(Entity.class)
+            .and().arePublic()
+            .should().haveNameMatching("set[A-Z].*")
+            .as("JPA entities expose no public setters; change state through intent methods");
 
     /** Spring's {@code @Transactional} is the only one allowed; the Jakarta one has different semantics. */
     static final ArchRule NO_JAKARTA_TRANSACTIONAL = noClasses()

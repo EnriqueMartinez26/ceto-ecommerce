@@ -26,6 +26,9 @@ class ArchitectureTest {
     static final ArchRule noJakartaTransactional = ArchitectureRules.NO_JAKARTA_TRANSACTIONAL;
 
     @ArchTest
+    static final ArchRule entitiesHaveNoPublicSetters = ArchitectureRules.ENTITIES_HAVE_NO_PUBLIC_SETTERS;
+
+    @ArchTest
     static final ArchRule repositoryOnlyFromOwnFeatureService =
             ArchitectureRules.REPOSITORY_ONLY_FROM_OWN_FEATURE_SERVICE;
 }

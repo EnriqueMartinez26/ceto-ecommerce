@@ -118,6 +118,14 @@ class ArchitectureRulesTest {
     }
 
     @Test
+    void entityRuleFailsOnAPublicSetterAndIgnoresNonPublicOnes() {
+        assertThatThrownBy(() -> ArchitectureRules.ENTITIES_HAVE_NO_PUBLIC_SETTERS.check(fixtures("entitysetter")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("SettableOrder.setStatus(")
+                .satisfies(error -> assertThat(error.getMessage()).doesNotContain("setPackagePrivateIsFine"));
+    }
+
+    @Test
     void compliantCodeSatisfiesEveryRule() {
         JavaClasses clean = fixtures("clean");
         List<ArchRule> rules = List.of(
@@ -126,7 +134,8 @@ class ArchitectureRulesTest {
                 ArchitectureRules.TRANSACTIONAL_ONLY_IN_SERVICES,
                 ArchitectureRules.NO_SYSTEM_CLOCK,
                 ArchitectureRules.NO_JAKARTA_TRANSACTIONAL,
-                ArchitectureRules.REPOSITORY_ONLY_FROM_OWN_FEATURE_SERVICE);
+                ArchitectureRules.REPOSITORY_ONLY_FROM_OWN_FEATURE_SERVICE,
+                ArchitectureRules.ENTITIES_HAVE_NO_PUBLIC_SETTERS);
         for (ArchRule rule : rules) {
             assertThatCode(() -> rule.check(clean)).doesNotThrowAnyException();
         }
