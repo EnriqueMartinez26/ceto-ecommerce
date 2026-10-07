@@ -388,7 +388,14 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   Imágenes por magic bytes, con tope de bytes y de píxeles; nunca SVG.
   Asuntos de mail sin CRLF.
 - **Errores neutros hacia afuera**: violación de restricción → 409 genérico;
-  sin stack traces ni mensajes crudos de validación al usuario final.
+  sin stack traces ni mensajes crudos de validación al usuario final. Guardas:
+  un único `@RestControllerAdvice` (`ApiExceptionHandler`, tabla en
+  `ApiErrorCatalog`) arma todas las respuestas `application/problem+json` con
+  texto fijo, y `ApiExceptionHandlerTest` verifica la tabla completa sin filtrar
+  mensajes; `ApiErrorCatalogTest` hace fallar el build si una subclase concreta de
+  `DomainException` no tiene fila; `BootErrorEndpointIT` fija que el `/error` de
+  Boot no devuelve stack trace ni mensaje (D-20261007-23). **[Guarda pendiente]**
+  logs sin datos personales (`PiiLoggingIT`, cambio `checkout-http`).
 - **Datos personales (Ley 25.326)**: se pide solo lo necesario; teléfono,
   dirección y email no van a los logs.
 
