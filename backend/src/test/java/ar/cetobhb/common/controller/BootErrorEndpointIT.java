@@ -2,6 +2,8 @@ package ar.cetobhb.common.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ar.cetobhb.support.AbstractPostgresIT;
 import java.nio.charset.StandardCharsets;
@@ -39,8 +41,24 @@ class BootErrorEndpointIT extends AbstractPostgresIT {
                         .requestAttr("jakarta.servlet.error.status_code", 500)
                         .requestAttr("jakarta.servlet.error.message", SECRET)
                         .requestAttr("jakarta.servlet.error.exception", new IllegalStateException(SECRET)))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.status").value(500))
+                .andExpect(jsonPath("$.error").isNotEmpty())
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
 
-        assertThat(body).doesNotContain("+54", "boom", "IllegalStateException", "trace", "at ar.cetobhb");
+        assertThat(body).isNotBlank().doesNotContain("+54", "boom", "IllegalStateException", "trace", "at ar.cetobhb");
+    }
+
+    @Test
+    void whitelabelHtmlBodyHasNoTraceMessageOrExceptionName() throws Exception {
+        String body = mvc.perform(get("/error").accept(MediaType.TEXT_HTML)
+                        .requestAttr("jakarta.servlet.error.status_code", 500)
+                        .requestAttr("jakarta.servlet.error.message", SECRET)
+                        .requestAttr("jakarta.servlet.error.exception", new IllegalStateException(SECRET)))
+                .andExpect(status().isInternalServerError())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        assertThat(body).isNotBlank().contains("500")
+                .doesNotContain("+54", "boom", "IllegalStateException", "trace", "at ar.cetobhb");
     }
 }
