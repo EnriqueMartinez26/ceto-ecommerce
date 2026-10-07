@@ -183,17 +183,26 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    El grafo vive en un solo lugar (un enum con sus transiciones permitidas);
    la entidad aplica la transición y `status` no tiene setter público.
    `ENTREGADO` y `CANCELADO` son terminales absorbentes. Una arista nueva es
-   una decisión de producto. **[guarda pendiente: test que recorre el
-   grafo]**
+   una decisión de producto. El grafo (`OrderStatus`) lo recorre
+   `OrderStatusGraphTest` sobre los 25 pares contra un conjunto de 5 aristas
+   declarado aparte en el test; la razón `EXPIRED` solo vale desde
+   `PAGO_PENDIENTE` (`cancelReasonValidityPerSourceState`).
+   **[guarda pendiente: pares sobre pedidos reales y `status` sin setter
+   público, en la entidad]**
 6. **Las líneas del pedido son una foto.** Guardan nombre, precio unitario,
    combo, unidades base y cupón aplicados al momento de comprar. Editar un
    producto después no cambia pedidos existentes.
 7. **El total lo calcula el servidor.** El cliente manda ids y cantidades;
-   precios, descuentos y total salen de la base. **[guarda pendiente]**
+   precios, descuentos y total salen de la base. El cálculo (`OrderTotals`)
+   es `BigDecimal` exacto y rechaza lo que no entra en `NUMERIC(12,2)`
+   (`OrderTotalsTest`). **[guarda pendiente: que el servicio lo use y que el
+   contrato no acepte precios]**
 8. **Dinero en `BigDecimal` / `NUMERIC(12,2)`**, nunca `double` ni `float`.
    Sumas y reportes se agregan en SQL, no cargando listas a memoria.
 9. **Número de pedido legible** (`CETO-000123`) separado del id interno: es
    lo que viaja en el WhatsApp para que la clienta lo encuentre en el panel.
+   `OrderNumber.format` usa `Locale.ROOT` y no trunca por encima de 999999
+   (`OrderNumberTest`).
 10. **Checkout idempotente**: el front manda una clave de idempotencia por
     intento; un doble tap no crea dos pedidos ni reserva dos veces.
     **[guarda pendiente]**
