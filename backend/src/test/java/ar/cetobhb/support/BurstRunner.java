@@ -10,6 +10,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Runs tasks on their own threads released together by a start latch, so they genuinely contend. A task that does
@@ -30,9 +31,23 @@ public final class BurstRunner {
         }
     }
 
+    /**
+     * Outcomes in the order of the tasks plus the maximum number of tasks simultaneously in flight, which proves the
+     * burst really overlapped.
+     */
+    public record Report<T>(List<Outcome<T>> outcomes, int maxInFlight) {
+    }
+
     /** Runs every task concurrently and returns the outcomes in the order of {@code tasks}. */
     public static <T> List<Outcome<T>> run(List<Callable<T>> tasks) {
-        ExecutorService pool = Executors.newFixedThreadPool(tasks.size());
+        return runMeasured(tasks).outcomes();
+    }
+
+    /** Like {@link #run} but also reports the maximum number of tasks in flight at the same time. */
+    public static <T> Report<T> runMeasured(List<Callable<T>> tasks) {
+        AtomicInteger inFlight = new AtomicInteger();
+        AtomicInteger maxInFlight = new AtomicInteger();
+        ExecutorService pool =Executors.newFixedThreadPool(tasks.size());
         CountDownLatch ready = new CountDownLatch(tasks.size());
         CountDownLatch start = new CountDownLatch(1);
         try {
@@ -41,7 +56,12 @@ public final class BurstRunner {
                 futures.add(pool.submit(() -> {
                     ready.countDown();
                     start.await();
-                    return task.call();
+                    maxInFlight.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
+                    try {
+                        return task.call();
+                    } finally {
+                        inFlight.decrementAndGet();
+                    }
                 }));
             }
             if (!ready.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
@@ -52,7 +72,7 @@ public final class BurstRunner {
             for (Future<T> future : futures) {
                 outcomes.add(await(future));
             }
-            return outcomes;
+            return new Report<>(outcomes, maxInFlight.get());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new AssertionError("burst interrupted", e);

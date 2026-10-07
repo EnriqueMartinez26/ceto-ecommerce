@@ -14,6 +14,7 @@ import ar.cetobhb.orders.service.PlacedOrder;
 import ar.cetobhb.support.AbstractPostgresIT;
 import ar.cetobhb.support.BurstRunner;
 import ar.cetobhb.support.BurstRunner.Outcome;
+import ar.cetobhb.support.BurstRunner.Report;
 import ar.cetobhb.support.StockReconciliation;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -77,7 +78,9 @@ class OrderStockBurstIT extends AbstractPostgresIT {
             tasks.add(placing(b));
         }
 
-        List<Outcome<PlacedOrder>> outcomes = BurstRunner.run(tasks);
+        Report<PlacedOrder> report = BurstRunner.runMeasured(tasks);
+        List<Outcome<PlacedOrder>> outcomes = report.outcomes();
+        assertThat(report.maxInFlight()).isGreaterThan(1);
 
         assertThat(outcomes.stream().filter(Outcome::succeeded)).hasSize(1);
         assertThat(outcomes.stream().filter(o -> !o.succeeded()).map(Outcome::error))
@@ -97,7 +100,9 @@ class OrderStockBurstIT extends AbstractPostgresIT {
             tasks.add(i % 2 == 0 ? placing(a, b) : placing(b, a));
         }
 
-        List<Outcome<PlacedOrder>> outcomes = BurstRunner.run(tasks);
+        Report<PlacedOrder> report = BurstRunner.runMeasured(tasks);
+        List<Outcome<PlacedOrder>> outcomes = report.outcomes();
+        assertThat(report.maxInFlight()).isGreaterThan(1);
 
         assertThat(outcomes).allMatch(Outcome::succeeded);
         assertThat(stockColumn("reserved", a)).isEqualTo(THREADS);
