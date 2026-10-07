@@ -349,6 +349,19 @@ class OrderPlacementIT extends AbstractPostgresIT {
     }
 
     @Test
+    void placingInAReadOnlyTransactionIsRejected() {
+        long b = base("Base", "100.00", 5);
+        PlaceOrderCommand cmd = command(line(b, 1));
+        TransactionTemplate readOnly = new TransactionTemplate(txManager);
+        readOnly.setReadOnly(true);
+
+        assertThatThrownBy(() -> readOnly.executeWithoutResult(status -> placement.placeInCurrentTransaction(cmd)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("read-only");
+        assertNothingPersisted();
+    }
+
+    @Test
     void placingOutsideATransactionIsRejected() {
         long b = base("Base", "100.00", 5);
 

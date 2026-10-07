@@ -71,11 +71,18 @@ public class OrderPlacementService {
     /**
      * Same work as {@link #placeOrder} inside the caller's transaction, which must already be open: the repository
      * calls would otherwise commit on their own and break the all-or-nothing contract. The caller owns the
-     * rollback decision.
+     * rollback decision. A read-only transaction is rejected as well: placement writes.
+     *
+     * <p>Domain exceptions (unavailable product, shortage) leave the transactional collaborators and mark the
+     * caller's transaction rollback-only. Callers must not catch one and carry on in the same transaction: the commit
+     * would fail with an {@code UnexpectedRollbackException}.
      */
     public PlacedOrder placeInCurrentTransaction(PlaceOrderCommand command) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("placeInCurrentTransaction requires an active transaction");
+        }
+        if (TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
+            throw new IllegalStateException("placeInCurrentTransaction cannot run in a read-only transaction");
         }
         NormalizedOrderRequest request = normalizer.normalize(command);
         String fingerprint = OrderRequestFingerprint.of(request);
