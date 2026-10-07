@@ -8,7 +8,8 @@ Docker Compose en un VPS (postgres, backend, frontend, caddy).
 
 Este archivo se carga en cada sesión y es contexto autoritativo para
 cualquier cambio. Está escrito para el asistente de IA tanto como para las
-personas. **Estado al 2026-10-06: el repo no tiene código todavía.** Por eso
+personas. **Estado al 2026-10-07: el backend tiene solo el andamiaje (`backend/`,
+Spring Boot 4.1.1) y la guarda de ddl-auto; el resto no está construido.** Por eso
 cada regla dura dice cuál es su guarda (test, restricción de la base, chequeo
 estático) o lleva **[guarda pendiente]**: una regla con guarda pendiente es
 un requisito de implementación, no algo que ya esté protegido. Cuando la
@@ -90,8 +91,10 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   disponibilidad de combos, cálculo de totales) viven en clases de dominio
   sin Spring ni JPA, testeables con tests unitarios simples.
 - **Esquema solo por Flyway.** `spring.jpa.hibernate.ddl-auto=validate` (o
-  `none`) en todos los perfiles; nunca `update` ni `create`. **[guarda
-  pendiente]**
+  `none`) en todos los perfiles; nunca `update` ni `create`. Guardas:
+  `SchemaManagementGuardTest` (el arranque falla con otro valor, también por
+  variable de entorno) y `DdlAutoConfigFilesTest` (recorre los
+  `application*` del classpath).
 - **Mails y avisos por outbox**: el servicio escribe una fila en
   `outbox_messages` en la misma transacción del cambio; un job la toma con
   `FOR UPDATE SKIP LOCKED`, la marca y recién después del commit manda.
@@ -319,7 +322,7 @@ No se implementa nada de esta lista asumiendo una respuesta: se pregunta.
   clienta. En el cambio del checkout: límite de pedidos `PAGO_PENDIENTE`
   por teléfono e IP, porque una reserva sin pago bloquea stock 48 h.
 - Del lado técnico, todavía no existen: CI, pre-commit, backups, test de
-  arquitectura ni ninguna de las guardas marcadas como pendientes.
+  arquitectura ni las demás guardas marcadas como pendientes.
 
 ## 10. Compuertas de proceso
 
@@ -327,6 +330,8 @@ Objetivo; se activan a medida que existe el código. **[pendiente]**
 
 - Backend: `./mvnw verify` (compila, tests unitarios e integración con
   Testcontainers, ArchUnit). Cero warnings del compilador como línea base.
+  Ya existe y corre con Postgres 16 real; ArchUnit se suma con el test de
+  arquitectura **[pendiente]**.
 - Frontend: `npm run lint`, `npm run typecheck`, `npm test`,
   `npm run build`.
 - CI (GitHub Actions) corre lo mismo, con los mismos comandos, en cada push
