@@ -34,8 +34,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * multi-product orders that list their lines in opposite id order, a payment, a cancellation and two expiry runs
  * on the same base products at once. Any path that locked stock rows in another sequence would deadlock with the
  * others and Postgres would abort one transaction (40P01), which fails the iteration; a hang fails by timeout.
- * The burst is only a proof if the guard bites: see the mutation evidence in the S11 apply-progress (stock locking
- * made descending in {@code InventoryService.release} produced deadlocks here).
+ *
+ * <p>Mutation evidence (recorded 2026-10-07): the burst is only a proof if the guard bites. Changing
+ * {@code InventoryService.release} to lock the stock rows in DESCENDING product id (instead of ascending) made
+ * {@code placementsPaymentsCancellationsAndExpiryOnSharedBaseProductsNeverDeadlock} fail at iteration 0 with
+ * Postgres {@code 40P01 deadlock detected}. With the ascending order restored the test is green.
  */
 class OrderLockOrderingIT extends AbstractPostgresIT {
 
@@ -118,8 +121,20 @@ class OrderLockOrderingIT extends AbstractPostgresIT {
                 .allMatch(e -> e instanceof InsufficientStockException);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM orders WHERE cancel_reason = 'EXPIRED'", Integer.class))
                 .isEqualTo(10);
-        assertThat(jdbc.queryForObject("SELECT max(reserved) FROM inventory_stock", Integer.class))
-                .isLessThanOrEqualTo(12);
+        // Exact final state: every old order expired, so what stays reserved is exactly the lines of the placements
+        // that fit (one unit of X and one of Y each), and no unit ever left the shelf.
+        long placed = report.outcomes().stream().filter(Outcome::succeeded)
+                .filter(o -> o.value().startsWith("placed:")).count();
+        assertThat(placed).isPositive();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM orders WHERE status = 'PAGO_PENDIENTE'", Integer.class))
+                .isEqualTo((int) placed);
+        for (long product : new long[] {x, y}) {
+            assertThat(jdbc.queryForObject("SELECT reserved FROM inventory_stock WHERE product_id = ?",
+                    Integer.class, product)).as("reserved of %d", product).isEqualTo((int) placed);
+            assertThat(jdbc.queryForObject("SELECT on_hand FROM inventory_stock WHERE product_id = ?",
+                    Integer.class, product)).as("on_hand of %d", product).isEqualTo(12);
+        }
+        assertThat(StockReconciliation.stockDrift(jdbc)).isEmpty();
     }
 
     @Test
