@@ -1,3 +1,11 @@
 ceto:
   scheduling:
     enabled: false
+
+spring:
+  datasource:
+    hikari:
+      # Burst ITs run up to 12 threads that each hold one connection for the whole placement transaction, plus the
+      # test thread and the cleaner. The default pool (10) would make threads queue on the pool instead of on the
+      # row locks under test, hiding races (and risking pool timeouts). 30 keeps pool size > threads + helpers.
+      maximum-pool-size: 30
