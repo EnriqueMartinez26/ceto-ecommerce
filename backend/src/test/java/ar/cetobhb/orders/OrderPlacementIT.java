@@ -369,4 +369,16 @@ class OrderPlacementIT extends AbstractPostgresIT {
                 .isInstanceOf(IllegalStateException.class);
         assertNothingPersisted();
     }
+
+    @Test
+    void placeOrderInsideAnActiveTransactionIsRejected() {
+        long b = base("Base", "100.00", 5);
+        PlaceOrderCommand cmd = command(line(b, 1));
+        TransactionTemplate outer = new TransactionTemplate(txManager);
+
+        assertThatThrownBy(() -> outer.executeWithoutResult(status -> placement.placeOrder(cmd)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("placeOrder");
+        assertNothingPersisted();
+    }
 }

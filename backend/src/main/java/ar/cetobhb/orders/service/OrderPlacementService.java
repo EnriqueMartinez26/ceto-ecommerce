@@ -78,8 +78,20 @@ public class OrderPlacementService {
      * (before any stock is reserved, AD-7), that transaction rolls back and the lookup is repeated in a NEW
      * transaction. Any other failure propagates as is. A failed placement leaves no order row, so it never burns
      * the key.
+     *
+     * <p>Must not be called inside an active transaction (an {@link IllegalStateException} is thrown): the replay
+     * after a lost race needs a transaction of its own. If that replay finds no winner row, the unique constraint
+     * and the never-deleted orders contradict each other: that invariant violation is an
+     * {@link IllegalStateException} too, with the original constraint violation as its cause.
+     *
+     * <p>Order numbers come from a database sequence consumed BEFORE the insert and never given back, so a failed or
+     * losing placement leaves a gap: numbers are readable and increasing, not gapless (CLAUDE.md rule 9).
      */
     public PlacedOrder placeOrder(PlaceOrderCommand command) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("placeOrder opens its own transactions and cannot run inside an active"
+                    + " one: the lost-race replay needs a fresh transaction (use placeInCurrentTransaction)");
+        }
         NormalizedOrderRequest request = normalizer.normalize(command);
         String fingerprint = OrderRequestFingerprint.of(request);
         PlacedOrder existing = transaction.execute(status -> replayOrNull(request, fingerprint));
@@ -94,7 +106,10 @@ public class OrderPlacementService {
             }
             PlacedOrder winner = transaction.execute(status -> replayOrNull(request, fingerprint));
             if (winner == null) {
-                throw e;
+                // Invariant violation: the unique constraint proves a committed row holds this key and orders are
+                // never deleted, so the replay lookup must find it.
+                throw new IllegalStateException("idempotency invariant violated: the unique constraint fired for key "
+                        + request.idempotencyKey() + " but no order holds it", e);
             }
             return winner;
         }
