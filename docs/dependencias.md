@@ -60,3 +60,21 @@ Fuentes:
 - https://repo.maven.apache.org/maven2/org/pitest/pitest-parent/1.30.0/pitest-parent-1.30.0.pom
 - https://repo.maven.apache.org/maven2/org/pitest/pitest-junit5-plugin/maven-metadata.xml
 - https://repo.maven.apache.org/maven2/org/pitest/pitest-junit5-plugin/1.2.3/pitest-junit5-plugin-1.2.3.pom
+
+## Capa HTTP (cambio checkout-http) — 2026-10-07
+
+**Verificado por el asistente; pendiente de revisión de Mateo.** Dependencias
+gestionadas por el BOM de Spring Boot 4.1.1 (sin versión propia en el
+`pom.xml`), mismo criterio que `spring-boot-starter-validation`.
+
+| Coordenadas | Alcance | Estado |
+|---|---|---|
+| `org.springframework.boot:spring-boot-starter-webmvc` | compile | gestionada por el BOM de Spring Boot 4.1.1, verificada por el asistente, pendiente de revisión de Mateo |
+| `org.springframework.boot:spring-boot-starter-webmvc-test` | test | gestionada por el BOM de Spring Boot 4.1.1, verificada por el asistente, pendiente de revisión de Mateo |
+
+Evidencia: `spring-boot-dependencies-4.1.1.pom` (en `~/.m2`) administra ambos
+starters; publica `org.springframework.boot` (VMware/Broadcom, Apache 2.0).
+Versiones resultantes: Spring Framework 7.0.9, Jackson 3.1.5, Tomcat 11.0.24.
+`spring-boot-starter-webmvc-test` aporta `@AutoConfigureMockMvc` y
+`MockMvcTester`. No se agrega el starter de cliente REST: los tests usan
+`MockMvc` y, más adelante, un `Socket` crudo.
