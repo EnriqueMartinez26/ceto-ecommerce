@@ -23,6 +23,12 @@ public class PhoneNumberNormalizer {
 
     private static final int AR_NATIONAL_LENGTH = 10;
 
+    private static final int FULLWIDTH_PLUS = 0xFF0B;
+
+    private static final int FULLWIDTH_ZERO = 0xFF10;
+
+    private static final int FULLWIDTH_NINE = 0xFF19;
+
     private static final Pattern ALLOWED_CHARACTERS = Pattern.compile("[0-9 +\\-().]+");
 
     private final PhoneNumberUtil util = PhoneNumberUtil.getInstance();
@@ -52,19 +58,24 @@ public class PhoneNumberNormalizer {
 
     /**
      * Maps what chat apps and word processors paste into a phone field to plain ASCII: Unicode space separators
-     * and tab become a space, the dash family (U+2010 to U+2015, U+2212) becomes a hyphen, and bidirectional
-     * marks are dropped. Anything else is left untouched for the charset check to reject.
+     * and tab become a space, the dash family (U+2010 to U+2015, U+2212, U+FF0D) becomes a hyphen, the fullwidth
+     * plus (U+FF0B) and digits (U+FF10 to U+FF19) become their ASCII form, and bidirectional marks, zero-width
+     * characters, BOM and soft hyphen are dropped. Anything else is left untouched for the charset check to reject.
      */
     private static String foldLookalikes(String raw) {
         StringBuilder out = new StringBuilder(raw.length());
         raw.codePoints().forEach(cp -> {
-            if (isBidiMark(cp)) {
+            if (isBidiMark(cp) || isInvisible(cp)) {
                 return;
             }
-            if (cp == '	' || Character.getType(cp) == Character.SPACE_SEPARATOR) {
+            if (cp == '\t' || Character.getType(cp) == Character.SPACE_SEPARATOR) {
                 out.append(' ');
             } else if (isDash(cp)) {
                 out.append('-');
+            } else if (cp == FULLWIDTH_PLUS) {
+                out.append('+');
+            } else if (cp >= FULLWIDTH_ZERO && cp <= FULLWIDTH_NINE) {
+                out.append((char) ('0' + (cp - FULLWIDTH_ZERO)));
             } else {
                 out.appendCodePoint(cp);
             }
@@ -76,8 +87,14 @@ public class PhoneNumberNormalizer {
         return cp == 0x200E || cp == 0x200F || (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069);
     }
 
+    /** Zero-width characters (U+200B to U+200D), byte order mark (U+FEFF) and soft hyphen (U+00AD). */
+    private static boolean isInvisible(int cp) {
+        return (cp >= 0x200B && cp <= 0x200D) || cp == 0xFEFF || cp == 0x00AD;
+    }
+
+    /** Dash family (U+2010 to U+2015), minus sign (U+2212) and fullwidth hyphen-minus (U+FF0D). */
     private static boolean isDash(int cp) {
-        return (cp >= 0x2010 && cp <= 0x2015) || cp == 0x2212;
+        return (cp >= 0x2010 && cp <= 0x2015) || cp == 0x2212 || cp == 0xFF0D;
     }
 
     private PhoneNumber parse(String text) {

@@ -42,12 +42,15 @@ class PhoneNumberNormalizerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-        "‪+54 9 351 555-1234‬",
-        "351 555–1234",
-        "+54 9 351 555‑1234",
-        "‎+54 9 351　555−1234‏",
-        "⁦+54 9 351 555 1234⁩",
-        "+54\t9 351 555 1234"
+        "\u202A+54 9 351 555-1234\u202C",
+        "351\u00A0555\u20131234",
+        "+54 9 351 555\u20111234",
+        "\u200E+54\u202F9\u2009351\u3000555\u22121234\u200F",
+        "\u2066+54 9 351 555 1234\u2069",
+        "+54\t9 351 555 1234",
+        "+54\u200B9\u200C 351\u200D 555\uFEFF1234\u00AD",
+        "\uFF0B54 9 351 555\uFF0D1234",
+        "+54 9 \uFF13\uFF15\uFF11 555 \uFF11\uFF12\uFF13\uFF14"
     })
     void acceptsUnicodeLookalikesFromCopyPaste(String input) {
         assertThat(normalizer.normalize(input)).isEqualTo("+5493515551234");
@@ -55,7 +58,7 @@ class PhoneNumberNormalizerTest {
 
     @Test
     void stillRejectsLettersHiddenAmongLookalikes() {
-        assertThatThrownBy(() -> normalizer.normalize("‪+54 9 351 555 CASA‬"))
+        assertThatThrownBy(() -> normalizer.normalize("\u202A+54 9 351 555 CASA\u202C"))
                 .isInstanceOfSatisfying(ValidationException.class,
                         e -> assertThat(e.reason()).isEqualTo(ReasonCode.INVALID_PHONE));
     }
