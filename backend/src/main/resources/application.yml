@@ -46,3 +46,6 @@ ceto:
       batch-size: 100
       fixed-delay-ms: 60000
       max-batches-per-tick: 10
+  web:
+    # Largest storefront list (1..500, validated by StorefrontService); WebProperties takes it over in a later slice.
+    storefront-max-products: 200

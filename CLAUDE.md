@@ -163,7 +163,16 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    prueba `AvailabilityTest` (`comboAvailabilityIsFloorOfFreeUnitsDividedByN`,
    `availabilityNeverNegativeEvenIfStockIsInconsistent`); la agregación de
    demanda por producto base, en orden de id, `BaseUnitDemandTest`
-   (`cartWithBaseAndItsComboAggregatesIntoOneEntry`).
+   (`cartWithBaseAndItsComboAggregatesIntoOneEntry`). La vista de tienda
+   (`StorefrontService`) expone solo un estado derivado, `AVAILABLE` o
+   `SOLD_OUT`, nunca cifras de stock (D-20261007-20, pendiente de OK de la
+   clienta): `StockStatusTest` (combo por piso, fila de stock ausente =
+   agotado) y `StorefrontServiceIT`. Esa lectura no bloquea filas ni deja filas
+   de stock en el contexto de persistencia, así que un lock posterior en la misma
+   transacción lee la base y no una copia vieja (`InventoryAvailabilityIT`:
+   `doesNotWaitForARowLockHeldByAnotherTransaction`,
+   `leavesNoManagedStockRowSoALaterLockQueryReadsTheCommittedValue`; con
+   `findAllById` este último falló, evidencia del 2026-10-07).
 3. **Lock pesimista antes de reservar.** `SELECT ... FOR UPDATE` sobre la
    fila del producto base antes de leer disponibilidad. Prohibido "verificar
    y luego actuar" sin lock. Varias filas se lockean siempre en orden de id
