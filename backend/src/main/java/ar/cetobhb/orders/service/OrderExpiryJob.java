@@ -18,11 +18,13 @@ import org.springframework.stereotype.Component;
  * <p>Backlog: a tick keeps running batches back to back while a batch comes back full (as many orders examined as
  * the batch size) and expired at least one order, at most {@code ceto.orders.expiry.max-batches-per-tick} times
  * (1 to 100, default 10). A tick therefore drains up to batch size times that cap, and a backlog beyond it waits
- * for the next tick, so one tick cannot run unbounded. A batch that expired nothing (every order of it failed) ends
- * the tick instead of spinning.
+ * for the next tick, so one tick cannot run unbounded. A batch with failed orders (the service fell back and some
+ * orders still failed) ends the tick right away with one WARN: those orders are retried by every iteration, and
+ * the next tick tries again.
  *
  * <p>Failures: a batch that fails is rolled back by the service and retried order by order; the orders that still
- * fail are logged by the service at ERROR (id only) and stay PAGO_PENDIENTE, the rest advance. An exception that
+ * fail are logged by the service at ERROR (id, exception class, SQLState) and stay PAGO_PENDIENTE, the rest
+ * advance. An exception that
  * escapes the service is logged by the scheduler's error handler and does not cancel the schedule: the next tick
  * runs after the fixed delay.
  */
@@ -49,6 +51,12 @@ public class OrderExpiryJob {
             ExpiryResult result = lifecycle.expireDueOrders(batchSize);
             expired += result.expired();
             failed += result.failed();
+            if (result.failed() > 0) {
+                // The batch fell back and some orders failed: they are retried by every iteration, so draining on
+                // would repeat their ERROR logs and the fallback within one tick. The next tick tries again.
+                LOG.warn("Expiry tick ended early: {} orders failed in the last batch", result.failed());
+                break;
+            }
             if (result.expired() == 0 || result.processed() < batchSize) {
                 break;
             }

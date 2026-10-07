@@ -151,13 +151,14 @@ class OrderExpiryJobSchedulingTest {
     }
 
     @Test
-    void aTickKeepsDrainingWhenAFullBatchHadSomeFailuresButAlsoProgress() {
+    void aTickEndsAfterAFallbackWithFailuresEvenWhenTheBatchMadeProgress() {
         org.mockito.Mockito.reset(SERVICE);
-        when(SERVICE.expireDueOrders(3)).thenReturn(new ExpiryResult(List.of(2L, 3L), List.of(1L)), result(0));
+        // The failed order is retried by every iteration: draining on would repeat its ERROR log within one tick.
+        when(SERVICE.expireDueOrders(3)).thenReturn(new ExpiryResult(List.of(2L, 3L), List.of(1L)), result(3));
 
         new OrderExpiryJob(SERVICE, props(3, 10)).run();
 
-        verify(SERVICE, times(2)).expireDueOrders(3);
+        verify(SERVICE, times(1)).expireDueOrders(3);
     }
 
     private static OrderProperties props(int batchSize, int maxBatchesPerTick) {
