@@ -178,7 +178,12 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    `ORDER_RESERVATION_HOURS` (48 por defecto, D-20261006-09) por un job con `SKIP LOCKED`.
    Cancelar un pedido ya pagado devuelve el stock a `on_hand`; el reembolso
    se acuerda por WhatsApp, fuera del sistema (D-20261006-09).
-   **[guarda pendiente]**
+   Pagar, cancelar un pendiente (libera) y cancelar un pagado (devuelve a
+   `on_hand`) los prueba `OrderLifecycleIT` sobre pedidos reales, con la
+   reconciliación limpia al final de cada escenario y una ráfaga de pago y
+   cancelación sobre el mismo pedido; pagar pasada `reserved_until` sin que el
+   job haya corrido es válido (D-20261007-04, `payingAfterReservedUntilSucceedsWhileTheJobHasNotRun`).
+   **[guarda pendiente: vencimiento por job, S11]**
 
 ### Pedidos
 
@@ -211,6 +216,10 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    un escaneo por reflexión (`ordersAndItemsExposeNoPublicSetterOrGenericStatusMutator`)
    y la regla ArchUnit `ENTITIES_HAVE_NO_PUBLIC_SETTERS` sobre todas las
    entidades (`ArchitectureTest`, con fixture en `ArchitectureRulesTest`).
+   Sobre pedidos reales persistidos, `OrderTransitionMatrixIT` recorre los 25
+   pares con `OrderLifecycleService`: las 5 aristas legales cambian el estado
+   y mueven el stock como corresponde; las otras 20 lanzan y dejan estado y
+   stock intactos.
 6. **Las líneas del pedido son una foto.** Guardan nombre, precio unitario,
    combo, unidades base y cupón aplicados al momento de comprar (cupón: cambio
    posterior; no se guarda en este cambio). Editar un producto después no
