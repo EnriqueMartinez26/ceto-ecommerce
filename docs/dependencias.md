@@ -6,8 +6,8 @@ contra slopsquatting). Cada fila dice quién verificó y con qué evidencia.
 ## G0 — 2026-10-07
 
 Verificación hecha por el asistente con aprobación previa delegada por Mateo
-("tenés mi go aprobado desde ya", 2026-10-07). **Pendiente de revisión de
-Mateo** sobre esta evidencia.
+("tenés mi go aprobado desde ya", 2026-10-07). Evidencia revisada y
+aprobada por Mateo el 2026-10-07.
 
 | Coordenadas | Evidencia en Maven Central | Publica | Licencia |
 |---|---|---|---|
@@ -17,7 +17,7 @@ Mateo** sobre esta evidencia.
 Estado en el `pom.xml`: `archunit-junit5` 1.5.1 (slice S2) y
 `libphonenumber` 9.0.40 (slice S6) ya están declaradas con versión fija.
 `spring-boot-starter-validation` está gestionada por el BOM de Spring Boot
-y no requiere verificación aparte (criterio del asistente, a confirmar por Mateo).
+y no requiere verificación aparte (criterio del asistente, confirmado por Mateo el 2026-10-07).
 
 Fuentes:
 - https://repo.maven.apache.org/maven2/com/tngtech/archunit/archunit-junit5/maven-metadata.xml
