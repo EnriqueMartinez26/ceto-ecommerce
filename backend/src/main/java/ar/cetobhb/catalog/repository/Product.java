@@ -66,7 +66,7 @@ public class Product {
 
     private static Product create(NewProduct data, Long baseId, Integer units, Instant now) {
         Product p = new Product();
-        p.name = data.name();
+        p.name = data.name().strip();
         p.price = data.price().setScale(2);
         p.compareAtPrice = data.compareAtPrice() == null ? null : data.compareAtPrice().setScale(2);
         p.presentation = data.presentation();

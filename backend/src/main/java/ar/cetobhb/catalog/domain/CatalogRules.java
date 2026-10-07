@@ -10,6 +10,8 @@ public final class CatalogRules {
     /** Smallest combo: a 1-unit combo is just the base product (D-20261007-08). */
     public static final int MIN_COMBO_UNITS = 2;
 
+    private static final int MAX_NAME_LENGTH = 200;
+
     private static final BigDecimal MAX_PRICE = new BigDecimal("9999999999.99");
 
     private CatalogRules() {
@@ -23,6 +25,17 @@ public final class CatalogRules {
             if (compareAtPrice.compareTo(price) <= 0) {
                 throw new ValidationException(ReasonCode.INVALID_PRICE_PAIR);
             }
+        }
+    }
+
+    /** Required, trimmed length 1-200 (the column is VARCHAR(200)). */
+    public static void requireName(String name) {
+        if (name == null) {
+            throw new ValidationException(ReasonCode.INVALID_PRODUCT_NAME);
+        }
+        int length = name.strip().length();
+        if (length < 1 || length > MAX_NAME_LENGTH) {
+            throw new ValidationException(ReasonCode.INVALID_PRODUCT_NAME);
         }
     }
 

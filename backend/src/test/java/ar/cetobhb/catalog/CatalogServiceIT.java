@@ -5,6 +5,7 @@ import static ar.cetobhb.support.CatalogFixtures.productWithCompareAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ar.cetobhb.catalog.domain.NewProduct;
 import ar.cetobhb.catalog.domain.ProductNotAvailableException;
 import ar.cetobhb.catalog.domain.ProductSnapshot;
 import ar.cetobhb.catalog.service.CatalogService;
@@ -69,6 +70,43 @@ class CatalogServiceIT extends AbstractPostgresIT {
         assertInvalid(ReasonCode.INVALID_PRICE_PAIR,
                 () -> catalog.createBase(productWithCompareAt("p", "100.00", "100.005")));
         assertThat(productCount()).isZero();
+    }
+
+    @Test
+    void rejectsNullAndOutOfRangePrices() {
+        assertInvalid(ReasonCode.INVALID_PRICE_PAIR,
+                () -> catalog.createBase(new NewProduct("p", null, null, null, null, null)));
+        assertInvalid(ReasonCode.INVALID_PRICE_PAIR, () -> catalog.createBase(product("p", "10000000000.00")));
+        assertThat(productCount()).isZero();
+    }
+
+    @Test
+    void rejectsMissingBlankOrTooLongNamesAndNullDataBeforeTheDatabase() {
+        assertInvalid(ReasonCode.INVALID_PRODUCT_NAME, () -> catalog.createBase(null));
+        assertInvalid(ReasonCode.INVALID_PRODUCT_NAME, () -> catalog.createBase(product(null, "10.00")));
+        assertInvalid(ReasonCode.INVALID_PRODUCT_NAME, () -> catalog.createBase(product("   ", "10.00")));
+        assertInvalid(ReasonCode.INVALID_PRODUCT_NAME, () -> catalog.createBase(product("a".repeat(201), "10.00")));
+        ProductSnapshot base = catalog.createBase(product("Base", "100.00"));
+        assertInvalid(ReasonCode.INVALID_PRODUCT_NAME, () -> catalog.createCombo(null, base.id(), 3));
+        assertInvalid(ReasonCode.INVALID_PRODUCT_NAME, () -> catalog.createCombo(product(" ", "1.00"), base.id(), 3));
+        assertThat(productCount()).isEqualTo(1);
+    }
+
+    @Test
+    void storesTheTrimmedName() {
+        ProductSnapshot trimmed = catalog.createBase(product("  Padded  ", "10.00"));
+
+        assertThat(trimmed.name()).isEqualTo("Padded");
+    }
+
+    @Test
+    void rejectsComboOverAnInactiveBase() {
+        ProductSnapshot base = catalog.createBase(product("Base", "100.00"));
+        catalog.deactivate(base.id());
+        long before = productCount();
+
+        assertInvalid(ReasonCode.INVALID_COMBO_LINK, () -> catalog.createCombo(product("C", "1.00"), base.id(), 3));
+        assertThat(productCount()).isEqualTo(before);
     }
 
     @Test

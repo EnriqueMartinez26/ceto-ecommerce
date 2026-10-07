@@ -31,19 +31,28 @@ public class CatalogService {
 
     @Transactional
     public ProductSnapshot createBase(NewProduct data) {
-        CatalogRules.requireValidPrices(data.price(), data.compareAtPrice());
+        requireValid(data);
         return products.saveAndFlush(Product.createBase(data, clock.instant())).toSnapshot();
     }
 
     @Transactional
     public ProductSnapshot createCombo(NewProduct data, long baseProductId, int baseUnits) {
-        CatalogRules.requireValidPrices(data.price(), data.compareAtPrice());
+        requireValid(data);
         CatalogRules.requireComboUnits(baseUnits);
         Product base = products.findById(baseProductId)
-                .filter(p -> !p.isCombo())
+                .filter(p -> !p.isCombo() && p.isActive())
                 .orElseThrow(() -> new ValidationException(ReasonCode.INVALID_COMBO_LINK));
         return products.saveAndFlush(Product.createCombo(data, base.id(), baseUnits, clock.instant()))
                 .toSnapshot();
+    }
+
+    /** A missing NewProduct is a validation error, not an NPE; the name is checked before the prices. */
+    private static void requireValid(NewProduct data) {
+        if (data == null) {
+            throw new ValidationException(ReasonCode.INVALID_PRODUCT_NAME);
+        }
+        CatalogRules.requireName(data.name());
+        CatalogRules.requireValidPrices(data.price(), data.compareAtPrice());
     }
 
     @Transactional
