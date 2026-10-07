@@ -202,10 +202,16 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    Libera desde los snapshots del pedido, con `OrderLifecycleService.expireDueOrders`
    (una transacción por lote; si el lote falla se revierte entero y se
    reintenta pedido por pedido, cada uno en su propia transacción: el pedido
-   que sigue fallando se registra en el log con ERROR, solo el id, y queda
-   `PAGO_PENDIENTE` hasta repararlo a mano, mientras el resto avanza,
-   D-20261007-12; `OrderExpiryIT` lo prueba con una fila de stock borrada). Un
-   ciclo del job repite lotes mientras vuelvan llenos, hasta
+   que sigue fallando se registra en el log con ERROR (id, clase de la
+   excepción y SQLState si lo hay, sin datos personales ni nombres de producto)
+   y queda `PAGO_PENDIENTE` hasta repararlo a mano, mientras el resto avanza,
+   D-20261007-12; `OrderExpiryIT` lo prueba con una fila de stock borrada).
+   Límite conocido: el pedido fallido se reintenta en cada ciclo (un ERROR por
+   pedido fallido por ciclo) y, si hay tantos pedidos corruptos como el tamaño
+   del lote en la ventana de los más antiguos vencidos, los más nuevos dejan de
+   vencer hasta que se reparen a mano; el log de ERROR es la señal. Un
+   ciclo del job repite lotes mientras vuelvan llenos (se corta en cuanto un
+   lote tiene pedidos fallidos, con un WARN), hasta
    `ceto.orders.expiry.max-batches-per-tick` (1 a 100, 10 por defecto;
    `OrderExpiryJobDrainIT`). El job (`OrderExpiryJob`) solo se agenda
    si `ceto.scheduling.enabled` no es `false`; en tests no se agenda
