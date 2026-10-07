@@ -152,8 +152,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    flag. La relación con el producto base la sostiene la base
    (`products_combo_pair_ck`, `products_combo_units_ck` con N ≥ 2,
    `products_combo_not_self_ck`, FK `products_combo_base_fk`, probadas en
-   `ProductConstraintsIT`). **[guarda pendiente: la derivación del
-   disponible]**
+   `ProductConstraintsIT`). La derivación del disponible (`Availability`) la
+   prueba `AvailabilityTest` (`comboAvailabilityIsFloorOfFreeUnitsDividedByN`,
+   `availabilityNeverNegativeEvenIfStockIsInconsistent`); la agregación de
+   demanda por producto base, en orden de id, `BaseUnitDemandTest`
+   (`cartWithBaseAndItsComboAggregatesIntoOneEntry`).
 3. **Lock pesimista antes de reservar.** `SELECT ... FOR UPDATE` sobre la
    fila del producto base antes de leer disponibilidad. Prohibido "verificar
    y luego actuar" sin lock. Varias filas se lockean siempre en orden de id
