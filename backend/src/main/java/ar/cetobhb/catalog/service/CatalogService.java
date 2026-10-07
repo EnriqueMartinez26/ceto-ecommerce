@@ -62,7 +62,11 @@ public class CatalogService {
         product.deactivate(clock.instant());
     }
 
-    /** Active products by id; any missing or inactive id fails the whole lookup (fail closed). */
+    /**
+     * Active products by id; any missing or inactive id fails the whole lookup (fail closed). A combo whose base
+     * product was deactivated is unavailable too (REQ-CAT-02): the failure names the combo id, since ordering it
+     * would otherwise fail at reservation time.
+     */
     @Transactional(readOnly = true)
     public Map<Long, ProductSnapshot> findForOrder(Collection<Long> ids) {
         Map<Long, ProductSnapshot> found = new LinkedHashMap<>();
@@ -71,6 +75,19 @@ public class CatalogService {
                 found.put(p.id(), p.toSnapshot());
             }
         }
+        Set<Long> comboBaseIds = new HashSet<>();
+        for (ProductSnapshot snapshot : found.values()) {
+            if (snapshot.isCombo()) {
+                comboBaseIds.add(snapshot.baseProductId());
+            }
+        }
+        Set<Long> activeBaseIds = new HashSet<>();
+        for (Product base : products.findAllById(comboBaseIds)) {
+            if (base.isActive()) {
+                activeBaseIds.add(base.id());
+            }
+        }
+        found.values().removeIf(s -> s.isCombo() && !activeBaseIds.contains(s.baseProductId()));
         Set<Long> unavailable = new HashSet<>(ids);
         unavailable.removeAll(found.keySet());
         if (!unavailable.isEmpty()) {

@@ -205,6 +205,19 @@ class OrderPlacementIT extends AbstractPostgresIT {
     }
 
     @Test
+    void aComboOverADeactivatedBaseIsRejectedAndNothingIsPersisted() {
+        long b = base("Base", "100.00", 20);
+        long c = combo("Combo x3", "270.00", b, 3);
+        catalog.deactivate(b);
+
+        assertThatThrownBy(() -> placement.placeOrder(command(line(c, 1))))
+                .isInstanceOfSatisfying(ProductNotAvailableException.class,
+                        e -> assertThat(e.productIds()).containsExactly(c));
+
+        assertNothingPersisted();
+    }
+
+    @Test
     void aMissingProductIsRejectedAndNothingIsPersisted() {
         long b = base("Base", "100.00", 5);
 

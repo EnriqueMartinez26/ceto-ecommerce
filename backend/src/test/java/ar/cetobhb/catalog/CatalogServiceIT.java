@@ -144,6 +144,17 @@ class CatalogServiceIT extends AbstractPostgresIT {
     }
 
     @Test
+    void findForOrderFailsForAnActiveComboWhoseBaseWasDeactivated() {
+        ProductSnapshot base = catalog.createBase(product("Base", "100.00"));
+        ProductSnapshot combo = catalog.createCombo(product("Combo", "270.00"), base.id(), 3);
+        catalog.deactivate(base.id());
+
+        assertThatThrownBy(() -> catalog.findForOrder(List.of(combo.id())))
+                .isInstanceOfSatisfying(ProductNotAvailableException.class,
+                        e -> assertThat(e.productIds()).isEqualTo(Set.of(combo.id())));
+    }
+
+    @Test
     void deactivateKeepsTheRowAndNoDeleteIsExposed() {
         ProductSnapshot base = catalog.createBase(product("Base", "100.00"));
 
