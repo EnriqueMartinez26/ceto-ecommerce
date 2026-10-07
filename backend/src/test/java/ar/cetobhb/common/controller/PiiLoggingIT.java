@@ -3,9 +3,19 @@ package ar.cetobhb.common.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ar.cetobhb.catalog.domain.NewProduct;
+import ar.cetobhb.catalog.repository.Product;
+import ar.cetobhb.catalog.repository.ProductRepository;
+import ar.cetobhb.common.web.SafeErrors;
 import ar.cetobhb.support.AbstractPostgresIT;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+import org.springframework.boot.logging.LogLevel;
+import org.springframework.boot.logging.LoggerConfiguration;
+import org.springframework.boot.logging.LoggingSystem;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,6 +61,12 @@ class PiiLoggingIT extends AbstractPostgresIT {
 
     @Autowired
     private Environment environment;
+
+    @Autowired
+    private LoggingSystem loggingSystem;
+
+    @Autowired
+    private ProductRepository products;
 
     @BeforeEach
     void createProbeTable() {
@@ -120,6 +136,35 @@ class PiiLoggingIT extends AbstractPostgresIT {
 
         assertThat(output.getAll()).doesNotContain(SENTINEL);
         assertThat(body).doesNotContain(SENTINEL);
+    }
+
+    @Test
+    void theLoggersThatEchoRowsAndRejectedValuesAreOffInTheEffectiveConfig() {
+        for (String name : List.of("org.hibernate.orm.jdbc.error", "org.hibernate.orm.jdbc.warn",
+                "org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver",
+                "org.springframework.web.servlet.PageNotFound")) {
+            LoggerConfiguration configuration = loggingSystem.getLoggerConfiguration(name);
+            assertThat(configuration).as(name).isNotNull();
+            assertThat(configuration.getEffectiveLevel()).as(name).isEqualTo(LogLevel.OFF);
+        }
+    }
+
+    @Test
+    void aRealRepositoryCheckViolationLeaksNoRowDataAndSafeErrorsNamesTheConstraint(CapturedOutput output) {
+        NewProduct invalid = new NewProduct("SentinelName " + SENTINEL, BigDecimal.ZERO, null, null, null, null);
+        Throwable failure = null;
+        try {
+            new TransactionTemplate(transactions).executeWithoutResult(
+                    status -> products.saveAndFlush(Product.createBase(invalid, Instant.now())));
+        } catch (DataIntegrityViolationException expected) {
+            failure = expected;
+        }
+
+        assertThat(failure).as("the repository save must violate products_price_ck").isNotNull();
+        assertThat(failure.getMessage()).contains(SENTINEL);
+        assertThat(SafeErrors.describe(failure)).contains("constraint=products_price_ck", "sqlState=23514")
+                .doesNotContain(SENTINEL, "SentinelName", "Failing row");
+        assertThat(output.getAll()).doesNotContain(SENTINEL, "SentinelName", "Failing row");
     }
 
     @Test
