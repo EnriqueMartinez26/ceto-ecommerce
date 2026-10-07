@@ -3,63 +3,87 @@ package ar.cetobhb.catalog;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.core.type.ClassMetadata;
+import org.springframework.core.type.classreading.MetadataReaderFactory;
 import org.springframework.core.type.classreading.SimpleMetadataReaderFactory;
 
 /**
  * CLAUDE.md section 6 / rule 18: migrations never load data (INSERT, COPY, MERGE); fixtures live in tests.
- * Comments are stripped first so prose like "-- "\b(insert\s+into|copy\s|merge\s+into)\b"of the table" is not a false positive. Java-based
- * migrations are rejected outright because their content cannot be inspected statically. This is a static
- * guard on the migration sources, not a runtime proof that no row exists after migrating.
+ * Comments are stripped first so prose like "-- copy of the table" is not a false positive. Java-based
+ * migrations are rejected outright because their content cannot be inspected statically, including those that
+ * reach {@code JavaMigration} through abstract base classes or intermediate interfaces. This is a static
+ * guard on the migration sources (a text scan, it does not parse SQL), not a runtime proof that no row exists
+ * after migrating.
  */
 class NoSeedDataInMigrationsTest {
 
-    private static final String MIGRATIONS_LOCATION = "db/migration";
     private static final String JAVA_MIGRATION = "org.flywaydb.core.api.migration.JavaMigration";
-    private static final String BASE_JAVA_MIGRATION = "org.flywaydb.core.api.migration.BaseJavaMigration";
     private static final Pattern BLOCK_COMMENT = Pattern.compile("/\\*.*?\\*/", Pattern.DOTALL);
     private static final Pattern LINE_COMMENT = Pattern.compile("--[^\\r\\n]*");
     private static final Pattern DATA_STATEMENT = Pattern.compile(
-            "\\b(insert\\s+into|copy\\s|merge\\s+into)\\b", Pattern.CASE_INSENSITIVE);
+            "\\b(?:insert\\s+into|merge\\s+into)\\b|\\bcopy\\s+", Pattern.CASE_INSENSITIVE);
+
+    @TempDir
+    Path tempDir;
 
     @Test
     void migrationsContainNoDataStatements() throws IOException {
-        List<String> offenders;
-        try (Stream<Path> files = Files.list(migrationsDirectory())) {
-            offenders = files.filter(p -> p.getFileName().toString().endsWith(".sql"))
-                    .filter(NoSeedDataInMigrationsTest::containsDataStatement)
-                    .map(p -> p.getFileName().toString())
-                    .toList();
-        }
-        assertThat(offenders).as("migrations with INSERT/COPY/MERGE statements").isEmpty();
+        ClassLoader classLoader = NoSeedDataInMigrationsTest.class.getClassLoader();
+        assertThat(migrationResources(classLoader, "sql")).as("SQL migrations on the classpath").isNotEmpty();
+        assertThat(seedDataMigrations(classLoader)).as("migrations with INSERT/COPY/MERGE statements").isEmpty();
     }
 
     @Test
     void migrationsAreNotJavaBased() throws IOException {
-        List<String> javaMigrations;
-        try (Stream<Path> files = Files.walk(migrationsDirectory())) {
-            javaMigrations = files.filter(p -> p.getFileName().toString().endsWith(".java")
-                            || p.getFileName().toString().endsWith(".class"))
-                    .map(p -> p.getFileName().toString())
-                    .toList();
-        }
+        ClassLoader classLoader = NoSeedDataInMigrationsTest.class.getClassLoader();
+        List<String> javaMigrations = new ArrayList<>();
+        javaMigrations.addAll(descriptions(migrationResources(classLoader, "java")));
+        javaMigrations.addAll(descriptions(migrationResources(classLoader, "class")));
         assertThat(javaMigrations).as("Java-based migrations cannot be inspected for seed data").isEmpty();
         assertThat(javaMigrationClassesOnClasspath()).as("classes implementing JavaMigration").isEmpty();
+    }
+
+    @Test
+    void scansEveryClasspathRootThatHasMigrations() throws IOException {
+        Path cleanRoot = Files.createDirectories(tempDir.resolve("root1/db/migration"));
+        Path seedRoot = Files.createDirectories(tempDir.resolve("root2/db/migration"));
+        Files.writeString(cleanRoot.resolve("V1__schema.sql"), "CREATE TABLE products (id bigint);");
+        Files.writeString(seedRoot.resolve("V2__seed.sql"), "INSERT INTO products VALUES (1);");
+        URL[] roots = {tempDir.resolve("root1").toUri().toURL(), tempDir.resolve("root2").toUri().toURL()};
+        try (URLClassLoader classLoader = new URLClassLoader(roots, null)) {
+            assertThat(seedDataMigrations(classLoader)).singleElement().asString().contains("V2__seed.sql");
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "archfixtures.ar.cetobhb.javamigration.DirectMigration",
+            "archfixtures.ar.cetobhb.javamigration.IndirectMigration",
+            "archfixtures.ar.cetobhb.javamigration.ViaInterfaceMigration"})
+    void detectsJavaMigrationsThroughBaseClassesAndInterfaces(String className) throws IOException {
+        assertThat(isJavaMigration(className, readers())).as(className).isTrue();
+    }
+
+    @Test
+    void doesNotFlagClassesThatAreNotMigrations() throws IOException {
+        assertThat(isJavaMigration("archfixtures.ar.cetobhb.javamigration.NotAMigration", readers())).isFalse();
     }
 
     @ParameterizedTest
@@ -68,6 +92,10 @@ class NoSeedDataInMigrationsTest {
             "insert  into products (name) values ('x');",
             "  InSeRt\tINTO products VALUES (1);",
             "COPY products FROM '/tmp/data.csv';",
+            "COPY  products FROM '/tmp/data.csv';",
+            "COPY\tproducts FROM '/tmp/data.csv';",
+            "COPY\r\nproducts FROM '/tmp/data.csv';",
+            "COPY (SELECT 1) TO '/tmp/out.csv';",
             "MERGE INTO products p USING src s ON p.id = s.id WHEN MATCHED THEN DELETE;",
             "CREATE TABLE t (id int);\n/* ok */ INSERT INTO t VALUES (1);"})
     void detectsDataStatementsRegardlessOfCaseAndWhitespace(String sql) {
@@ -93,37 +121,64 @@ class NoSeedDataInMigrationsTest {
         return LINE_COMMENT.matcher(BLOCK_COMMENT.matcher(sql).replaceAll(" ")).replaceAll(" ");
     }
 
-    private static boolean containsDataStatement(Path file) {
-        try {
-            return containsDataStatement(Files.readString(file, StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw new IllegalStateException("cannot read " + file.getFileName(), e);
-        }
+    /** Every {@code db/migration} directory on the classpath is scanned, not only the first one found. */
+    private static List<Resource> migrationResources(ClassLoader classLoader, String extension) throws IOException {
+        PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(classLoader);
+        return Arrays.asList(resolver.getResources("classpath*:db/migration/**/*." + extension));
     }
 
-    private static Path migrationsDirectory() {
-        URL resource = NoSeedDataInMigrationsTest.class.getClassLoader().getResource(MIGRATIONS_LOCATION);
-        assertThat(resource).as("classpath resource " + MIGRATIONS_LOCATION).isNotNull();
-        try {
-            return Path.of(resource.toURI());
-        } catch (URISyntaxException e) {
-            throw new IllegalStateException("bad migrations location " + resource, e);
+    private static List<String> descriptions(List<Resource> resources) {
+        return resources.stream().map(Resource::getDescription).toList();
+    }
+
+    private static List<String> seedDataMigrations(ClassLoader classLoader) throws IOException {
+        List<String> offenders = new ArrayList<>();
+        for (Resource migration : migrationResources(classLoader, "sql")) {
+            if (containsDataStatement(migration.getContentAsString(StandardCharsets.UTF_8))) {
+                offenders.add(migration.getDescription());
+            }
         }
+        return offenders;
+    }
+
+    private static MetadataReaderFactory readers() {
+        return new SimpleMetadataReaderFactory(NoSeedDataInMigrationsTest.class.getClassLoader());
     }
 
     private static List<String> javaMigrationClassesOnClasspath() throws IOException {
         PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
-        SimpleMetadataReaderFactory readers = new SimpleMetadataReaderFactory(resolver);
+        MetadataReaderFactory readers = new SimpleMetadataReaderFactory(resolver);
         List<String> offenders = new ArrayList<>();
         for (String pattern : List.of("classpath*:db/migration/**/*.class", "classpath*:ar/cetobhb/**/*.class")) {
             for (Resource resource : resolver.getResources(pattern)) {
                 ClassMetadata metadata = readers.getMetadataReader(resource).getClassMetadata();
-                if (Arrays.asList(metadata.getInterfaceNames()).contains(JAVA_MIGRATION)
-                        || BASE_JAVA_MIGRATION.equals(metadata.getSuperClassName())) {
+                if (isJavaMigration(metadata.getClassName(), readers)) {
                     offenders.add(metadata.getClassName());
                 }
             }
         }
         return offenders;
+    }
+
+    /** True when the class reaches {@code JavaMigration} through any chain of superclasses or interfaces. */
+    static boolean isJavaMigration(String className, MetadataReaderFactory readers) throws IOException {
+        return reachesJavaMigration(className, readers, new HashSet<>());
+    }
+
+    private static boolean reachesJavaMigration(String className, MetadataReaderFactory readers, Set<String> visited)
+            throws IOException {
+        if (JAVA_MIGRATION.equals(className)) {
+            return true;
+        }
+        if (className == null || className.startsWith("java.") || !visited.add(className)) {
+            return false;
+        }
+        ClassMetadata metadata = readers.getMetadataReader(className).getClassMetadata();
+        for (String interfaceName : metadata.getInterfaceNames()) {
+            if (reachesJavaMigration(interfaceName, readers, visited)) {
+                return true;
+            }
+        }
+        return reachesJavaMigration(metadata.getSuperClassName(), readers, visited);
     }
 }
