@@ -26,7 +26,13 @@ class PhoneNumberNormalizerTest {
         "011 15 5555-1234;+5491155551234",
         "11 15 5555 1234;+5491155551234",
         "+54 9 11 5555-1234;+5491155551234",
-        "+5491155551234;+5491155551234"
+        "+5491155551234;+5491155551234",
+        "351 555-1234;+5493515551234",
+        "3515551234;+5493515551234",
+        "0351 555-1234;+5493515551234",
+        "011 5555-1234;+5491155551234",
+        "11 5555 1234;+5491155551234",
+        "+54 351 555 1234;+5493515551234"
     })
     void normalizesArgentineMobilesToE164(String input, String expected) {
         String result = normalizer.normalize(input);
@@ -41,7 +47,7 @@ class PhoneNumberNormalizerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"0351 555-1234", "011 5555-1234", "11 5555 1234", "12345", "abc", "351 15 555", "   ",
+    @ValueSource(strings = {"12345", "abc", "351 15 555", "   ", "+54 9 351 555 1234 ext 5", "+54 351 555 1234 x7",
         "+54 9 351 555 12345"})
     @NullAndEmptySource
     void rejectsNonMobileOrMalformedInput(String input) {
@@ -51,10 +57,23 @@ class PhoneNumberNormalizerTest {
     }
 
     @Test
+    void rejectsAForeignFixedLineEvenInInternationalForm() throws Exception {
+        // Montevideo landline: the AR 10-digit rule (D-20261007-11) must not leak to other regions.
+        String landline = "+598 2 901 2345";
+        PhoneNumberUtil util = PhoneNumberUtil.getInstance();
+        assertThat(util.getNumberType(util.parse(landline, "AR"))).isEqualTo(PhoneNumberType.FIXED_LINE);
+
+        assertThatThrownBy(() -> normalizer.normalize(landline))
+                .isInstanceOfSatisfying(ValidationException.class,
+                        e -> assertThat(e.reason()).isEqualTo(ReasonCode.INVALID_PHONE));
+    }
+
+    @Test
     void exceptionMessageNeverContainsThePhone() {
-        assertThatThrownBy(() -> normalizer.normalize("0351 555-1234"))
+        assertThatThrownBy(() -> normalizer.normalize("+54 9 351 555 12345"))
                 .hasMessage("VALIDATION_ERROR(INVALID_PHONE)")
-                .hasMessageNotContaining("555");
+                .hasMessageNotContaining("555")
+                .hasMessageNotContaining("351");
     }
 
     @Test
