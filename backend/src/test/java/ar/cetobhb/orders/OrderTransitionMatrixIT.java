@@ -17,13 +17,18 @@ import ar.cetobhb.orders.service.OrderLifecycleService;
 import ar.cetobhb.orders.service.OrderPlacementService;
 import ar.cetobhb.support.AbstractPostgresIT;
 import ar.cetobhb.support.StockReconciliation;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -38,6 +43,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * is attempted through the lifecycle service. The legal edge set is declared here, independently of
  * {@link OrderStatus#allowedTargets()}. A legal edge changes the status and moves stock as expected; an illegal one
  * throws and leaves the status AND the stock exactly as they were.
+ *
+ * <p>Scope of the PAGO_PENDIENTE column: NO service operation targets PAGO_PENDIENTE, so those 5 pairs check the
+ * persisted status against the graph, not a service call. {@link #theServiceExposesNoOperationBackToPending()}
+ * pins the exact public operation set of {@link OrderLifecycleService}, so a new path back to PAGO_PENDIENTE
+ * fails the build and these 5 pairs must then be rewritten against that operation.
  */
 class OrderTransitionMatrixIT extends AbstractPostgresIT {
 
@@ -110,6 +120,16 @@ class OrderTransitionMatrixIT extends AbstractPostgresIT {
         }
     }
 
+    @Test
+    void theServiceExposesNoOperationBackToPending() {
+        Set<String> publicOperations = Arrays.stream(OrderLifecycleService.class.getDeclaredMethods())
+                .filter(m -> Modifier.isPublic(m.getModifiers()) && !m.isSynthetic())
+                .map(Method::getName)
+                .collect(Collectors.toSet());
+
+        assertThat(publicOperations).containsExactlyInAnyOrder("markPaid", "dispatch", "deliver", "cancel");
+    }
+
     private void driveTo(long id, OrderStatus target) {
         switch (target) {
             case PAGO_PENDIENTE -> { }
@@ -128,8 +148,9 @@ class OrderTransitionMatrixIT extends AbstractPostgresIT {
     }
 
     /**
-     * Attempts the move through the service operation for {@code to}. No operation leads back to PAGO_PENDIENTE,
-     * so that column asks the persisted order's status for the edge directly, under the order row lock.
+     * Attempts the move through the service operation for {@code to}. No operation leads back to PAGO_PENDIENTE
+     * (pinned by {@link #theServiceExposesNoOperationBackToPending()}), so that column asks the persisted order's
+     * status for the edge directly, under the order row lock: it checks the graph, not a service call.
      */
     private void attempt(long id, OrderStatus to) {
         switch (to) {

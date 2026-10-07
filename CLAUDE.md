@@ -217,8 +217,10 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    y la regla ArchUnit `ENTITIES_HAVE_NO_PUBLIC_SETTERS` sobre todas las
    entidades (`ArchitectureTest`, con fixture en `ArchitectureRulesTest`).
    Sobre pedidos reales persistidos, `OrderTransitionMatrixIT` recorre los 25
-   pares con `OrderLifecycleService`: las 5 aristas legales cambian el estado
-   y mueven el stock como corresponde; las otras 20 lanzan y dejan estado y
+   pares: 20 por `OrderLifecycleService`; los 5 hacia `PAGO_PENDIENTE` contra
+   el grafo sobre el estado persistido, y el conjunto de operaciones públicas
+   del servicio está fijado por test. Las aristas legales cambian el estado y
+   mueven el stock como corresponde; las ilegales lanzan y dejan estado y
    stock intactos.
 6. **Las líneas del pedido son una foto.** Guardan nombre, precio unitario,
    combo, unidades base y cupón aplicados al momento de comprar (cupón: cambio
