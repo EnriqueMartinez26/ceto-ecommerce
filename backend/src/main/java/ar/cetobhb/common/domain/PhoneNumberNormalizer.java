@@ -14,8 +14,8 @@ import java.util.regex.Pattern;
  * read as a mobile: {@code +54 9} plus the national number is re-parsed and must be MOBILE. Numbers with an
  * extension are rejected. Foreign numbers are accepted only when they are MOBILE in international form. The
  * failure carries only the reason code, never the input (PII). Before parsing, only digits, spaces and the
- * separators {@code + - ( ) .} are accepted; anything else (letters would turn into vanity numbers such as
- * {@code CASA}) is rejected.
+ * separators {@code + - ( ) .} are accepted (after folding Unicode spaces, dashes and bidi marks to ASCII);
+ * anything else (letters would turn into vanity numbers such as {@code CASA}) is rejected.
  */
 public class PhoneNumberNormalizer {
 
@@ -31,10 +31,11 @@ public class PhoneNumberNormalizer {
         if (raw == null || raw.isBlank()) {
             throw new ValidationException(ReasonCode.INVALID_PHONE);
         }
-        if (!ALLOWED_CHARACTERS.matcher(raw).matches()) {
+        String ascii = foldLookalikes(raw);
+        if (!ALLOWED_CHARACTERS.matcher(ascii).matches()) {
             throw new ValidationException(ReasonCode.INVALID_PHONE);
         }
-        PhoneNumber number = parse(raw);
+        PhoneNumber number = parse(ascii);
         if (number.hasExtension() || !util.isValidNumber(number)) {
             throw new ValidationException(ReasonCode.INVALID_PHONE);
         }
@@ -47,6 +48,36 @@ public class PhoneNumberNormalizer {
             throw new ValidationException(ReasonCode.INVALID_PHONE);
         }
         return util.format(number, PhoneNumberFormat.E164);
+    }
+
+    /**
+     * Maps what chat apps and word processors paste into a phone field to plain ASCII: Unicode space separators
+     * and tab become a space, the dash family (U+2010 to U+2015, U+2212) becomes a hyphen, and bidirectional
+     * marks are dropped. Anything else is left untouched for the charset check to reject.
+     */
+    private static String foldLookalikes(String raw) {
+        StringBuilder out = new StringBuilder(raw.length());
+        raw.codePoints().forEach(cp -> {
+            if (isBidiMark(cp)) {
+                return;
+            }
+            if (cp == '	' || Character.getType(cp) == Character.SPACE_SEPARATOR) {
+                out.append(' ');
+            } else if (isDash(cp)) {
+                out.append('-');
+            } else {
+                out.appendCodePoint(cp);
+            }
+        });
+        return out.toString();
+    }
+
+    private static boolean isBidiMark(int cp) {
+        return cp == 0x200E || cp == 0x200F || (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069);
+    }
+
+    private static boolean isDash(int cp) {
+        return (cp >= 0x2010 && cp <= 0x2015) || cp == 0x2212;
     }
 
     private PhoneNumber parse(String text) {

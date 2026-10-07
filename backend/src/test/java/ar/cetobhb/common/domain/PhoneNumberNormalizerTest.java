@@ -40,6 +40,26 @@ class PhoneNumberNormalizerTest {
         assertThat(result).isEqualTo(expected).matches("^\\+[1-9][0-9]{7,14}$");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "‪+54 9 351 555-1234‬",
+        "351 555–1234",
+        "+54 9 351 555‑1234",
+        "‎+54 9 351　555−1234‏",
+        "⁦+54 9 351 555 1234⁩",
+        "+54\t9 351 555 1234"
+    })
+    void acceptsUnicodeLookalikesFromCopyPaste(String input) {
+        assertThat(normalizer.normalize(input)).isEqualTo("+5493515551234");
+    }
+
+    @Test
+    void stillRejectsLettersHiddenAmongLookalikes() {
+        assertThatThrownBy(() -> normalizer.normalize("‪+54 9 351 555 CASA‬"))
+                .isInstanceOfSatisfying(ValidationException.class,
+                        e -> assertThat(e.reason()).isEqualTo(ReasonCode.INVALID_PHONE));
+    }
+
     @Test
     void acceptsAnyValidForeignMobileInInternationalForm() {
         // Uruguayan mobile: the rule is "valid MOBILE number", not "Argentine only".
