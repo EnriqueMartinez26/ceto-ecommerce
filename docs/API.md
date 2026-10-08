@@ -287,25 +287,34 @@ una página de login: responde el 401 `UNAUTHENTICATED` de siempre y no llega a
 ningún handler. El login limitado por IP llega en un
 cambio posterior: **no publicar el backend con el login antes de ese cambio**.
 
-Flujo: `GET /api/admin/session` entrega la cookie `XSRF-TOKEN`; el cliente la
+Flujo: `GET /api/admin/session` entrega la cookie `__Host-XSRF-TOKEN`; el cliente la
 repite en la cabecera `X-XSRF-TOKEN` de cada `POST`; `POST /api/admin/login` abre
-la sesión y su respuesta 204 ya trae un `XSRF-TOKEN` nuevo (Security rota el
+la sesión y su respuesta 204 ya trae un `__Host-XSRF-TOKEN` nuevo (Security rota el
 token al autenticar; el anterior deja de ser el de la cookie). Al cerrar sesión
-la cookie `XSRF-TOKEN` se vence: antes del próximo login se vuelve a llamar a
+la cookie `__Host-XSRF-TOKEN` se vence: antes del próximo login se vuelve a llamar a
 `GET /api/admin/session` para tener un token.
+
+La cookie del token es `__Host-XSRF-TOKEN` (`Secure`, `Path=/`, sin `Domain`: el
+navegador solo acepta el prefijo `__Host-` con esas tres condiciones) y la cabecera
+sigue siendo `X-XSRF-TOKEN`. El token **no está atado a la sesión** (doble envío
+sin estado: basta que la cabecera coincida con la cookie), así que la rotación al
+autenticar solo cambia la cookie; el token anterior no queda invalidado en el servidor.
 
 | Ruta | Éxito | Errores |
 |---|---|---|
-| `GET /api/admin/session` | 200 `{"authenticated": bool}`, sin usuario ni datos personales. Fija `XSRF-TOKEN` (`Secure`, `SameSite=Strict`, legible por el navegador, sin `HttpOnly`). Es la **única** ruta anónima y solo con `GET`: `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, otra capitalización, barra final o `%73ession` dan 401. | |
+| `GET /api/admin/session` | 200 `{"authenticated": bool}`, sin usuario ni datos personales. Siempre responde `{authenticated}`, nunca 401: con la cookie de una sesión desplazada por un login nuevo o vencida por el tope absoluto es 200 `{"authenticated":false}` y entrega igual el `__Host-XSRF-TOKEN`. Fija `__Host-XSRF-TOKEN` (`Secure`, `Path=/`, `SameSite=Strict`, legible por el navegador, sin `HttpOnly`). Es la **única** ruta anónima y solo con `GET`: `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, otra capitalización, barra final o `%73ession` dan 401. | |
 | `POST /api/admin/login` | 204 sin cuerpo y cookie `JSESSIONID` (`HttpOnly`, `Secure`, `SameSite=Strict`) nueva: el id anterior se descarta. Cuerpo `application/x-www-form-urlencoded` con `username` y `password`, de hasta 128 caracteres cada uno (la contraseña, además, hasta 72 bytes UTF-8). Cabecera `X-XSRF-TOKEN` obligatoria. | 401 `INVALID_CREDENTIALS` (el mismo cuerpo para usuario inexistente y contraseña incorrecta), 403 `FORBIDDEN` sin token o con uno inválido, 413 `PAYLOAD_TOO_LARGE` si el cuerpo supera `max-body-bytes`. |
 | `POST /api/admin/logout` | 204 sin cuerpo; termina la sesión del servidor y vence la cookie `JSESSIONID`. Sin sesión también es 204. Cabecera `X-XSRF-TOKEN` obligatoria. | 403 `FORBIDDEN` sin token o con uno inválido. |
 
 Política de la sesión: la cookie `JSESSIONID` es `HttpOnly`, `Secure` y `SameSite=Strict` (la
 aplicación no arranca con otra configuración). Solo hay **una sesión de administración**
 a la vez: un login nuevo termina la anterior, y la anterior recibe 401 `UNAUTHENTICATED` en su
-próxima petición (cuerpo problem+json, como cualquier 401). La sesión termina también por
-inactividad (`ADMIN_SESSION_IDLE_MINUTES`, 480 por defecto) y, en ambos casos, la cookie vieja
-no vuelve a servir. Un login correcto siempre cambia el id de la sesión.
+próxima petición (cuerpo problem+json, como cualquier 401), salvo que esa petición sea el bootstrap, el
+login o el logout: esas tres siguen como anónimas. La sesión termina también por inactividad
+(`ADMIN_SESSION_IDLE_MINUTES`, 480 por defecto) y por un **tope absoluto** desde el login
+(`ADMIN_SESSION_ABSOLUTE_MINUTES`, de 60 a 1440, 720 por defecto: una sesión usada sin parar
+también termina a las 12 horas y recibe el mismo 401). En todos los casos la cookie vieja
+no vuelve a servir. Un login correcto siempre cambia el id de la sesión. La cookie no admite `Domain` ni otro nombre que `JSESSIONID` (la aplicación no arranca).
 
 Contrato de `POST /api/admin/login`: los datos viajan **solo en el cuerpo**,
 `application/x-www-form-urlencoded` (se acepta cualquier parámetro `charset`),
