@@ -36,6 +36,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * iteration; a hang fails by timeout. Allowed outcomes: success, {@link IllegalOrderTransitionException} (the loser of
  * a repeated tap) and a lock timeout ({@code CannotAcquireLockException}, the 503 SERVICE_BUSY class).
  *
+ * <p>Scope: this proves lock ordering ONLY. The orders the admin pays and cancels here are NOT due (their
+ * {@code reserved_until} is after the iteration clock); only the two {@code expiring} orders are, and no admin action
+ * targets them. The admin action against the expiry job on the SAME due order is {@link AdminVsExpiryRaceIT}.
+ *
  * <p>Characterization (the code existed before the test): evidence by mutation, recorded 2026-10-08. Locking the
  * stock rows in DESCENDING product id in {@code InventoryService.release} (the release done by an admin cancel of a
  * pending order and by the expiry job) made this test fail with Postgres {@code 40P01 deadlock detected}. With the
