@@ -275,6 +275,54 @@ Golden: `backend/src/test/resources/contract/checkout-200-replay.json`
 compra y **reusar la misma** en cada reintento (doble toque, red caída, 503).
 Una clave nueva crea un pedido nuevo.
 
+## Administración: sesión (`/api/admin/*`)
+
+Rutas de la única cuenta de administración. Spring Security solo ve `/api/admin/*`
+(D-20261008-05): las rutas públicas de arriba no cambian. Toda ruta de
+administración responde 401 `UNAUTHENTICATED` a quien no inició sesión, salvo
+las dos de abajo que arman la sesión. El login limitado por IP llega en un
+cambio posterior: **no publicar el backend con el login antes de ese cambio**.
+
+Flujo: `GET /api/admin/session` entrega la cookie `XSRF-TOKEN`; el cliente la
+repite en la cabecera `X-XSRF-TOKEN` de cada `POST`; `POST /api/admin/login` abre
+la sesión y su respuesta 204 ya trae un `XSRF-TOKEN` nuevo (Security rota el
+token al autenticar; el anterior deja de ser el de la cookie).
+
+| Ruta | Éxito | Errores |
+|---|---|---|
+| `GET /api/admin/session` | 200 `{"authenticated": bool}`, sin usuario ni datos personales. Fija `XSRF-TOKEN` (`Secure`, `SameSite=Strict`, legible por el navegador, sin `HttpOnly`). Es la **única** ruta anónima y solo con `GET`: `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, otra capitalización, barra final o `%73ession` dan 401. | |
+| `POST /api/admin/login` | 204 sin cuerpo y cookie `JSESSIONID` (`HttpOnly`, `Secure`, `SameSite=Strict`) nueva. Cuerpo `application/x-www-form-urlencoded` con `username` y `password`, de hasta 128 caracteres cada uno (la contraseña, además, hasta 72 bytes UTF-8). Cabecera `X-XSRF-TOKEN` obligatoria. | 401 `INVALID_CREDENTIALS` (el mismo cuerpo para usuario inexistente y contraseña incorrecta), 403 `FORBIDDEN` sin token o con uno inválido, 413 `PAYLOAD_TOO_LARGE` si el cuerpo supera `max-body-bytes`. |
+
+Golden: `backend/src/test/resources/contract/admin-session-anonymous.json`
+
+```json
+{
+  "authenticated": false
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-session-authenticated.json`
+
+```json
+{
+  "authenticated": true
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-error-invalid-credentials.json`
+
+```json
+{
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "The credentials are not valid.",
+  "code": "INVALID_CREDENTIALS"
+}
+```
+
+El 401 de login trae `instance: "/api/admin/login"` y `requestId`, que el golden
+no incluye (los tests los comparan aparte).
+
 ## Cabeceras
 
 | Cabecera | Dirección | Dónde | Detalle |
@@ -306,6 +354,7 @@ contra `X-Request-Id`.
 | 400 | `MALFORMED_REQUEST` | El cuerpo no se puede leer: JSON inválido, campo desconocido o repetido, tipo equivocado, anidado de más de 8 niveles o texto demasiado largo. En `/api/admin/*` también cuando el firewall de Security rechaza la ortografía de la ruta (`;`, `//`, `/./`, `/../`). | | No. |
 | 400 | `BAD_REQUEST` | Otro error de cliente que Spring detecta antes de la lógica y no tiene código propio. | | No. |
 | 401 | `UNAUTHENTICATED` | Solo en `/api/admin/*`: no hay sesión de administración. Nunca dice por qué ni nombra al usuario. | | Sí, después de iniciar sesión. |
+| 401 | `INVALID_CREDENTIALS` | Solo en `POST /api/admin/login`: usuario inexistente, contraseña incorrecta o un campo de más de 128 caracteres. Es siempre el mismo cuerpo: no dice cuál fue el motivo ni nombra al usuario. | | Sí, con otros datos. |
 | 403 | `FORBIDDEN` | Solo en `/api/admin/*`: falta el token CSRF o es inválido, o la sesión no puede hacer esto. | | No: pedir un token nuevo. |
 | 404 | `NOT_FOUND` | Ruta inexistente (incluidas variantes como barra final o `//`) o producto inexistente, inactivo u oculto. | | No. |
 | 405 | `METHOD_NOT_ALLOWED` | Método no permitido para la ruta (por ejemplo `POST` a la lista). | `Allow` | No. |

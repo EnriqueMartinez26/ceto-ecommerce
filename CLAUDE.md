@@ -117,8 +117,9 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   ejemplo deja de ser idéntico a su golden, si un golden no está citado o si un
   `code` o `reason` del código no figura en el documento. `EndpointInventoryIT` fija el
   inventario: las 3 rutas públicas, las de administración (`EndpointInventory.ADMIN_ROUTES`,
-  hoy ninguna; cada una se llama sin sesión y debe dar el golden 401, generado
-  desde los mapeos) más `ANY /error` de `BasicErrorController`
+  hoy solo `GET /api/admin/session`, la única anónima: cada ruta protegida se llama sin sesión y
+  debe dar el golden 401, generado desde los mapeos, y de la anónima se llaman los otros seis
+  métodos, también 401) más `ANY /error` de `BasicErrorController`
   (permitido por tipo de handler, no por ruta), todos los `HandlerMapping` por
   clase (los de URL, welcome page y `RouterFunctionMapping` vacíos), sin
   `RouterFunction`, sin mapeos de recursos ni actuator, y todo otro camino es
@@ -715,13 +716,13 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   mutación (2026-10-08): mapear el filtro a `/*` hizo fallar 6 casos de
   `CheckoutPathLimitHttpIT`, 4 variantes de `PublicSurfaceUnchangedServerIT` y
   el test del firewall y del mapeo de `SecurityFilterScopeIT`.
-  Bajo `/api/admin/` ninguna petición sin autenticar recibe un 2xx ni un handler
-  (D-20261008-32): un GET responde 401, una mutación sin token CSRF responde 403
+  Bajo `/api/admin/` ninguna petición sin autenticar recibe un 2xx ni un handler,
+  salvo `GET /api/admin/session` y el login (D-20261008-32): un GET responde 401, una mutación sin token CSRF responde 403
   (el CSRF corre antes que la autenticación), las grafías de ruta que el firewall
   rechaza responden 400 (`;`, `//`, `.` y `..`, barra o contrabarra codificadas) y
   las variantes de mayúsculas, que no entran a Security, caen en el 404 de rutas
-  sin handler. Todavía no hay login, así que nadie puede autenticarse, y nunca
-  se abre una sesión de servidor. Guardas, sobre un
+  sin handler. Una petición anónima nunca abre una sesión de servidor; la sesión nace
+  solo con un login correcto. Guardas, sobre un
   handler de prueba que vive solo en tests (`adminprobe.AdminProbeController`,
   fuera del árbol escaneado, así que `EndpointInventoryIT` sigue exacto):
   `AdminPathVariantsIT` y `AdminPathVariantsServerIT` piden 16 grafías de la ruta
@@ -766,8 +767,31 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   muerde. Evidencia por mutación (2026-10-08): mapear un controller de la tienda
   bajo `/api/admin/` o agregarle un `getRequestDispatcher(..).forward(..)` hizo
   fallar ambas reglas.
+- **Login de administración** (`POST /api/admin/login`, formulario
+  `application/x-www-form-urlencoded`, D-20261008-03). Éxito: 204 sin cuerpo y cookie
+  `JSESSIONID` (`HttpOnly`, `Secure`, `SameSite=Strict`, fijadas en `application.yml`; la guarda de
+  arranque que rechaza otros valores es del corte de sesión). Todo fallo es el mismo 401
+  `INVALID_CREDENTIALS` con texto fijo (`SecurityProblem`, golden
+  `admin-error-invalid-credentials.json`): usuario inexistente, clave errónea y campo demasiado
+  largo no se distinguen ni en el cuerpo ni en las cabeceras
+  (`AdminLoginServerIT.anUnknownUserAndAWrongPasswordGetTheSameNeutral401`; mutación 2026-10-08: con
+  otro código para el usuario inexistente falla ese test). Sin token CSRF, o con uno inválido, es
+  403 y no abre sesión. Cada campo tiene un tope de 128 caracteres que se aplica antes de
+  autenticar (`LoginFieldCapAuthenticationManager`: ni el almacén de cuentas ni BCrypt ven un campo
+  más largo; `LoginFieldCapAuthenticationManagerTest` y los casos de 129 y 1000 caracteres de
+  `AdminLoginServerIT` con el contador de BCrypt sin cambios; mutación 2026-10-08: sin el tope
+  fallan 7 tests unitarios y los 2 del usuario largo, la clave larga la frena además la guarda de
+  72 bytes del encoder). Seguridad rota el token CSRF al autenticar: el 204 trae un
+  `XSRF-TOKEN` nuevo (`AdminLoginServerIT.theLoginResponseRotatesTheXsrfCookieAndTheNewTokenWorksForTheNextMutation`).
+  `GET /api/admin/session` devuelve `{"authenticated":bool}` y es la única ruta anónima: el permiso
+  de la cadena es `SessionBootstrapRequest` (método GET y ruta tal como se escribió, no un patrón),
+  el mismo que usa `AdminAccessGuardInterceptor`, así que `%73ession`, otra capitalización, barra
+  final, subruta, `;` y los demás métodos no heredan el permiso (`SessionBootstrapRequestTest`,
+  `AdminSessionPermitServerIT`; mutaciones 2026-10-08: permitir `/api/admin/session/**` hizo fallar
+  6 casos de ese IT y 1 de `EndpointInventoryIT`, permitir la ruta con cualquier método, 4 y 1). El
+  login todavía no tiene límite por IP: no desplegar antes de ese corte.
 - **Credencial de administración** (`ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, sin
-  valor por defecto; el login y la sesión llegan en cortes siguientes). Se
+  valor por defecto; el login está en el punto siguiente y la política de sesión llega en un corte posterior). Se
   valida en `AdminCredentials.parse` con mensajes fijos, no con Bean Validation:
   el informe de fallo de Boot imprime el valor rechazado, y `{noop}secreto`
   terminaría en el log de arranque. Solo se acepta `{bcrypt}` con costo 10 a 14,
@@ -905,7 +929,14 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   advice también envía `Connection: close`. Lo que Tomcat lee por su cuenta queda
   fuera del contador y se acota por configuración (`BodyLimitContainerConfigIT`):
   `server.tomcat.max-swallow-size: 64KB` y `max-http-form-post-size` igual a
-  `ceto.web.max-body-bytes` (ninguna ruta lee formularios con `getParameter`).
+  `ceto.web.max-body-bytes` (la única ruta que lee un
+  formulario es `POST /api/admin/login`: `username` y `password`, de hasta 128 caracteres cada
+  uno; el CSRF también lee el parámetro `_csrf` cuando falta la cabecera).
+  Un login con un cuerpo declarado de más de `max-body-bytes` es 413 sin gastar un hash
+  (`AdminLoginServerIT.aOneHundredThousandCharacterPasswordIs413AndCostsNoHash`), y un formulario
+  chunked de 100 KB, con o sin token, es un 4xx y nunca un 5xx
+  (`AdminLoginServerIT.aChunkedHundredKilobyteLoginFormIsA4xxAndNeverA5xxOrAHash`; el límite del
+  contenedor lo fija `FormPostLimitServerIT` con un formulario chunked de tres veces el tope).
   `LimitedBodyRequest` respeta el contrato servlet (`getReader` y `getInputStream`
   son excluyentes; un charset inválido es `UnsupportedEncodingException`, 4xx).
   El contador solo cubre la lectura bloqueante: no se usa IO asíncrono
