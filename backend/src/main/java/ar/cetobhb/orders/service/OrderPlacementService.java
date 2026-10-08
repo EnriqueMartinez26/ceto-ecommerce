@@ -169,7 +169,13 @@ public class OrderPlacementService {
         return placed(order, false);
     }
 
+    /** Built inside the transaction that loaded the order: the lines are lazy and read from the snapshot rows. */
     private static PlacedOrder placed(Order order, boolean replayed) {
-        return new PlacedOrder(order.id(), order.orderNumber(), order.total(), order.reservedUntil(), replayed);
+        List<PlacedOrder.PlacedLine> lines = order.items().stream()
+                .map(item -> new PlacedOrder.PlacedLine(item.productId(), item.productName(), item.quantity(),
+                        item.unitPrice(), item.lineTotal()))
+                .toList();
+        return new PlacedOrder(order.id(), order.orderNumber(), order.status(), order.shippingZone(), order.total(),
+                order.reservedUntil(), replayed, lines);
     }
 }
