@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -61,6 +62,30 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Long> findDueIds(@Param("now") Instant now, @Param("limit") int limit);
 
     Optional<Order> findByIdempotencyKey(UUID idempotencyKey);
+
+    /**
+     * One keyset page of the admin list, newest first (id descending), as a constructor projection: no managed
+     * {@code Order} and no address column is read, and no lock is taken. Ask for {@code size + 1} rows
+     * ({@code PageRequest.ofSize}) to know whether another page exists.
+     *
+     * <p>Every parameter is bound non-null (AD-A18): an absent status filter is {@code anyStatus = true} with a dummy
+     * status, an absent key is {@code anyKey = true} with {@code ""} for both candidates ({@code ""} can never equal
+     * a stored order number or E.164 phone, both CHECK-constrained). The key candidates are compared with {@code =}
+     * only (exact match, never LIKE): an order matches when its number OR its phone equals the candidate.
+     *
+     * @param before only orders with an id strictly lower than this (use {@code Long.MAX_VALUE} for the first page)
+     */
+    @Query("""
+            select new ar.cetobhb.orders.repository.OrderSummaryRow(o.id, o.orderNumber, o.status, o.buyerName,
+                   o.buyerPhoneE164, o.total, o.createdAt, o.reservedUntil)
+              from Order o
+             where o.id < :before
+               and (:anyStatus = true or o.status = :status)
+               and (:anyKey = true or o.orderNumber = :number or o.buyerPhoneE164 = :phone)
+             order by o.id desc""")
+    List<OrderSummaryRow> findPage(@Param("before") long before, @Param("anyStatus") boolean anyStatus,
+            @Param("status") OrderStatus status, @Param("anyKey") boolean anyKey, @Param("number") String number,
+            @Param("phone") String phone, Pageable page);
 
     /**
      * Serializes the pending-orders count-and-insert of ONE buyer phone (REQ-ABU-01) WITHOUT waiting (D-20261008-01):
