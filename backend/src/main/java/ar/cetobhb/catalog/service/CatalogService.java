@@ -66,6 +66,12 @@ public class CatalogService {
         product.deactivate(clock.instant());
     }
 
+    /** Any product by id, active or not (admin use); a missing id is a {@link ProductNotFoundException}. */
+    @Transactional(readOnly = true)
+    public ProductSnapshot findAny(long id) {
+        return products.findById(id).map(Product::toSnapshot).orElseThrow(() -> new ProductNotFoundException(id));
+    }
+
     /**
      * Active products by id; any missing or inactive id fails the whole lookup (fail closed). A combo whose base
      * product was deactivated is unavailable too (REQ-CAT-02): the failure names the combo id, since ordering it

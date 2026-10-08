@@ -7,7 +7,9 @@ import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.inventory.domain.Availability;
 import ar.cetobhb.inventory.domain.BaseUnitDemand;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
+import ar.cetobhb.inventory.domain.StockAdjustment;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
+import ar.cetobhb.inventory.domain.StockNotAdjustableException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
 import ar.cetobhb.inventory.repository.InventoryStock;
 import ar.cetobhb.inventory.repository.InventoryStockRepository;
@@ -139,6 +141,25 @@ public class InventoryService {
         InventoryStock row = stock.lockByProductId(productId)
                 .orElseThrow(() -> new StockNotConfiguredException(productId));
         row.adjustOnHand(newOnHand, clock.instant());
+    }
+
+    /**
+     * Admin correction of the physical count by a delta (INV-A1). The product must exist (any state, so a deactivated
+     * one can still be corrected) and must be a base product that already has a stock row: a combo has no stock of its
+     * own and a missing row is never auto-created. The row lock is the first read of the stock row, so the figures
+     * returned are the committed ones, and the Java check in {@link InventoryStock#adjustBy} runs before the CHECK
+     * constraint that backs it.
+     */
+    @Transactional
+    public StockAdjustment adjustBy(long productId, int delta) {
+        if (catalog.findAny(productId).isCombo()) {
+            throw new StockNotAdjustableException(productId);
+        }
+        InventoryStock row = stock.lockByProductId(productId)
+                .orElseThrow(() -> new StockNotAdjustableException(productId));
+        int before = row.onHand();
+        row.adjustBy(delta, clock.instant());
+        return new StockAdjustment(productId, before, row.onHand(), row.reserved());
     }
 
     /**
