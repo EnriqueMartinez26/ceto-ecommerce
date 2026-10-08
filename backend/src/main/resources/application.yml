@@ -66,3 +66,6 @@ ceto:
       burst: 10
       refill-interval-seconds: 360
       max-tracked-clients: 10000
+      # When the table is full, every new client shares ONE overflow bucket with its own, larger budget (D-20261007-25).
+      overflow-burst: 100
+      overflow-refill-per-hour: 100

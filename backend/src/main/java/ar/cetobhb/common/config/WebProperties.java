@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -29,12 +30,24 @@ public record WebProperties(
     /**
      * @param burst              attempts one client may make at once
      * @param refillIntervalSeconds seconds to earn one more attempt (360 = 10 per hour)
-     * @param maxTrackedClients  clients tracked individually; beyond that new clients share one bucket
+     * @param maxTrackedClients  clients tracked individually; beyond that new clients share one overflow bucket
+     * @param overflowBurst      attempts the shared overflow bucket allows at once; deliberately larger than one
+     *                           client's burst, because it serves MANY clients when the table is full
+     * @param overflowRefillPerHour attempts per hour the overflow bucket earns back (100 = one every 36 seconds)
      */
     public record CheckoutRateLimit(
             @Min(1) @Max(100) int burst,
             @Min(1) @Max(86_400) int refillIntervalSeconds,
-            @Min(100) @Max(100_000) int maxTrackedClients) {
+            @Min(100) @Max(100_000) int maxTrackedClients,
+            @Min(1) @Max(10_000) int overflowBurst,
+            @Min(1) @Max(3_600) int overflowRefillPerHour) {
+
+        private static final long MILLIS_PER_HOUR = 3_600_000L;
+
+        /** Time between overflow tokens, rounded down to the millisecond. */
+        public Duration overflowRefillInterval() {
+            return Duration.ofMillis(MILLIS_PER_HOUR / overflowRefillPerHour);
+        }
     }
 
     /** Rejects a value that parses as nothing or that would let a public address set the client address. */

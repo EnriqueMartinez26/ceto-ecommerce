@@ -51,6 +51,9 @@ class WebPropertiesValidationTest {
             assertThat(p.checkoutRateLimit().burst()).isEqualTo(10);
             assertThat(p.checkoutRateLimit().refillIntervalSeconds()).isEqualTo(360);
             assertThat(p.checkoutRateLimit().maxTrackedClients()).isEqualTo(10_000);
+            assertThat(p.checkoutRateLimit().overflowBurst()).isEqualTo(100);
+            assertThat(p.checkoutRateLimit().overflowRefillPerHour()).isEqualTo(100);
+            assertThat(p.checkoutRateLimit().overflowRefillInterval()).isEqualTo(java.time.Duration.ofSeconds(36));
             assertThat(p.trustedProxies()).isEqualTo(SAFE_REGEX);
         });
     }
@@ -94,7 +97,11 @@ class WebPropertiesValidationTest {
                 Arguments.of("ceto.web.checkout-rate-limit.refill-interval-seconds", "0"),
                 Arguments.of("ceto.web.checkout-rate-limit.refill-interval-seconds", "86401"),
                 Arguments.of("ceto.web.checkout-rate-limit.max-tracked-clients", "99"),
-                Arguments.of("ceto.web.checkout-rate-limit.max-tracked-clients", "100001"));
+                Arguments.of("ceto.web.checkout-rate-limit.max-tracked-clients", "100001"),
+                Arguments.of("ceto.web.checkout-rate-limit.overflow-burst", "0"),
+                Arguments.of("ceto.web.checkout-rate-limit.overflow-burst", "10001"),
+                Arguments.of("ceto.web.checkout-rate-limit.overflow-refill-per-hour", "0"),
+                Arguments.of("ceto.web.checkout-rate-limit.overflow-refill-per-hour", "3601"));
     }
 
     @ParameterizedTest(name = "{0}={1} fails startup")
@@ -115,7 +122,21 @@ class WebPropertiesValidationTest {
                 Arguments.of("ceto.web.checkout-rate-limit.refill-interval-seconds", "1"),
                 Arguments.of("ceto.web.checkout-rate-limit.refill-interval-seconds", "86400"),
                 Arguments.of("ceto.web.checkout-rate-limit.max-tracked-clients", "100"),
-                Arguments.of("ceto.web.checkout-rate-limit.max-tracked-clients", "100000"));
+                Arguments.of("ceto.web.checkout-rate-limit.max-tracked-clients", "100000"),
+                Arguments.of("ceto.web.checkout-rate-limit.overflow-burst", "1"),
+                Arguments.of("ceto.web.checkout-rate-limit.overflow-burst", "10000"),
+                Arguments.of("ceto.web.checkout-rate-limit.overflow-refill-per-hour", "1"),
+                Arguments.of("ceto.web.checkout-rate-limit.overflow-refill-per-hour", "3600"));
+    }
+
+    @Test
+    void theOverflowRefillPerHourBecomesTheIntervalBetweenTokens() {
+        assertThat(new WebProperties.CheckoutRateLimit(10, 360, 100, 100, 1).overflowRefillInterval())
+                .isEqualTo(java.time.Duration.ofHours(1));
+        assertThat(new WebProperties.CheckoutRateLimit(10, 360, 100, 100, 7).overflowRefillInterval())
+                .as("rounded down to the millisecond").isEqualTo(java.time.Duration.ofMillis(514_285));
+        assertThat(new WebProperties.CheckoutRateLimit(10, 360, 100, 100, 3_600).overflowRefillInterval())
+                .isEqualTo(java.time.Duration.ofSeconds(1));
     }
 
     @ParameterizedTest(name = "{0}={1} is accepted")
