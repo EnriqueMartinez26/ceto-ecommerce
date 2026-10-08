@@ -45,9 +45,9 @@ class AdminAuthenticationTest {
         AdminAuthenticationConfig config = new AdminAuthenticationConfig();
         AdminCredentials credentials = config.adminCredentials(new AdminProperties(USER, HASH, 480,
                 new AdminProperties.LoginRateLimit(5, 90, 10_000, 20, 40), 200, 100));
-        bcrypt = spy(config.adminBcryptEncoder(credentials));
+        bcrypt = spy(config.adminBcryptEncoder(credentials).encoder());
         users = (AdminUserDetailsService) config.adminUserDetailsService(credentials);
-        manager = config.adminAuthenticationManager(users, config.adminPasswordEncoder(bcrypt));
+        manager = config.adminAuthenticationManager(users, config.adminPasswordEncoder(new AdminBcrypt(bcrypt)));
     }
 
     private Authentication attempt(String username, String password) {

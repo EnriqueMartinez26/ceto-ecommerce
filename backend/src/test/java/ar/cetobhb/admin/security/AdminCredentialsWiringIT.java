@@ -27,7 +27,7 @@ class AdminCredentialsWiringIT extends AbstractHttpIT {
 
     @Autowired
     @Qualifier("adminBcryptEncoder")
-    private PasswordEncoder bcrypt;
+    private AdminBcrypt bcrypt;
 
     @Autowired
     private AdminProperties properties;
@@ -46,7 +46,7 @@ class AdminCredentialsWiringIT extends AbstractHttpIT {
 
     @Test
     void theBcryptWorkOfTheAccountIsCountedInTheTestContexts() {
-        assertThat(bcrypt).isInstanceOf(CountingPasswordEncoder.class);
+        assertThat(bcrypt.encoder()).isInstanceOf(CountingPasswordEncoder.class);
         int before = CountingPasswordEncoder.matches();
 
         login(AdminTestCredentials.username(), AdminTestCredentials.password());
