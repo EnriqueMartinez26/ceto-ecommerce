@@ -51,6 +51,43 @@ class ProblemResponsesIT extends AbstractPostgresIT {
     }
 
     @Test
+    void aSecurityProblemIsWrittenWithItsFixedStatusCodeAndDetail() throws Exception {
+        for (SecurityProblem problem : SecurityProblem.values()) {
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/admin/orders");
+            request.setAttribute("requestId", "rid-7");
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            problems.write(request, response, problem);
+
+            assertThat(response.getStatus()).isEqualTo(problem.status().value());
+            assertThat(response.getContentType()).startsWith("application/problem+json");
+            assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+            JsonNode body = json.readTree(response.getContentAsString());
+            assertThat(body.get("code").asString()).isEqualTo(problem.code());
+            assertThat(body.get("detail").asString()).isEqualTo(problem.detail());
+            assertThat(body.get("status").asInt()).isEqualTo(problem.status().value());
+            assertThat(body.get("title").asString()).isEqualTo(problem.status().getReasonPhrase());
+            assertThat(body.get("instance").asString()).isEqualTo("/api/admin/orders");
+            assertThat(body.get("requestId").asString()).isEqualTo("rid-7");
+            assertThat(body.has("type")).isFalse();
+        }
+    }
+
+    @Test
+    void aSecurityProblemNeverEchoesTheQueryStringOrAnyHeader() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/admin/login");
+        request.setQueryString("username=sentinel-name&password=sentinel-pass");
+        request.addHeader("Authorization", "Bearer sentinel-token");
+        request.addHeader("Cookie", "JSESSIONID=sentinel-session");
+        request.addParameter("password", "sentinel-pass");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        problems.write(request, response, SecurityProblem.UNAUTHENTICATED);
+
+        assertThat(response.getContentAsString()).doesNotContain("sentinel");
+    }
+
+    @Test
     void instanceIsNeverNullEvenForAnUnparsablePath() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/a b");
         MockHttpServletResponse response = new MockHttpServletResponse();

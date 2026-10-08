@@ -25,6 +25,12 @@ public class ProblemResponses {
         this.json = json;
     }
 
+    /** Writes one of the problems Spring Security answers with, using its fixed status, code and detail. */
+    public void write(HttpServletRequest request, HttpServletResponse response, SecurityProblem problem)
+            throws IOException {
+        write(request, response, problem.status(), problem.code(), problem.detail());
+    }
+
     public void write(HttpServletRequest request, HttpServletResponse response, HttpStatus status, String code,
             String detail) throws IOException {
         ProblemDetail problem = ProblemDetail.forStatus(status);

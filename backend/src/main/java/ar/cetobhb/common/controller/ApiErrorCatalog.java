@@ -6,6 +6,7 @@ import ar.cetobhb.catalog.domain.StaleProductVersionException;
 import ar.cetobhb.common.domain.DomainException;
 import ar.cetobhb.common.domain.RateLimitedException;
 import ar.cetobhb.common.domain.ValidationException;
+import ar.cetobhb.common.web.SecurityProblem;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
 import ar.cetobhb.inventory.domain.StockNotAdjustableException;
@@ -16,6 +17,7 @@ import ar.cetobhb.orders.domain.IllegalOrderTransitionException;
 import ar.cetobhb.orders.domain.OrderNotFoundException;
 import ar.cetobhb.orders.domain.ReservationNotExpiredException;
 import ar.cetobhb.orders.domain.TooManyPendingOrdersException;
+import java.util.EnumMap;
 import java.util.Map;
 import org.slf4j.event.Level;
 import org.springframework.http.HttpStatus;
@@ -82,6 +84,19 @@ final class ApiErrorCatalog {
             Map.entry(ReservationNotExpiredException.class, INTERNAL));
 
     private ApiErrorCatalog() {
+    }
+
+    /**
+     * The rows Spring Security answers with (written by {@code ProblemResponses}, not by the advice), derived from the
+     * {@link SecurityProblem} enum so the text has one source. Nothing is logged for them: an anonymous client can
+     * trigger a 401 at will and the line would carry no information.
+     */
+    static Map<SecurityProblem, ApiError> securityRows() {
+        Map<SecurityProblem, ApiError> rows = new EnumMap<>(SecurityProblem.class);
+        for (SecurityProblem problem : SecurityProblem.values()) {
+            rows.put(problem, new ApiError(problem.status(), problem.code(), problem.detail(), null));
+        }
+        return Map.copyOf(rows);
     }
 
     /**

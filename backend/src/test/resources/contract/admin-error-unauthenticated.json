@@ -1,0 +1,6 @@
+{
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Authentication is required.",
+  "code": "UNAUTHENTICATED"
+}

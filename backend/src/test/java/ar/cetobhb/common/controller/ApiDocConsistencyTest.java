@@ -94,6 +94,7 @@ class ApiDocConsistencyTest {
     static Set<String> allErrorRows() {
         Set<String> rows = new TreeSet<>();
         ApiErrorCatalog.domainErrors().values().forEach(error -> rows.add(rowOf(error)));
+        ApiErrorCatalog.securityRows().values().forEach(error -> rows.add(rowOf(error)));
         for (ApiError error : List.of(ApiErrorCatalog.VALIDATION, ApiErrorCatalog.MALFORMED,
                 ApiErrorCatalog.UNSUPPORTED_MEDIA_TYPE, ApiErrorCatalog.NOT_ACCEPTABLE,
                 ApiErrorCatalog.METHOD_NOT_ALLOWED, ApiErrorCatalog.NOT_FOUND, ApiErrorCatalog.PAYLOAD_TOO_LARGE,
@@ -177,7 +178,7 @@ class ApiDocConsistencyTest {
 
     @Test
     void everyErrorCodeOfTheCatalogIsListed() {
-        assertThat(allErrorRows()).hasSizeGreaterThanOrEqualTo(14);
+        assertThat(allErrorRows()).hasSizeGreaterThanOrEqualTo(16);
         assertThat(missingErrorCodes(read(DOC))).isEmpty();
     }
 

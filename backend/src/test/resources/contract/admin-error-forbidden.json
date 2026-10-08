@@ -1,0 +1,6 @@
+{
+  "title": "Forbidden",
+  "status": 403,
+  "detail": "The request is not allowed.",
+  "code": "FORBIDDEN"
+}

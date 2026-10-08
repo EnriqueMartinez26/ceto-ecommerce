@@ -285,6 +285,7 @@ Una clave nueva crea un pedido nuevo.
 | `X-Request-Id` | respuesta | todas | UUID del servidor; los errores lo repiten en `requestId`. El de la petición se ignora. |
 | `Retry-After` | respuesta | 429 y 503 | Segundos de espera. En 429 `RATE_LIMITED` es el tiempo hasta el próximo intento permitido (mínimo 1). En 503 `SERVICE_BUSY` es `1` si hay otro checkout del mismo teléfono en curso y `5` si el servicio está saturado. |
 | `Cache-Control` | respuesta | checkout y todo error | `no-store`. Los `GET` de la tienda no fijan `Cache-Control`: la política de caché de la lista la define el frontend o Caddy. |
+| `Cache-Control`, `X-Frame-Options` | respuesta | `/api/admin/*` | Toda respuesta de administración lleva `Cache-Control` con `no-store` (los errores `no-store` a secas; en las demás, Security suma `no-cache`, `Pragma` y `Expires`) y `X-Frame-Options: DENY`. Nunca hay `Access-Control-Allow-Origin` ni `Strict-Transport-Security`. Las rutas públicas no cambian sus cabeceras. |
 | `Allow` | respuesta | 405 | Métodos permitidos de la ruta. |
 | `Connection` | respuesta | 413 | `close`: el servidor puede no haber leído todo el cuerpo. |
 | `X-Content-Type-Options`, `Referrer-Policy`, `Content-Security-Policy` | respuesta | todas | `nosniff`, `no-referrer` y `default-src 'none'; frame-ancestors 'none'`. `Strict-Transport-Security` lo agrega Caddy. |
@@ -302,8 +303,10 @@ contra `X-Request-Id`.
 | Status | `code` | Cuándo | Campos extra | Reintentar |
 |---|---|---|---|---|
 | 400 | `VALIDATION_ERROR` | Un campo no cumple una regla, la clave de idempotencia falta o está mal, o el `id` de la ruta es inválido. | `reason` (ver abajo) | No: corregir el dato. |
-| 400 | `MALFORMED_REQUEST` | El cuerpo no se puede leer: JSON inválido, campo desconocido o repetido, tipo equivocado, anidado de más de 8 niveles o texto demasiado largo. | | No. |
+| 400 | `MALFORMED_REQUEST` | El cuerpo no se puede leer: JSON inválido, campo desconocido o repetido, tipo equivocado, anidado de más de 8 niveles o texto demasiado largo. En `/api/admin/*` también cuando el firewall de Security rechaza la ortografía de la ruta (`;`, `//`, `/./`, `/../`). | | No. |
 | 400 | `BAD_REQUEST` | Otro error de cliente que Spring detecta antes de la lógica y no tiene código propio. | | No. |
+| 401 | `UNAUTHENTICATED` | Solo en `/api/admin/*`: no hay sesión de administración. Nunca dice por qué ni nombra al usuario. | | Sí, después de iniciar sesión. |
+| 403 | `FORBIDDEN` | Solo en `/api/admin/*`: falta el token CSRF o es inválido, o la sesión no puede hacer esto. | | No: pedir un token nuevo. |
 | 404 | `NOT_FOUND` | Ruta inexistente (incluidas variantes como barra final o `//`) o producto inexistente, inactivo u oculto. | | No. |
 | 405 | `METHOD_NOT_ALLOWED` | Método no permitido para la ruta (por ejemplo `POST` a la lista). | `Allow` | No. |
 | 406 | `NOT_ACCEPTABLE` | `Accept` no admite JSON. | | No. |
@@ -483,6 +486,45 @@ Golden: `backend/src/test/resources/contract/error-internal.json`
   "detail": "An unexpected error occurred.",
   "instance": "/api/checkout/orders",
   "code": "INTERNAL_ERROR"
+}
+```
+
+### Errores de Security en `/api/admin/*`
+
+Los produce Spring Security, no el controller, y tienen la misma forma. Estos
+tres goldens no incluyen `instance` (es la ruta pedida y cambia en cada
+ruta) ni `requestId`; los tests los comparan aparte.
+
+Golden: `backend/src/test/resources/contract/admin-error-unauthenticated.json`
+
+```json
+{
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "Authentication is required.",
+  "code": "UNAUTHENTICATED"
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-error-forbidden.json`
+
+```json
+{
+  "title": "Forbidden",
+  "status": 403,
+  "detail": "The request is not allowed.",
+  "code": "FORBIDDEN"
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-error-rejected-request.json`
+
+```json
+{
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "The request could not be read.",
+  "code": "MALFORMED_REQUEST"
 }
 ```
 
