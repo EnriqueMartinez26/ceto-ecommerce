@@ -2,6 +2,7 @@ package ar.cetobhb.common.controller;
 
 import ar.cetobhb.catalog.domain.ProductNotAvailableException;
 import ar.cetobhb.common.domain.DomainException;
+import ar.cetobhb.common.domain.RateLimitedException;
 import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.common.web.SafeErrors;
@@ -78,7 +79,11 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 && error.code().equals("PRODUCT_UNAVAILABLE")) {
             extras.put("productIds", List.copyOf(unavailable.productIds()));
         }
-        return respond(error, request, new HttpHeaders(), extras);
+        HttpHeaders headers = new HttpHeaders();
+        if (ex instanceof RateLimitedException limited) {
+            headers.set(HttpHeaders.RETRY_AFTER, String.valueOf(limited.retryAfterSeconds()));
+        }
+        return respond(error, request, headers, extras);
     }
 
     @ExceptionHandler({DataIntegrityViolationException.class, OptimisticLockingFailureException.class})

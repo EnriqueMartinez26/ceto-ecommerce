@@ -7,6 +7,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
@@ -20,15 +21,17 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * the test profile, shrinking to 2 idle ones); cached contexts therefore stay well below the Postgres default of 100
  * connections.
  *
- * <p>Per-IP limiter (added in a later slice): every request from this client comes from 127.0.0.1, so the burst
- * tests would hit it. When the limiter exists, this class (or the test profile) must raise its burst for these tests;
- * forwarded headers cannot be used to vary the address without trusted-proxy configuration.
+ * <p>Per-client limiter: the test profile trusts only the IPv4 loopback as a proxy, so {@link #post} gives every
+ * request its own client address through {@code X-Forwarded-For}; without it the 20-request bursts would all come
+ * from 127.0.0.1 and hit the limiter. Tests of the limiter itself use {@link #postFrom}.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public abstract class AbstractServerIT extends AbstractPostgresIT {
 
     private static final HttpClient CLIENT = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofSeconds(5)).build();
+
+    private static final AtomicInteger NEXT_CLIENT = new AtomicInteger();
 
     @LocalServerPort
     protected int port;
@@ -37,18 +40,33 @@ public abstract class AbstractServerIT extends AbstractPostgresIT {
     protected record Reply(int status, String body) {
     }
 
-    protected URI uri(String path) {
-        return URI.create("http://127.0.0.1:" + port + path);
+    /**
+     * POST of a JSON checkout body with the given {@code Idempotency-Key}, as a client of its own (a fresh
+     * {@code X-Forwarded-For} per call, from the benchmarking range 198.18.0.0/15); failures to talk HTTP are
+     * exceptions.
+     */
+    protected Reply post(String idempotencyKey, String body) throws IOException, InterruptedException {
+        int n = NEXT_CLIENT.getAndIncrement();
+        String client = "198." + (18 + ((n >> 16) & 0x01)) + "." + ((n >> 8) & 0xff) + "." + (n & 0xff);
+        return postFrom("127.0.0.1", client, idempotencyKey, body);
     }
 
-    /** POST of a JSON checkout body with the given {@code Idempotency-Key}; failures to talk HTTP are exceptions. */
-    protected Reply post(String idempotencyKey, String body) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(uri("/api/checkout/orders"))
+    /**
+     * POST to the given host (an IP literal, brackets included for IPv6) with an optional raw
+     * {@code X-Forwarded-For} value, exactly as given.
+     */
+    protected Reply postFrom(String host, String forwardedFor, String idempotencyKey, String body)
+            throws IOException, InterruptedException {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://" + host + ":" + port
+                        + "/api/checkout/orders"))
                 .timeout(Duration.ofSeconds(30))
                 .header("Content-Type", "application/json").header("Accept", "application/json")
                 .header("Idempotency-Key", idempotencyKey)
-                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)).build();
-        HttpResponse<String> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
+        if (forwardedFor != null) {
+            request.header("X-Forwarded-For", forwardedFor);
+        }
+        HttpResponse<String> response = CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
         return new Reply(response.statusCode(), response.body());
     }
 }

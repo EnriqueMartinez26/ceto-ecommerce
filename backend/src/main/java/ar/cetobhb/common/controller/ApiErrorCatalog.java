@@ -3,6 +3,7 @@ package ar.cetobhb.common.controller;
 import ar.cetobhb.catalog.domain.ProductNotAvailableException;
 import ar.cetobhb.catalog.domain.ProductNotFoundException;
 import ar.cetobhb.common.domain.DomainException;
+import ar.cetobhb.common.domain.RateLimitedException;
 import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
@@ -56,6 +57,9 @@ final class ApiErrorCatalog {
                     "There is not enough stock for this order.", Level.DEBUG)),
             Map.entry(IdempotencyConflictException.class, new ApiError(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT",
                     "The idempotency key was already used for a different order.", Level.INFO)),
+            // A client can trigger this 429 at will, so it is logged at DEBUG only and never with the client address.
+            Map.entry(RateLimitedException.class, new ApiError(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED",
+                    "Too many requests. Try again later.", Level.DEBUG)),
             Map.entry(TooManyPendingOrdersException.class, new ApiError(HttpStatus.TOO_MANY_REQUESTS,
                     "TOO_MANY_PENDING_ORDERS", "Too many pending orders for this phone.", Level.DEBUG)),
             // No public endpoint reaches these three yet; explicit rows keep a future endpoint from returning 500.

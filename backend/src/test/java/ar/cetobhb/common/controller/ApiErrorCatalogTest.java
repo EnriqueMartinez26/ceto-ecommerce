@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import ar.cetobhb.CetoBackendApplication;
 import ar.cetobhb.common.domain.DomainException;
+import ar.cetobhb.common.domain.RateLimitedException;
 import ar.cetobhb.orders.domain.TooManyPendingOrdersException;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaModifier;
@@ -59,6 +60,12 @@ class ApiErrorCatalogTest {
         // A client can trigger this 429 at will: anything above DEBUG would let abuse flood the production log.
         assertThat(ApiErrorCatalog.domainErrors().get(TooManyPendingOrdersException.class).logLevel())
                 .isEqualTo(Level.DEBUG);
+    }
+
+    @Test
+    void theRateLimitRejectionLogsAtDebugAndNeverCarriesTheClient() {
+        assertThat(ApiErrorCatalog.domainErrors().get(RateLimitedException.class).logLevel()).isEqualTo(Level.DEBUG);
+        assertThat(new RateLimitedException(7)).hasMessage("RATE_LIMITED");
     }
 
     private static List<String> missingEntries(List<String> scanned,
