@@ -44,11 +44,16 @@ public class CatalogService {
         return products.saveAndFlush(Product.createBase(data, clock.instant())).toSnapshot();
     }
 
+    /**
+     * Creates a combo over an active base product, reading the base with a shared row lock so a concurrent
+     * deactivation of it either commits first (the combo is rejected with {@code INVALID_COMBO_LINK}) or waits for this
+     * transaction. Deactivating a base AFTER the combo exists is allowed and makes the combo unavailable.
+     */
     @Transactional
     public ProductSnapshot createCombo(NewProduct data, long baseProductId, int baseUnits) {
         requireValid(data);
         CatalogRules.requireComboUnits(baseUnits);
-        Product base = products.findById(baseProductId)
+        Product base = products.findByIdForShare(baseProductId)
                 .filter(p -> !p.isCombo() && p.isActive())
                 .orElseThrow(() -> new ValidationException(ReasonCode.INVALID_COMBO_LINK));
         return products.saveAndFlush(Product.createCombo(data, base.id(), baseUnits, clock.instant()))
@@ -102,13 +107,15 @@ public class CatalogService {
     /**
      * Activates or deactivates a product; returns whether the state changed (a repeat is a no-op, not an error).
      * Activating an inactive combo whose base product is missing or inactive is rejected with
-     * {@code INVALID_COMBO_LINK}, the same reason {@link #createCombo} uses for an unusable base.
+     * {@code INVALID_COMBO_LINK}, the same reason {@link #createCombo} uses for an unusable base. The base is read
+     * with a shared row lock, so a concurrent deactivation of it either commits first (and is seen) or waits for this
+     * transaction; the check cannot go stale before the combo is written.
      */
     @Transactional
     public boolean setActive(long id, boolean active) {
         Product product = products.findById(id).orElseThrow(() -> new ProductNotFoundException(id));
         if (active && !product.isActive() && product.isCombo()) {
-            products.findById(product.toSnapshot().baseProductId())
+            products.findByIdForShare(product.toSnapshot().baseProductId())
                     .filter(Product::isActive)
                     .orElseThrow(() -> new ValidationException(ReasonCode.INVALID_COMBO_LINK));
         }
