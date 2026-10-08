@@ -96,6 +96,22 @@ Cobertura de líneas (solo clases mutadas): `domain` 238/249 (96 %) contra
 214/249 (86 %) antes, `services` 262/268 (98 %). Duración: `domain` ~4 min,
 `services` ~17 min (`domain-all`, ~25 min).
 
+### Nueva medición `services` (2026-10-07, rama `feat/http-s3a-placed-order-details`)
+
+Se re-corrió `services` después de los cambios del cambio `checkout-http`:
+`CatalogService.listVisible/findVisible` y `InventoryService.availableByBase`
+(S2a) y `OrderPlacementService` devolviendo estado, zona y líneas (S3a). Sin
+sobrevivientes nuevos ni mutantes sin cobertura.
+
+| Corrida | Paquete | Mutantes | Antes | Después |
+|---|---|---|---|---|
+| services | `orders.service` | 79 (+1) | 78 (100 %) | 79 (100 %) |
+| services | `inventory.service` | 29 (+2) | 27 (100 %) | 29 (100 %) |
+| services | `catalog.service` | 25 (+3) | 22 (100 %) | 25 (100 %) |
+| **Total** | | **133** | **127 (100 %)** | **133 (100 %)** |
+
+Cobertura de líneas (solo clases mutadas): 276/282 (98 %).
+
 ### Mutantes equivalentes aceptados
 
 | Clase | Línea | Mutación | Por qué es equivalente |
