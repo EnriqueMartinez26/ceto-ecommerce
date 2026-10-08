@@ -43,4 +43,18 @@ public class AdminCatalogService {
         audit.record(AuditEntry.product(AuditAction.PRODUCT_CREATED, created.id()));
         return created;
     }
+
+    /**
+     * Creates a combo of {@code units} (2 to 100) base units over an existing, active base product and records
+     * PRODUCT_CREATED. A combo has no stock row: its availability is derived from the base product.
+     *
+     * @throws ar.cetobhb.common.domain.ValidationException INVALID_COMBO_LINK for a bad unit count, an unknown,
+     *         inactive or combo base; or an invalid name or price. Nothing is persisted.
+     */
+    @Transactional
+    public ProductSnapshot createCombo(NewProduct data, long baseProductId, int units) {
+        ProductSnapshot created = catalog.createCombo(data, baseProductId, units);
+        audit.record(AuditEntry.product(AuditAction.PRODUCT_CREATED, created.id()));
+        return created;
+    }
 }

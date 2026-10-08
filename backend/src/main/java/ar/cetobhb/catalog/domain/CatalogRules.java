@@ -10,6 +10,9 @@ public final class CatalogRules {
     /** Smallest combo: a 1-unit combo is just the base product (D-20261007-08). */
     public static final int MIN_COMBO_UNITS = 2;
 
+    /** Largest combo (ACAT-03): the database only enforces the minimum, so the maximum is checked here. */
+    public static final int MAX_COMBO_UNITS = 100;
+
     private static final int MAX_NAME_LENGTH = 200;
 
     private static final BigDecimal MAX_PRICE = new BigDecimal("9999999999.99");
@@ -72,7 +75,7 @@ public final class CatalogRules {
     }
 
     public static void requireComboUnits(int units) {
-        if (units < MIN_COMBO_UNITS) {
+        if (units < MIN_COMBO_UNITS || units > MAX_COMBO_UNITS) {
             throw new ValidationException(ReasonCode.INVALID_COMBO_LINK);
         }
     }

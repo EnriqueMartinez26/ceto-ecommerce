@@ -141,10 +141,13 @@ class CatalogRulesTest {
     }
 
     @Test
-    void comboUnitsMustBeAtLeastTwo() {
+    void comboUnitsMustBeBetweenTwoAndOneHundred() {
         assertInvalid(ReasonCode.INVALID_COMBO_LINK, () -> CatalogRules.requireComboUnits(1));
         assertInvalid(ReasonCode.INVALID_COMBO_LINK, () -> CatalogRules.requireComboUnits(0));
+        assertInvalid(ReasonCode.INVALID_COMBO_LINK, () -> CatalogRules.requireComboUnits(101));
+        assertInvalid(ReasonCode.INVALID_COMBO_LINK, () -> CatalogRules.requireComboUnits(Integer.MAX_VALUE));
         assertThatCode(() -> CatalogRules.requireComboUnits(2)).doesNotThrowAnyException();
+        assertThatCode(() -> CatalogRules.requireComboUnits(100)).doesNotThrowAnyException();
     }
 
     private static void assertInvalid(ReasonCode reason, org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
