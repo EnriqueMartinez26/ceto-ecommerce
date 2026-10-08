@@ -16,6 +16,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
+import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 /**
@@ -41,6 +42,7 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 class AdminSecurityChainConfig {
 
     static final String LOGIN_PATH = "/api/admin/login";
+    static final String LOGOUT_PATH = "/api/admin/logout";
 
     /** The admin chain is consulted first. */
     static final int ADMIN_CHAIN_ORDER = 0;
@@ -67,6 +69,12 @@ class AdminSecurityChainConfig {
                 .authenticationManager(new LoginFieldCapAuthenticationManager(authenticationManager))
                 .formLogin(login -> login.loginPage(LOGIN_PATH).loginProcessingUrl(LOGIN_PATH)
                         .successHandler(loggedIn()).failureHandler(invalidCredentials(problems)))
+                // POST only (CSRF is on), ends the session, expires the cookie and answers 204.
+                .logout(logout -> logout.logoutUrl(LOGOUT_PATH)
+                        .logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler(HttpStatus.NO_CONTENT))
+                        .deleteCookies("JSESSIONID"))
+                // A pre-login session id is replaced by a new one on login (changeSessionId): fixation.
+                .sessionManagement(session -> session.sessionFixation(fixation -> fixation.changeSessionId()))
                 // CsrfFilter reports a missing or invalid token to this same access-denied handler.
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(unauthenticated(problems))
