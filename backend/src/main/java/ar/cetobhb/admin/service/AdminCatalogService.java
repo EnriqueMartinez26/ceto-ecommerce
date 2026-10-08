@@ -3,9 +3,13 @@ package ar.cetobhb.admin.service;
 import ar.cetobhb.admin.domain.AuditAction;
 import ar.cetobhb.admin.domain.AuditEntry;
 import ar.cetobhb.catalog.domain.NewProduct;
+import ar.cetobhb.catalog.domain.ProductAdminView;
+import ar.cetobhb.catalog.domain.ProductChange;
+import ar.cetobhb.catalog.domain.ProductEditData;
 import ar.cetobhb.catalog.domain.ProductSnapshot;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.service.InventoryService;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,5 +60,49 @@ public class AdminCatalogService {
         ProductSnapshot created = catalog.createCombo(data, baseProductId, units);
         audit.record(AuditEntry.product(AuditAction.PRODUCT_CREATED, created.id()));
         return created;
+    }
+
+    /**
+     * Edits name, price and offer price of a product (a full replacement; the combo link cannot be passed). The audit
+     * rows follow the field groups that really changed: PRICE_CHANGED (with the price before and after) and
+     * PRODUCT_UPDATED (name or offer price). An edit that changes nothing writes no row and does not bump the version.
+     *
+     * @throws ar.cetobhb.catalog.domain.StaleProductVersionException when {@code expectedVersion} is not current
+     * @throws ar.cetobhb.catalog.domain.ProductNotFoundException     for an unknown id
+     */
+    @Transactional
+    public ProductAdminView update(long id, long expectedVersion, ProductEditData data) {
+        Objects.requireNonNull(data, "data");
+        ProductChange change = catalog.update(id, expectedVersion, data);
+        if (change.priceChanged()) {
+            audit.record(AuditEntry.priceChanged(id, change.priceBefore(), change.priceAfter()));
+        }
+        if (change.otherChanged()) {
+            audit.record(AuditEntry.product(AuditAction.PRODUCT_UPDATED, id));
+        }
+        return change.view();
+    }
+
+    /** Puts a product back on sale; returns whether it changed. A repeat is not an error and writes no row. */
+    @Transactional
+    public boolean activate(long id) {
+        return setActive(id, true, AuditAction.PRODUCT_ACTIVATED);
+    }
+
+    /**
+     * Takes a product off sale; returns whether it changed. Existing orders, reservations and the stock are untouched,
+     * so pending orders stay payable and cancellable.
+     */
+    @Transactional
+    public boolean deactivate(long id) {
+        return setActive(id, false, AuditAction.PRODUCT_DEACTIVATED);
+    }
+
+    private boolean setActive(long id, boolean active, AuditAction action) {
+        boolean changed = catalog.setActive(id, active);
+        if (changed) {
+            audit.record(AuditEntry.product(action, id));
+        }
+        return changed;
     }
 }
