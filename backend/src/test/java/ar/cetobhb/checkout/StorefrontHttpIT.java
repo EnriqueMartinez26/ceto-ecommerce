@@ -3,7 +3,10 @@ package ar.cetobhb.checkout;
 import static ar.cetobhb.support.ContractAssertions.assertMatchesGolden;
 import static ar.cetobhb.support.ContractAssertions.stripRequestId;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 import ar.cetobhb.catalog.domain.NewProduct;
 import ar.cetobhb.catalog.service.CatalogService;
@@ -14,9 +17,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -140,5 +145,92 @@ class StorefrontHttpIT extends AbstractHttpIT {
     @Test
     void theLargestAllowedIdIsAValidLookupThatSimplyDoesNotExist() throws Exception {
         assertThat(send(get("/api/store/products/9007199254740991")).getStatus()).isEqualTo(404);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"POST,/api/store/products", "PUT,/api/store/products", "DELETE,/api/store/products",
+            "POST,/api/store/products/1", "PUT,/api/store/products/1", "DELETE,/api/store/products/1"})
+    void writeMethodsAre405WithAnAllowHeaderAndTheStandardBody(String method, String path) throws Exception {
+        MockHttpServletRequestBuilder request = switch (method) {
+            case "POST" -> post(path);
+            case "PUT" -> put(path);
+            default -> delete(path);
+        };
+
+        MockHttpServletResponse response = send(request);
+
+        assertThat(response.getStatus()).isEqualTo(405);
+        assertThat(response.getHeader("Allow")).contains("GET");
+        assertThat(response.getContentType()).startsWith("application/problem+json");
+        JsonNode body = json.readTree(stripRequestId(response));
+        assertThat(body.get("status").asInt()).isEqualTo(405);
+        assertThat(body.get("code").asString()).isEqualTo("METHOD_NOT_ALLOWED");
+        assertThat(body.has("type")).isFalse();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"application/xml", "text/html"})
+    void unsupportedAcceptHeadersAre406WithAProblemBody(String accept) throws Exception {
+        seedCatalog();
+
+        for (String path : List.of("/api/store/products", "/api/store/products/1")) {
+            MockHttpServletResponse response = send(get(path).header("Accept", accept));
+
+            assertThat(response.getStatus()).isEqualTo(406);
+            JsonNode body = json.readTree(stripRequestId(response));
+            assertThat(body.get("status").asInt()).isEqualTo(406);
+            assertThat(body.get("code").asString()).isEqualTo("NOT_ACCEPTABLE");
+            assertThat(body.has("type")).isFalse();
+        }
+    }
+
+    @Test
+    void anUnknownSubPathIsTheStandard404() throws Exception {
+        MockHttpServletResponse response = send(get("/api/store/products/1/anything"));
+
+        assertThat(response.getStatus()).isEqualTo(404);
+        JsonNode body = json.readTree(stripRequestId(response));
+        assertThat(body.get("code").asString()).isEqualTo("NOT_FOUND");
+        assertThat(body.has("type")).isFalse();
+    }
+
+    @Test
+    void queryParametersAreIgnored() throws Exception {
+        seedCatalog();
+
+        String plain = stripRequestId(send(get("/api/store/products")));
+        String withParams = stripRequestId(send(get("/api/store/products?foo=1&limit=1&id=7")));
+        String plainDetail = stripRequestId(send(get("/api/store/products/1")));
+        String detailWithParams = stripRequestId(send(get("/api/store/products/1?foo=1")));
+
+        assertThat(withParams).isEqualTo(plain);
+        assertThat(detailWithParams).isEqualTo(plainDetail);
+    }
+
+    @Test
+    void successfulResponsesCarryAFreshRequestId() throws Exception {
+        seedCatalog();
+
+        String first = send(get("/api/store/products")).getHeader("X-Request-Id");
+        String second = send(get("/api/store/products/1")).getHeader("X-Request-Id");
+
+        assertThat(first).isNotBlank().isNotEqualTo(second);
+        assertThat(java.util.UUID.fromString(first)).isNotNull();
+        assertThat(second).isNotBlank();
+    }
+
+    @Test
+    void textIsReturnedVerbatimAsJsonWithoutHtmlEscapingOrMojibake() throws Exception {
+        String presentation = "<script>alert(1)</script> \"quoted\" Córdoba ñ";
+        long id = catalog.createBase(new NewProduct("Texty", new BigDecimal("10"), null, presentation, null, null))
+                .id();
+
+        MockHttpServletResponse response = send(get("/api/store/products/" + id));
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getContentType()).startsWith("application/json");
+        String raw = response.getContentAsString(StandardCharsets.UTF_8);
+        assertThat(json.readTree(raw).get("presentation").asString()).isEqualTo(presentation);
+        assertThat(raw).contains("<script>alert(1)</script>").contains("Córdoba ñ");
     }
 }
