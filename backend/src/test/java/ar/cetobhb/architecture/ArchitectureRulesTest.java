@@ -139,6 +139,70 @@ class ArchitectureRulesTest {
     }
 
     @Test
+    void webTypesRuleFailsOnControllersAndAdviceOutsideControllerPackages() {
+        assertThatThrownBy(() -> ArchitectureRules.WEB_TYPES_ONLY_IN_CONTROLLER_PACKAGES.check(fixtures("webtypes")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("MisplacedRestControllerType")
+                .hasMessageContaining("MisplacedAdviceType");
+    }
+
+    @Test
+    void webFreeRuleFailsWhenAServiceTouchesTheServletApi() {
+        assertThatThrownBy(() -> ArchitectureRules.SERVICES_AND_DOMAIN_ARE_WEB_FREE.check(fixtures("webfree")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("ServletAwareService")
+                .hasMessageContaining("jakarta.servlet.http.HttpServletRequest");
+    }
+
+    @Test
+    void webFreeRuleFailsWhenDomainKnowsHttpStatusesAndSpringWebExceptions() {
+        assertThatThrownBy(() -> ArchitectureRules.SERVICES_AND_DOMAIN_ARE_WEB_FREE.check(fixtures("webfree")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("HttpAwareDomain")
+                .hasMessageContaining("org.springframework.http.HttpStatus")
+                .hasMessageContaining("org.springframework.web.server.ResponseStatusException");
+    }
+
+    @Test
+    void crossOriginRuleFailsOnTheAnnotationAtClassAndMethodLevel() {
+        assertThatThrownBy(() -> ArchitectureRules.NO_CROSS_ORIGIN.check(fixtures("crossorigin")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("CrossOriginController")
+                .hasMessageContaining("CrossOriginController.open()");
+    }
+
+    @Test
+    void crossOriginRuleFailsOnGlobalCorsConfiguration() {
+        assertThatThrownBy(() -> ArchitectureRules.NO_CROSS_ORIGIN.check(fixtures("crossorigin")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("CorsConfigurer")
+                .hasMessageContaining("addCorsMappings")
+                .hasMessageContaining("CorsRegistry");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "noBounds(", "onlyMin(", "onlyMax(", "query(java.lang.String, java.math.BigDecimal) parameter 0",
+            "query(java.lang.String, java.math.BigDecimal) parameter 1", "header(", "headerSizeWithoutMax(",
+            "UnboundedBody.unboundedQuantity", "UnboundedBody.unsizedText", "UnboundedBody.unsizedList",
+            "Nested.unboundedPrice"})
+    void inputsRuleFailsOnEachUnboundedInput(String expected) {
+        assertThatThrownBy(() -> ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED.check(fixtures("unbounded")))
+                .isInstanceOf(AssertionError.class)
+                .satisfies(error -> assertThat(error.getMessage()).contains(expected));
+    }
+
+    @Test
+    void inputsRuleExplainsWhichBoundIsMissingAndIgnoresBoundedMembers() {
+        assertThatThrownBy(() -> ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED.check(fixtures("unbounded")))
+                .isInstanceOf(AssertionError.class)
+                .satisfies(error -> assertThat(error.getMessage())
+                        .contains("lacks a maximum", "lacks a minimum", "lacks a minimum and a maximum",
+                                "lacks @Size(max = ...)")
+                        .doesNotContain("UnboundedBody.sizedList is", "Nested.boundedInNested is"));
+    }
+
+    @Test
     void compliantCodeSatisfiesEveryRule() {
         JavaClasses clean = fixtures("clean");
         List<ArchRule> rules = List.of(
@@ -148,7 +212,11 @@ class ArchitectureRulesTest {
                 ArchitectureRules.NO_SYSTEM_CLOCK,
                 ArchitectureRules.NO_JAKARTA_TRANSACTIONAL,
                 ArchitectureRules.REPOSITORY_ONLY_FROM_OWN_FEATURE_SERVICE,
-                ArchitectureRules.ENTITIES_HAVE_NO_PUBLIC_SETTERS);
+                ArchitectureRules.ENTITIES_HAVE_NO_PUBLIC_SETTERS,
+                ArchitectureRules.WEB_TYPES_ONLY_IN_CONTROLLER_PACKAGES,
+                ArchitectureRules.SERVICES_AND_DOMAIN_ARE_WEB_FREE,
+                ArchitectureRules.NO_CROSS_ORIGIN,
+                ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED);
         for (ArchRule rule : rules) {
             assertThatCode(() -> rule.check(clean)).doesNotThrowAnyException();
         }

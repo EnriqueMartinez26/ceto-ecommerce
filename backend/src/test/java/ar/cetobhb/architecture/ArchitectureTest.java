@@ -29,6 +29,18 @@ class ArchitectureTest {
     static final ArchRule entitiesHaveNoPublicSetters = ArchitectureRules.ENTITIES_HAVE_NO_PUBLIC_SETTERS;
 
     @ArchTest
+    static final ArchRule webTypesOnlyInControllerPackages = ArchitectureRules.WEB_TYPES_ONLY_IN_CONTROLLER_PACKAGES;
+
+    @ArchTest
+    static final ArchRule servicesAndDomainAreWebFree = ArchitectureRules.SERVICES_AND_DOMAIN_ARE_WEB_FREE;
+
+    @ArchTest
+    static final ArchRule noCrossOrigin = ArchitectureRules.NO_CROSS_ORIGIN;
+
+    @ArchTest
+    static final ArchRule requestInputsAreBounded = ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED;
+
+    @ArchTest
     static final ArchRule repositoryOnlyFromOwnFeatureService =
             ArchitectureRules.REPOSITORY_ONLY_FROM_OWN_FEATURE_SERVICE;
 }

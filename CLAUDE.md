@@ -97,7 +97,15 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   repository solo desde el service de la misma funcionalidad y dominio sin
   Spring/JPA/Hibernate; `ArchitectureRulesTest` prueba con fixtures (bajo
   `archfixtures`, fuera del paquete escaneado por Spring) que cada regla
-  falla ante una violación. La regla de capas ya no usa `allowEmptyShould` ni
+  falla ante una violación. Reglas de la capa HTTP en el mismo lugar:
+  `WEB_TYPES_ONLY_IN_CONTROLLER_PACKAGES` (controllers y advice solo en
+  `..controller..`), `SERVICES_AND_DOMAIN_ARE_WEB_FREE` (sin servlet, Spring
+  web ni http en `..service..`/`..domain..`), `NO_CROSS_ORIGIN` (ni
+  `@CrossOrigin`, ni tipos CORS, ni `addCorsMappings`) y
+  `REQUEST_INPUTS_ARE_BOUNDED` (sección 5). `EndpointInventoryIT` fija el
+  inventario: las 3 rutas públicas más `ANY /error` de `BasicErrorController`
+  (permitido por tipo de handler, no por ruta), sin mapeos de recursos ni
+  actuator, y todo otro camino es el 404 estándar; no hay `CorsFilter`. La regla de capas ya no usa `allowEmptyShould` ni
   capas opcionales porque existen controllers (`StorefrontController`): si un
   renombre o movimiento deja una capa vacía, el build falla
   (`layeringRuleFailsWhenNoLayerHasAnyClassSoARenameCannotEmptyIt`) y los
@@ -450,7 +458,12 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 - **Todo parámetro numérico de la API lleva mínimo Y máximo**
   (`@Min`/`@Max`, cantidades, paginado, estrellas). Un solo lado deja un 500
   alcanzable. Las propiedades de `ceto.orders.*` ya cumplen la regla
-  (`OrderPropertiesValidationTest`); falta la guarda para los parámetros de la API.
+  (`OrderPropertiesValidationTest`). Para la API la guarda es la regla ArchUnit
+  `REQUEST_INPUTS_ARE_BOUNDED` (`ArchitectureTest`, con fixtures en
+  `ArchitectureRulesTest`): todo parámetro numérico de un handler y todo
+  componente numérico de un `@RequestBody` (recorrido por DTO anidados y
+  colecciones) declara mínimo y máximo, y todo `String` o colección
+  `@Size(max)`; un parámetro simple sin anotar cuenta como query param.
 - **Entrada hostil**: el texto libre que se publica (reseñas, nombre corto,
   productos) rechaza caracteres de control y se escapa al renderizar.
   Imágenes por magic bytes, con tope de bytes y de píxeles; nunca SVG.
