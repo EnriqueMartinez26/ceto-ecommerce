@@ -203,6 +203,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    unitario `InventoryStockAdjustByTest` porque no se lanzó ninguna excepción.
    Nadie fuera de `InventoryService` puede llamar al ajuste absoluto `adjust`,
    ni directamente ni con una referencia a método (`AbsoluteAdjustNotReachableTest`).
+   Las lecturas de administración no bloquean ni dejan filas gestionadas:
+   `InventoryService.levels` (contadores por producto, `InventoryServiceLevelsIT`)
+   y `InventoryService.reservationMismatches` (una sola sentencia de solo lectura
+   que compara `reserved` con las líneas de pedidos `PAGO_PENDIENTE`, con
+   `reserved` nulo si falta la fila de stock, `ReservationMismatchIT`).
 2. **Un combo no tiene stock propio.** Es un producto con precio propio y una
    relación "N unidades del producto base". Su disponible se deriva:
    `⌊(on_hand − reserved) / N⌋`. "Agotado" se calcula, no se guarda como

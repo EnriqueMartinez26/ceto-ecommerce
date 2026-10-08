@@ -7,7 +7,9 @@ import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.inventory.domain.Availability;
 import ar.cetobhb.inventory.domain.BaseUnitDemand;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
+import ar.cetobhb.inventory.domain.ReservationMismatch;
 import ar.cetobhb.inventory.domain.StockAdjustment;
+import ar.cetobhb.inventory.domain.StockCounts;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
 import ar.cetobhb.inventory.domain.StockNotAdjustableException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
@@ -23,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.BiPredicate;
 import org.hibernate.exception.ConstraintViolationException;
@@ -176,6 +179,34 @@ public class InventoryService {
             free.put(level.productId(), Availability.forBase(level.onHand(), level.reserved()));
         }
         return free;
+    }
+
+    /**
+     * Stock counters per product, ascending by id, for the admin stock view. A product without a stock row (or an
+     * unknown id) has no key. Takes no lock and leaves no managed stock row (see
+     * {@link InventoryStockRepository#findLevels}).
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, StockCounts> levels(Collection<Long> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, StockCounts> byId = new TreeMap<>();
+        for (StockLevel level : stock.findLevels(ids)) {
+            byId.put(level.productId(), new StockCounts(level.onHand(), level.reserved()));
+        }
+        return byId;
+    }
+
+    /**
+     * Base products whose reserved counter disagrees with their pending order lines (INV-A2), at most {@code limit}
+     * rows ascending by id. One read-only statement: no lock, no write.
+     */
+    @Transactional(readOnly = true)
+    public List<ReservationMismatch> reservationMismatches(int limit) {
+        return stock.findReservationMismatches(limit).stream()
+                .map(row -> new ReservationMismatch(row.getProductId(), row.getReserved(), row.getExpected()))
+                .toList();
     }
 
     /** Locks all rows ascending, then checks every row before the caller mutates any of them. */
