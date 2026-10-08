@@ -3,6 +3,7 @@ package ar.cetobhb.admin.service;
 import ar.cetobhb.admin.config.AdminProperties;
 import ar.cetobhb.admin.domain.AdjustedStock;
 import ar.cetobhb.admin.domain.AuditEntry;
+import ar.cetobhb.admin.domain.CappedList;
 import ar.cetobhb.admin.domain.StockAdjustmentReason;
 import ar.cetobhb.admin.domain.StockEntry;
 import ar.cetobhb.catalog.domain.ProductAdminView;
@@ -14,6 +15,7 @@ import ar.cetobhb.inventory.domain.ReservationMismatch;
 import ar.cetobhb.inventory.domain.StockAdjustment;
 import ar.cetobhb.inventory.domain.StockCounts;
 import ar.cetobhb.inventory.service.InventoryService;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -68,42 +70,61 @@ public class AdminInventoryService {
 
     /**
      * Every product (active or not) by id ascending, at most {@code ceto.admin.max-listed-products}, with its stock
-     * figures. Read-only: takes no row lock and leaves no managed stock entity (INV-A2).
+     * figures; {@code truncated} says whether the cap cut the list short (the catalog is asked for one row more than
+     * the cap). Read-only: takes no row lock and leaves no managed stock entity (INV-A2).
+     *
+     * <p>The product list and the stock levels are two statements under READ COMMITTED, so a concurrent change between
+     * them can mix snapshots (a product created after the first read has no figures, a count moved after it shows the
+     * newer value). Accepted for a read-only operator screen (see CLAUDE.md); the next refresh converges.
      */
     @Transactional(readOnly = true)
-    public List<StockEntry> stockView() {
-        List<ProductAdminView> products = catalog.listAll(properties.maxListedProducts());
+    public CappedList<StockEntry> stockView() {
+        int cap = properties.maxListedProducts();
+        CappedList<ProductAdminView> page = CappedList.fromFetchOfCapPlusOne(catalog.listAll(cap + 1), cap);
+        List<ProductAdminView> products = page.rows();
+        Map<Long, ProductAdminView> byId = new HashMap<>();
         Set<Long> baseIds = new TreeSet<>();
         for (ProductAdminView product : products) {
+            byId.put(product.id(), product);
             baseIds.add(product.isCombo() ? product.comboBaseProductId() : product.id());
         }
         Map<Long, StockCounts> levels = baseIds.isEmpty() ? Map.of() : inventory.levels(baseIds);
-        return products.stream().map(product -> toEntry(product, levels)).toList();
+        List<StockEntry> entries = products.stream().map(product -> toEntry(product, levels, byId)).toList();
+        return new CappedList<>(entries, page.truncated());
     }
 
     /**
      * Base products whose reserved counter disagrees with their pending order lines, at most
-     * {@code ceto.admin.max-reconciliation-rows}. One read-only statement: no lock, no write, no audit.
+     * {@code ceto.admin.max-reconciliation-rows}; {@code truncated} says whether more mismatches existed. One
+     * read-only statement: no lock, no write, no audit.
      */
     @Transactional(readOnly = true)
-    public List<ReservationMismatch> reconciliation() {
-        return inventory.reservationMismatches(properties.maxReconciliationRows());
+    public CappedList<ReservationMismatch> reconciliation() {
+        int cap = properties.maxReconciliationRows();
+        return CappedList.fromFetchOfCapPlusOne(inventory.reservationMismatches(cap + 1), cap);
     }
 
-    private static StockEntry toEntry(ProductAdminView product, Map<Long, StockCounts> levels) {
+    /**
+     * A combo's base product is created before it and ids ascend, so the base of a listed combo is always in the same
+     * (id-ordered, truncated at the end) list; if it were ever missing the line fails closed as not sellable.
+     */
+    private static StockEntry toEntry(ProductAdminView product, Map<Long, StockCounts> levels,
+            Map<Long, ProductAdminView> byId) {
         if (product.isCombo()) {
             StockCounts base = levels.get(product.comboBaseProductId());
             Long available = base == null ? null
                     : Availability.forCombo(base.onHand(), base.reserved(), product.comboBaseUnits());
+            ProductAdminView baseProduct = byId.get(product.comboBaseProductId());
+            boolean sellable = product.active() && baseProduct != null && baseProduct.active();
             return new StockEntry(product.id(), product.name(), product.active(), product.comboBaseProductId(),
-                    product.comboBaseUnits(), base != null, null, null, available);
+                    product.comboBaseUnits(), base != null, null, null, available, sellable);
         }
         StockCounts own = levels.get(product.id());
         if (own == null) {
             return new StockEntry(product.id(), product.name(), product.active(), null, null, false, null, null,
-                    null);
+                    null, product.active());
         }
         return new StockEntry(product.id(), product.name(), product.active(), null, null, true, own.onHand(),
-                own.reserved(), Availability.forBase(own.onHand(), own.reserved()));
+                own.reserved(), Availability.forBase(own.onHand(), own.reserved()), product.active());
     }
 }

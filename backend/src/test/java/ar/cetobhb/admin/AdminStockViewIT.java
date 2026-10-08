@@ -52,11 +52,11 @@ class AdminStockViewIT extends AbstractPostgresIT {
         long base = baseWithStock("Frasco", 10, 3);
         long combo = catalog.createCombo(product("Combo x2", "180.00"), base, 2).id();
 
-        List<StockEntry> view = admin.stockView();
+        List<StockEntry> view = admin.stockView().rows();
 
         assertThat(view).containsExactly(
-                new StockEntry(base, "Frasco", true, null, null, true, 10, 3, 7L),
-                new StockEntry(combo, "Combo x2", true, base, 2, true, null, null, 3L));
+                new StockEntry(base, "Frasco", true, null, null, true, 10, 3, 7L, true),
+                new StockEntry(combo, "Combo x2", true, base, 2, true, null, null, 3L, true));
     }
 
     @Test
@@ -64,9 +64,9 @@ class AdminStockViewIT extends AbstractPostgresIT {
         long unconfigured = catalog.createBase(product("Sin stock", "10.00")).id();
         long combo = catalog.createCombo(product("Combo", "25.00"), unconfigured, 3).id();
 
-        assertThat(admin.stockView()).containsExactly(
-                new StockEntry(unconfigured, "Sin stock", true, null, null, false, null, null, null),
-                new StockEntry(combo, "Combo", true, unconfigured, 3, false, null, null, null));
+        assertThat(admin.stockView().rows()).containsExactly(
+                new StockEntry(unconfigured, "Sin stock", true, null, null, false, null, null, null, true),
+                new StockEntry(combo, "Combo", true, unconfigured, 3, false, null, null, null, true));
     }
 
     @Test
@@ -75,12 +75,33 @@ class AdminStockViewIT extends AbstractPostgresIT {
         long alfa = baseWithStock("Alfa", 6, 1);
         catalog.setActive(alfa, false);
 
-        List<StockEntry> view = admin.stockView();
+        List<StockEntry> view = admin.stockView().rows();
 
         assertThat(view).extracting(StockEntry::productId).containsExactly(zeta, alfa);
         assertThat(view.get(0).available()).as("fully reserved is zero free, never negative").isZero();
         assertThat(view.get(1).active()).isFalse();
         assertThat(view.get(1).available()).isEqualTo(5L);
+    }
+
+    /** Review batch 4: a combo over a deactivated base keeps its figures but is not sellable (REQ-CAT-02). */
+    @Test
+    void aComboOverAnInactiveBaseKeepsItsFiguresButIsNotSellable() {
+        long base = baseWithStock("Frasco", 10, 3);
+        long combo = catalog.createCombo(product("Combo x2", "180.00"), base, 2).id();
+        long inactiveCombo = catalog.createCombo(product("Combo x3", "250.00"), base, 3).id();
+        catalog.setActive(inactiveCombo, false);
+
+        assertThat(admin.stockView().rows()).containsExactly(
+                new StockEntry(base, "Frasco", true, null, null, true, 10, 3, 7L, true),
+                new StockEntry(combo, "Combo x2", true, base, 2, true, null, null, 3L, true),
+                new StockEntry(inactiveCombo, "Combo x3", false, base, 3, true, null, null, 2L, false));
+
+        catalog.setActive(base, false);
+
+        assertThat(admin.stockView().rows()).containsExactly(
+                new StockEntry(base, "Frasco", false, null, null, true, 10, 3, 7L, false),
+                new StockEntry(combo, "Combo x2", true, base, 2, true, null, null, 3L, false),
+                new StockEntry(inactiveCombo, "Combo x3", false, base, 3, true, null, null, 2L, false));
     }
 
     @Test
@@ -89,7 +110,7 @@ class AdminStockViewIT extends AbstractPostgresIT {
         CompletableFuture<List<StockEntry>> read = new CompletableFuture<>();
         new TransactionTemplate(txManager).executeWithoutResult(status -> {
             stockRepository.lockByProductId(id).orElseThrow();
-            CompletableFuture.runAsync(() -> read.complete(admin.stockView()));
+            CompletableFuture.runAsync(() -> read.complete(admin.stockView().rows()));
             try {
                 read.get(5, TimeUnit.SECONDS);
             } catch (Exception e) {
