@@ -311,7 +311,8 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     `contract/checkout-200-replay.json`. Si a un producto base le falta la fila
     de stock, la API responde `PRODUCT_UNAVAILABLE` con los ids pedidos (nunca el
     id base de un combo) y deja un ERROR para la operadora:
-    `StockNotConfiguredPlacementIT`.
+    `StockNotConfiguredPlacementIT`; los errores del endpoint tienen un golden
+    por código en `contract/error-*.json` (`CheckoutErrorsHttpIT`).
     La búsqueda por clave va antes de tocar catálogo o stock; si dos pedidos
     compiten, el perdedor choca con `orders_idempotency_key_uk` al insertar la
     fila (antes de reservar) y repite la búsqueda en otra transacción. Pruebas:
@@ -477,8 +478,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   final. Lo mismo para N confirmaciones idénticas con la misma clave de
   idempotencia. Existen: `OrderStockBurstIT` (última unidad),
   `OrderIdempotencyIT` (misma clave), `OrderLockOrderingIT` (orden de locks
-  entre reserva, pago, cancelación y vencimiento) y `OrderExpiryIT`
-  (vencimiento contra pago y corridas concurrentes); el pool de Hikari del perfil `test` es
+  entre reserva, pago, cancelación y vencimiento), `OrderExpiryIT`
+  (vencimiento contra pago y corridas concurrentes) y, por HTTP real con
+  puerto aleatorio (`AbstractServerIT`), `CheckoutBurstHttpIT` (última unidad:
+  1 × 201, N−1 × 409 `INSUFFICIENT_STOCK`; misma clave: 1 × 201, N−1 × 200
+  `replayed:true`, cero 5xx); el pool de Hikari del perfil `test` es
   mayor que los hilos para que la contención sea de locks y no del pool.
 - **Un bug de producción se reproduce con un test antes de arreglarse**, con
   fecha y síntoma en el comentario.
