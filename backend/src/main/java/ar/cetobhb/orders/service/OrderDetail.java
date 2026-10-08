@@ -10,12 +10,14 @@ import java.util.List;
 /**
  * The admin view of one order (AOR-03), built from the stored snapshots. It carries the buyer's name, phone and
  * address (admin only), so its string form hides them. {@code reservedUntil} and {@code secondsLeft} are set only
- * for PAGO_PENDIENTE; {@code secondsLeft} is 0 once the deadline has passed while the order is still payable.
+ * for PAGO_PENDIENTE; {@code secondsLeft} is 0 once the deadline has passed while the order is still payable, and
+ * {@code overdue} (now >= reservedUntil of a PAGO_PENDIENTE order) tells that case from a countdown that merely
+ * reached 0.
  */
 public record OrderDetail(long id, String orderNumber, OrderStatus status, CancelReason cancelReason,
         String buyerName, String buyerPhoneE164, String shippingAddress, ShippingZone zone, BigDecimal total,
         Instant createdAt, Instant updatedAt, Instant paidAt, Instant dispatchedAt, Instant deliveredAt,
-        Instant cancelledAt, Instant reservedUntil, Long secondsLeft, List<Line> lines) {
+        Instant cancelledAt, Instant reservedUntil, Long secondsLeft, boolean overdue, List<Line> lines) {
 
     public OrderDetail {
         lines = List.copyOf(lines);

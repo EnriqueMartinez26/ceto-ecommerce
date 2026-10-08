@@ -27,6 +27,7 @@ import ar.cetobhb.support.MutableClock;
 import ar.cetobhb.support.StockReconciliation;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -283,6 +284,37 @@ class OrderQueryServiceIT extends AbstractPostgresIT {
         assertThat(detail.reservedUntil()).isNotNull();
         lifecycle.markPaid(id);
         assertThat(query.detail(id).status()).isEqualTo(OrderStatus.PAGADO);
+    }
+
+    @Test
+    void overdueIsFalseBeforeTrueAtAndAfterTheReservationDeadlineInDetailAndList() {
+        long id = order();
+        Instant deadline = MutableClock.START.plus(Duration.ofHours(48));
+
+        clock.set(deadline.minusSeconds(1));
+        assertThat(query.detail(id).overdue()).isFalse();
+        assertThat(query.detail(id).secondsLeft()).isEqualTo(1L);
+        assertThat(list(null, null, 20, null).rows().get(0).overdue()).isFalse();
+
+        clock.set(deadline);
+        assertThat(query.detail(id).overdue()).isTrue();
+        assertThat(query.detail(id).secondsLeft()).isZero();
+        assertThat(list(null, null, 20, null).rows().get(0).overdue()).isTrue();
+
+        clock.set(deadline.plusSeconds(1));
+        assertThat(query.detail(id).overdue()).isTrue();
+        assertThat(query.detail(id).secondsLeft()).isZero();
+        assertThat(list(null, null, 20, null).rows().get(0).overdue()).isTrue();
+    }
+
+    @Test
+    void aPaidOrderIsNeverOverdueEvenLongAfterItsOldDeadline() {
+        long id = order();
+        lifecycle.markPaid(id);
+        clock.set(MutableClock.START.plus(Duration.ofHours(500)));
+
+        assertThat(query.detail(id).overdue()).isFalse();
+        assertThat(list(null, null, 20, null).rows().get(0).overdue()).isFalse();
     }
 
     @Test

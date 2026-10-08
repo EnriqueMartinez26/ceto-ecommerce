@@ -61,10 +61,25 @@ class OrderSearchKeyTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"CETO-0001", "CETO-00012", "ceto-000123", "CETO-0000123", "CETO-", "CETO-000000",
-            "CETO-000123x", "hello", "%", "_", "1 OR 1=1", "a%b", "0", "00", "+", "12345678901234567890"})
+    @ValueSource(strings = {"CETO-0001", "CETO-00012", "CETO-0000123", "ceto-0000123", "Ceto-0", "CETO-0", "CETO-",
+            "CETO-000000", "CETO-000123x", "hello", "%", "_", "1 OR 1=1", "a%b", "0", "00", "+",
+            "12345678901234567890"})
     void whateverIsNeitherANumberNorAPhoneGivesNoKey(String q) {
         assertThat(parse(q)).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ceto-000123", "Ceto-000123", "cEtO-000123", "  ceto-000123 "})
+    void theOrderNumberIsMatchedCaseInsensitivelyAndKeepsItsCanonicalForm(String q) {
+        OrderSearchKey key = parse(q).orElseThrow();
+
+        assertThat(key.number()).isEqualTo("CETO-000123");
+        assertThat(key.phone()).isNull();
+    }
+
+    @Test
+    void lowercaseWideOrderNumbersKeepAllTheirDigits() {
+        assertThat(parse("ceto-1234567").orElseThrow().number()).isEqualTo("CETO-1234567");
     }
 
     @Test

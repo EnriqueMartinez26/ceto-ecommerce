@@ -164,11 +164,20 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   entidad `Order` en el contexto de persistencia. La búsqueda es exacta, nunca
   `LIKE`: `OrderSearchKey` (`OrderSearchKeyTest`) lee `CETO-000123` como número,
   1 a 9 dígitos como número y también como teléfono, y el resto como teléfono
-  E.164 por `PhoneNumberNormalizer`; lo que no se puede leer da una página vacía
-  y el texto buscado no se loguea. La fila de la lista no tiene dirección
+  E.164 por `PhoneNumberNormalizer`; el prefijo `CETO-` se acepta en cualquier
+  combinación de mayúsculas y minúsculas, pero el relleno de ceros tiene que ser
+  el canónico (`CETO-0000123` y `CETO-0` no dan clave); lo que no se puede leer
+  da una página vacía. El texto buscado, el nombre, el teléfono y la dirección
+  no se loguean (`OrderQueryPiiLoggingIT`: lista sin búsqueda, por teléfono, por
+  número, texto ilegible y detalle, con textos centinela; evidencia por
+  mutación: un `log.info` del texto buscado en `OrderQueryService.list` hace
+  fallar el test). La fila de la lista no tiene dirección
   (`OrderPageRepositoryIT`, `OrderQueryServiceIT`). `secondsLeft` es nulo salvo
-  en `PAGO_PENDIENTE` y 0 si el plazo pasó y el job no corrió
-  (`ReservationCountdownTest`, `OrderQueryServiceIT`).
+  en `PAGO_PENDIENTE` y 0 si el plazo pasó y el job no corrió; `overdue` es
+  verdadero solo en `PAGO_PENDIENTE` con `now >= reserved_until` (el mismo borde
+  inclusivo del job) y distingue "pasó el plazo" de "la cuenta regresiva llegó
+  a 0", en el detalle y en la fila de la lista (`ReservationCountdownTest`,
+  `OrderQueryServiceIT`).
 - **Acciones de administración sobre pedidos** (`AdminOrderService`, solo
   servicio, todavía sin rutas): pagar, despachar, entregar y cancelar llaman a
   `OrderLifecycleService` (la máquina de estados y el stock siguen ahí), escriben

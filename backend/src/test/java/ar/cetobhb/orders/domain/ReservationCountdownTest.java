@@ -46,6 +46,41 @@ class ReservationCountdownTest {
     }
 
     @Test
+    void isNotOverdueOneSecondBeforeTheDeadline() {
+        assertThat(ReservationCountdown.overdue(OrderStatus.PAGO_PENDIENTE, NOW.plusSeconds(1), NOW)).isFalse();
+        assertThat(ReservationCountdown.overdue(OrderStatus.PAGO_PENDIENTE, NOW.plusMillis(1), NOW)).isFalse();
+    }
+
+    @Test
+    void isOverdueAtTheBoundaryInstantMatchingTheExpiryJob() {
+        // The expiry job takes reserved_until <= now, so the boundary instant is already due.
+        assertThat(ReservationCountdown.overdue(OrderStatus.PAGO_PENDIENTE, NOW, NOW)).isTrue();
+    }
+
+    @Test
+    void isOverdueAfterTheDeadline() {
+        assertThat(ReservationCountdown.overdue(OrderStatus.PAGO_PENDIENTE, NOW.minusMillis(1), NOW)).isTrue();
+        assertThat(ReservationCountdown.overdue(OrderStatus.PAGO_PENDIENTE, NOW.minusSeconds(100_000), NOW))
+                .isTrue();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = OrderStatus.class, names = "PAGO_PENDIENTE", mode = EnumSource.Mode.EXCLUDE)
+    void isNeverOverdueForAStatusWithoutAReservation(OrderStatus status) {
+        assertThat(ReservationCountdown.overdue(status, NOW.minusSeconds(100_000), NOW)).isFalse();
+    }
+
+    @Test
+    void overdueRejectsNullArguments() {
+        assertThatThrownBy(() -> ReservationCountdown.overdue(null, NOW, NOW))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> ReservationCountdown.overdue(OrderStatus.PAGADO, null, NOW))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> ReservationCountdown.overdue(OrderStatus.PAGADO, NOW, null))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
     void rejectsNullArguments() {
         assertThatThrownBy(() -> ReservationCountdown.secondsLeft(null, NOW, NOW))
                 .isInstanceOf(NullPointerException.class);

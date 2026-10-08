@@ -25,4 +25,16 @@ public final class ReservationCountdown {
         Duration left = Duration.between(now, reservedUntil);
         return left.isNegative() ? 0L : left.getSeconds();
     }
+
+    /**
+     * True when a PAGO_PENDIENTE order is due for the expiry job: {@code now >= reservedUntil}, the same inclusive
+     * boundary the job uses. It tells "past the deadline, awaiting the job" from "a countdown that merely reached
+     * 0" (both show {@code secondsLeft == 0}). False for every other status.
+     */
+    public static boolean overdue(OrderStatus status, Instant reservedUntil, Instant now) {
+        Objects.requireNonNull(status, "status");
+        Objects.requireNonNull(reservedUntil, "reservedUntil");
+        Objects.requireNonNull(now, "now");
+        return status == OrderStatus.PAGO_PENDIENTE && !now.isBefore(reservedUntil);
+    }
 }
