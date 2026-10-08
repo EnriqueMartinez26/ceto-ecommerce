@@ -154,6 +154,29 @@ ningún equivalente.
 
 Cobertura de líneas (solo clases mutadas): 305/313 (97 %). Duración ~7 min.
 
+### Nueva medición `services` (2026-10-08, rama `feat/http-s5c1-lock-and-pool`, después de la revisión de S5c)
+
+Se re-corrió `services` con el lock por teléfono sin espera (`tryLockBuyerPhone`,
+D-20261008-01), el corte del respaldo por pedido ante el primer timeout de lock en
+`OrderLifecycleService` y la duración del tick en `OrderExpiryJob`. La primera
+corrida ni siquiera arrancó: PIT exige la suite en verde y 5 ráfagas de la
+misma clave (`CheckoutBurstHttpIT`, `OrderIdempotencyIT`) asumían que el lock
+esperaba; ahora aceptan el 503 del reintento que alcanza al creador. La segunda
+dejó 1 sobreviviente (la resta de `nanoTime` del log de duración), que se mató
+inyectando el reloj monotónico (`reportsHowLongTheTickTookInWholeMilliseconds`).
+La segunda búsqueda de la clave bajo el lock ya no la cubre una ráfaga de forma
+fiable (la ventana es chica sin espera): la cubre
+`OrderPlacementServiceTest.aRetryCommittedBetweenTheFirstLookupAndTheLockIsReplayedNotCounted`.
+
+| Corrida | Paquete | Mutantes | Antes | Después |
+|---|---|---|---|---|
+| services | `orders.service` | 104 (+10) | 94 (100 %) | 104 (100 %) |
+| services | `inventory.service` | 29 | 29 (100 %) | 29 (100 %) |
+| services | `catalog.service` | 25 | 25 (100 %) | 25 (100 %) |
+| **Total** | | **158** | **148 (100 %)** | **158 (100 %)** |
+
+Cobertura de líneas (solo clases mutadas): 317/325 (98 %).
+
 ### Nueva medición `domain` (2026-10-08, rama `feat/http-s4b1b-client-ip-key`)
 
 Se corrió `domain` con `TokenBucketLimiter` (38 mutantes) y `ClientIpKey`

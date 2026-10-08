@@ -344,7 +344,10 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     por código en `contract/error-*.json` (`CheckoutErrorsHttpIT`).
     La búsqueda por clave va antes de tocar catálogo o stock; si dos pedidos
     compiten, el perdedor choca con `orders_idempotency_key_uk` al insertar la
-    fila (antes de reservar) y repite la búsqueda en otra transacción. Pruebas:
+    fila (antes de reservar) y repite la búsqueda en otra transacción. Un
+    reintento de la misma clave que alcanza al creador a mitad de su transacción
+    no espera: recibe 503 `SERVICE_BUSY` con `Retry-After: 1` (D-20261008-01) y,
+    reintentado después del commit, 200. Pruebas:
     `OrderIdempotencyIT` (reintentos secuenciales y ráfagas con la misma clave:
     `sameKeyBurstWithTheSamePayloadCreatesOneOrderAndReservesOnce`,
     `sameKeyBurstOnTheLastUnitStillCreatesOneOrder`,
@@ -597,8 +600,9 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   entre reserva, pago, cancelación y vencimiento), `OrderExpiryIT`
   (vencimiento contra pago y corridas concurrentes) y, por HTTP real con
   puerto aleatorio (`AbstractServerIT`), `CheckoutBurstHttpIT` (última unidad:
-  1 × 201, N−1 × 409 `INSUFFICIENT_STOCK`; misma clave: 1 × 201, N−1 × 200
-  `replayed:true`, cero 5xx); el pool de Hikari del perfil `test` es
+  1 × 201, N−1 × 409 `INSUFFICIENT_STOCK`; misma clave: 1 × 201 y el resto 200
+  `replayed:true` o 503 `SERVICE_BUSY` si alcanzó al creador a mitad de su
+  transacción (D-20261008-01), cero otros 5xx); el pool de Hikari del perfil `test` es
   mayor que los hilos para que la contención sea de locks y no del pool. Cada
   pedido de `AbstractServerIT.post` manda su propia `X-Forwarded-For` (el perfil `test` confía
   solo en `127.0.0.1`), si no las ráfagas toparían con el límite por IP.

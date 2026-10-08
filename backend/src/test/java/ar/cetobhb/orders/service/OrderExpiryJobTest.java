@@ -63,6 +63,21 @@ class OrderExpiryJobTest {
     }
 
     @Test
+    void reportsHowLongTheTickTookInWholeMilliseconds() {
+        long[] nanos = {5_000_000_000L, 5_250_900_000L};
+        int[] reads = {0};
+        OrderExpiryJob timed = new OrderExpiryJob(lifecycle,
+                new OrderProperties(48, 10, 20, 3, new OrderProperties.Expiry(BATCH_SIZE, 45_000, 10)),
+                () -> nanos[Math.min(reads[0]++, 1)]);
+        when(lifecycle.expireDueOrders(BATCH_SIZE)).thenReturn(result(1, 0));
+
+        timed.run();
+
+        assertThat(messages(Level.INFO)).containsExactly(
+                "Expiry tick: 1 unpaid orders expired and their reservations released, 0 failed (took 250 ms)");
+    }
+
+    @Test
     void reportsTheExpiredCountWhenNothingFailed() {
         when(lifecycle.expireDueOrders(BATCH_SIZE)).thenReturn(result(2, 0));
 

@@ -2,8 +2,10 @@ package ar.cetobhb.orders.service;
 
 import ar.cetobhb.orders.config.OrderProperties;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -40,15 +42,24 @@ public class OrderExpiryJob {
     private final int batchSize;
     private final int maxBatchesPerTick;
 
+    private final LongSupplier nanoClock;
+
+    @Autowired
     public OrderExpiryJob(OrderLifecycleService lifecycle, OrderProperties properties) {
+        this(lifecycle, properties, System::nanoTime);
+    }
+
+    /** Test seam: the monotonic clock that times the tick. */
+    OrderExpiryJob(OrderLifecycleService lifecycle, OrderProperties properties, LongSupplier nanoClock) {
         this.lifecycle = lifecycle;
         this.batchSize = properties.expiry().batchSize();
         this.maxBatchesPerTick = properties.expiry().maxBatchesPerTick();
+        this.nanoClock = nanoClock;
     }
 
     @Scheduled(fixedDelayString = "${ceto.orders.expiry.fixed-delay-ms}")
     public void run() {
-        long startedNanos = System.nanoTime();
+        long startedNanos = nanoClock.getAsLong();
         int expired = 0;
         int failed = 0;
         for (int batch = 0; batch < maxBatchesPerTick; batch++) {
@@ -68,7 +79,7 @@ public class OrderExpiryJob {
         if (expired > 0 || failed > 0) {
             // Duration only (no order data): a tick stuck behind a lock shows up here as a multiple of lock_timeout.
             LOG.info("Expiry tick: {} unpaid orders expired and their reservations released, {} failed (took {} ms)",
-                    expired, failed, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos));
+                    expired, failed, TimeUnit.NANOSECONDS.toMillis(nanoClock.getAsLong() - startedNanos));
         }
     }
 }
