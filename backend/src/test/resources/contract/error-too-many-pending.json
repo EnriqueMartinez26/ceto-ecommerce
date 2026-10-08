@@ -1,0 +1,7 @@
+{
+  "title": "Too Many Requests",
+  "status": 429,
+  "detail": "Too many pending orders for this phone.",
+  "instance": "/api/checkout/orders",
+  "code": "TOO_MANY_PENDING_ORDERS"
+}

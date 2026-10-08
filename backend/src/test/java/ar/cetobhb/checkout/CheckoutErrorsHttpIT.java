@@ -186,6 +186,39 @@ class CheckoutErrorsHttpIT extends AbstractHttpIT {
         assertThat(orderCount()).isEqualTo(1L);
     }
 
+    @Test
+    void aFourthPendingOrderOfTheSamePhoneMatchesTheGoldenFileAndHoldsNothing(CapturedOutput output)
+            throws Exception {
+        for (int i = 0; i < 3; i++) {
+            assertThat(send(checkout(freshKey(), BODY)).getStatus()).isEqualTo(201);
+        }
+        long reservedBefore = reserved();
+
+        MockHttpServletResponse response = send(checkout(freshKey(), BODY));
+
+        problem(response, 429, "TOO_MANY_PENDING_ORDERS");
+        assertMatchesGolden(response, "error-too-many-pending.json");
+        assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+        assertThat(response.getHeader("Retry-After")).isNull();
+        assertThat(orderCount()).isEqualTo(3L);
+        assertThat(reserved()).isEqualTo(reservedBefore);
+        assertThat(output.getAll()).contains("TOO_MANY_PENDING_ORDERS").doesNotContain("5550000", "Maria");
+    }
+
+    @Test
+    void replayingAKeyAtTheCapIsStillA200() throws Exception {
+        String key = freshKey();
+        assertThat(send(checkout(key, BODY)).getStatus()).isEqualTo(201);
+        assertThat(send(checkout(freshKey(), BODY)).getStatus()).isEqualTo(201);
+        assertThat(send(checkout(freshKey(), BODY)).getStatus()).isEqualTo(201);
+
+        MockHttpServletResponse replay = send(checkout(key, BODY));
+
+        assertThat(replay.getStatus()).isEqualTo(200);
+        assertThat(bodyOf(replay).get("replayed").asBoolean()).isTrue();
+        assertThat(orderCount()).isEqualTo(3L);
+    }
+
     // ---- request contract ----
 
     @Test
