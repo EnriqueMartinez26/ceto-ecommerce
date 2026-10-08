@@ -29,4 +29,14 @@ class AdminInventoryServiceCapsTest {
         verify(catalog).listAll(37);
         verifyNoInteractions(inventory);
     }
+
+    @Test
+    void theReconciliationAsksForAtMostTheConfiguredRowCap() {
+        when(inventory.reservationMismatches(11)).thenReturn(List.of());
+
+        assertThat(admin.reconciliation()).isEmpty();
+
+        verify(inventory).reservationMismatches(11);
+        verifyNoInteractions(catalog);
+    }
 }

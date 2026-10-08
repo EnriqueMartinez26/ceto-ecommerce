@@ -10,6 +10,7 @@ import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.inventory.domain.Availability;
+import ar.cetobhb.inventory.domain.ReservationMismatch;
 import ar.cetobhb.inventory.domain.StockAdjustment;
 import ar.cetobhb.inventory.domain.StockCounts;
 import ar.cetobhb.inventory.service.InventoryService;
@@ -78,6 +79,15 @@ public class AdminInventoryService {
         }
         Map<Long, StockCounts> levels = baseIds.isEmpty() ? Map.of() : inventory.levels(baseIds);
         return products.stream().map(product -> toEntry(product, levels)).toList();
+    }
+
+    /**
+     * Base products whose reserved counter disagrees with their pending order lines, at most
+     * {@code ceto.admin.max-reconciliation-rows}. One read-only statement: no lock, no write, no audit.
+     */
+    @Transactional(readOnly = true)
+    public List<ReservationMismatch> reconciliation() {
+        return inventory.reservationMismatches(properties.maxReconciliationRows());
     }
 
     private static StockEntry toEntry(ProductAdminView product, Map<Long, StockCounts> levels) {

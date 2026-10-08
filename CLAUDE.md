@@ -264,7 +264,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    `reserved` nulo si falta la fila de stock, `ReservationMismatchIT`, que fija
    la foto del combo, la exclusión de pagados y cancelados, el vencido aún no
    cancelado y el orden por id). Ambas rechazan entradas sin cota con
-   `IllegalArgumentException` (límite de 1 a 500; hasta 1000 ids,
+   `IllegalArgumentException` (límite de 1 a 1000; hasta 1000 ids,
    `InventoryServiceBoundsTest`).
 2. **Un combo no tiene stock propio.** Es un producto con precio propio y una
    relación "N unidades del producto base". Su disponible se deriva:
