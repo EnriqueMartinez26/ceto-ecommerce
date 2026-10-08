@@ -1,0 +1,24 @@
+{
+  "orderNumber": "CETO-000001",
+  "status": "PAGO_PENDIENTE",
+  "zone": "RESTO_DEL_PAIS",
+  "total": "90301.50",
+  "reservedUntil": "2026-03-12T12:00:00Z",
+  "replayed": true,
+  "lines": [
+    {
+      "productId": 1,
+      "name": "Solid shampoo",
+      "quantity": 2,
+      "unitPrice": "45000.00",
+      "lineTotal": "90000.00"
+    },
+    {
+      "productId": 2,
+      "name": "Cream",
+      "quantity": 3,
+      "unitPrice": "100.50",
+      "lineTotal": "301.50"
+    }
+  ]
+}

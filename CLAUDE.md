@@ -305,6 +305,13 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     el mismo contenido devuelve el pedido existente (aunque el producto se haya
     desactivado, el stock se haya agotado o el pedido esté cancelado); con otro
     contenido, `IdempotencyConflictException` (D-20261006-11, D-20261007-04).
+    Por HTTP (`POST /api/checkout/orders`, cabecera `Idempotency-Key`): 201 al
+    crear y 200 en el reintento, con el precio cobrado y sin `orderId`;
+    `CheckoutHttpIT` y los goldens `contract/checkout-201.json` y
+    `contract/checkout-200-replay.json`. Si a un producto base le falta la fila
+    de stock, la API responde `PRODUCT_UNAVAILABLE` con los ids pedidos (nunca el
+    id base de un combo) y deja un ERROR para la operadora:
+    `StockNotConfiguredPlacementIT`.
     La búsqueda por clave va antes de tocar catálogo o stock; si dos pedidos
     compiten, el perdedor choca con `orders_idempotency_key_uk` al insertar la
     fila (antes de reservar) y repite la búsqueda en otra transacción. Pruebas:
