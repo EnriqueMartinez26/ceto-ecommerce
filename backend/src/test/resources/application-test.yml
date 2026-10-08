@@ -5,7 +5,11 @@ ceto:
 spring:
   datasource:
     hikari:
-      # Burst ITs run up to 12 threads that each hold one connection for the whole placement transaction, plus the
-      # test thread and the cleaner. The default pool (10) would make threads queue on the pool instead of on the
-      # row locks under test, hiding races (and risking pool timeouts). 30 keeps pool size > threads + helpers.
+      # Burst ITs start one thread per task (the largest burst is 20 HTTP clients; each server worker or in-process
+      # thread holds one connection for the whole placement transaction), plus the test thread and the cleaner. The
+      # default pool (10) would make threads queue on the pool instead of on the row locks under test, hiding races
+      # (and risking pool timeouts). 30 keeps pool size > threads + helpers. Idle connections shrink back to 2 so
+      # each cached Spring context does not hold a full pool for the rest of the run.
       maximum-pool-size: 30
+      minimum-idle: 2
+      idle-timeout: 10000

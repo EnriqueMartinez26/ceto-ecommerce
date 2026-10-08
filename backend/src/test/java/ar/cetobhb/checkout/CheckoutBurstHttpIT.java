@@ -22,7 +22,9 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Concurrency over real HTTP (REQ-CHK-04, CLAUDE.md section 8): a real server port, real commits, requests released
- * together by a start latch. Each burst asserts that requests genuinely overlapped. Unlike the service-level bursts,
+ * together by a start latch. Each burst asserts that at least N/2 client calls were in flight at once, which proves
+ * CLIENT-side overlap only (the requests were issued concurrently); it does not measure how many the server handled
+ * simultaneously, which the stock and idempotency outcomes below exercise indirectly. Unlike the service-level bursts,
  * this goes through Tomcat threads, JSON binding, the advice and the response, so a 5xx anywhere fails the test.
  */
 class CheckoutBurstHttpIT extends AbstractServerIT {
@@ -76,7 +78,7 @@ class CheckoutBurstHttpIT extends AbstractServerIT {
 
         Report<Reply> report = BurstRunner.runMeasured(tasks);
 
-        assertThat(report.maxInFlight()).isGreaterThan(1);
+        assertThat(report.maxInFlight()).isGreaterThanOrEqualTo(N / 2);
         assertThat(report.outcomes()).allMatch(Outcome::succeeded);
         List<Reply> replies = report.outcomes().stream().map(Outcome::value).toList();
         assertThat(replies).noneMatch(r -> r.status() >= 500);
@@ -101,7 +103,7 @@ class CheckoutBurstHttpIT extends AbstractServerIT {
 
         Report<Reply> report = BurstRunner.runMeasured(tasks);
 
-        assertThat(report.maxInFlight()).isGreaterThan(1);
+        assertThat(report.maxInFlight()).isGreaterThanOrEqualTo(N / 2);
         assertThat(report.outcomes()).allMatch(Outcome::succeeded);
         List<Reply> replies = report.outcomes().stream().map(Outcome::value).toList();
         assertThat(replies).noneMatch(r -> r.status() >= 500);

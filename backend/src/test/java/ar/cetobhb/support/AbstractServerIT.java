@@ -16,8 +16,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * cannot reach the behaviour (real concurrency, container-level features such as the remote IP valve or chunked
  * bodies); contract tests stay on {@link AbstractHttpIT}.
  *
- * <p>This is a second Spring context next to the MOCK one, each with its own Hikari pool (30 in the test profile);
- * both stay well below the Postgres default of 100 connections.
+ * <p>This is a second Spring context next to the MOCK one, each with its own Hikari pool (at most 30 connections in
+ * the test profile, shrinking to 2 idle ones); cached contexts therefore stay well below the Postgres default of 100
+ * connections.
  *
  * <p>Per-IP limiter (added in a later slice): every request from this client comes from 127.0.0.1, so the burst
  * tests would hit it. When the limiter exists, this class (or the test profile) must raise its burst for these tests;
