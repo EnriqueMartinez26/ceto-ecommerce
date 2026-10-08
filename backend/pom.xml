@@ -189,6 +189,7 @@
                                         <param>ar.cetobhb.inventory.domain.*</param>
                                         <param>ar.cetobhb.orders.domain.*</param>
                                         <param>ar.cetobhb.common.domain.*</param>
+                                        <param>ar.cetobhb.admin.domain.*</param>
                                     </targetClasses>
                                     <targetTests>
                                         <param>ar.cetobhb.*Test</param>
@@ -208,6 +209,7 @@
                                         <param>ar.cetobhb.inventory.domain.*</param>
                                         <param>ar.cetobhb.orders.domain.*</param>
                                         <param>ar.cetobhb.common.domain.*</param>
+                                        <param>ar.cetobhb.admin.domain.*</param>
                                     </targetClasses>
                                     <targetTests>
                                         <param>ar.cetobhb.*</param>
@@ -226,6 +228,7 @@
                                         <param>ar.cetobhb.inventory.service.InventoryService</param>
                                         <param>ar.cetobhb.catalog.service.CatalogService</param>
                                         <param>ar.cetobhb.orders.service.*</param>
+                                        <param>ar.cetobhb.admin.service.*</param>
                                     </targetClasses>
                                     <targetTests>
                                         <param>ar.cetobhb.*</param>

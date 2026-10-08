@@ -141,6 +141,22 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `outbox_messages` en la misma transacción del cambio; un job la toma con
   `FOR UPDATE SKIP LOCKED`, la marca y recién después del commit manda.
   Nunca SMTP dentro de una transacción.
+- **Auditoría de las acciones de administración** (D-20261008-11): la tabla
+  `admin_audit_log` (migración `V4__create_admin_audit_log.sql`) solo admite
+  conjuntos cerrados (acción, tipo de entidad, motivo, valores numéricos): sin
+  texto libre, sin nombres, teléfonos, direcciones ni IP, y es de solo
+  inserción (trigger por sentencia: `UPDATE`, `DELETE` y `TRUNCATE` fallan
+  aunque no toquen filas). Guardas: `AdminAuditLogConstraintsIT` (SQL crudo
+  sobre Postgres real), `AuditActionIT` (los enums de Java y los `CHECK` son el
+  mismo conjunto), `AuditEntryTest` y `AdminAuditServiceIT` (`record` es
+  `MANDATORY`: corre en la transacción de quien llama, con el reloj inyectado;
+  un rollback se lleva la fila; el repositorio solo expone `save`; ninguna
+  columna de texto contiene un centinela de datos personales). Evidencia por
+  mutación (2026-10-08): quitar el trigger hizo fallar los cuatro tests de
+  solo-inserción de `AdminAuditLogConstraintsIT`. Límite: el dueño de la tabla
+  puede desactivar o borrar el trigger; frena errores y bugs de la aplicación,
+  no a un dueño de la base hostil. Todavía no hay rutas ni fachada que escriban
+  en ella (ver `docs/DECISIONES.md`).
 
 ### Frontend (`frontend/`)
 
