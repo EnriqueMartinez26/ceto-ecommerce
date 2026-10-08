@@ -27,6 +27,20 @@ class CatalogRulesTest {
         assertInvalid(ReasonCode.INVALID_PRODUCT_NAME, () -> CatalogRules.requireName(" " + "a".repeat(201) + " "));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"Ceto\0BHB", "Ceto\nBHB", "Ceto\tBHB", "Ceto\u0007BHB", "Ceto\u007fBHB",
+            "Ceto​BHB", "Ceto‮BHB", "﻿Ceto", "Ceto­BHB"})
+    void requireNameRejectsControlAndFormatCharacters(String name) {
+        assertInvalid(ReasonCode.INVALID_CHARACTERS, () -> CatalogRules.requireName(name));
+    }
+
+    @Test
+    void requireNameAcceptsAccentsAndNormalPunctuationWithoutRewritingTheText() {
+        assertThatCode(() -> CatalogRules.requireName("Cápsulas Ceto BHB (60 u.) - 100% natural, ¿sí?"))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> CatalogRules.requireName("<b>Tom & Jerry</b> ñ")).doesNotThrowAnyException();
+    }
+
     @Test
     void requireNameAcceptsTwoHundredCharsEvenWithSurroundingWhitespace() {
         assertThatCode(() -> CatalogRules.requireName("a".repeat(200))).doesNotThrowAnyException();

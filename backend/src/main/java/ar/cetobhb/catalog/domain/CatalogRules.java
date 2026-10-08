@@ -28,15 +28,28 @@ public final class CatalogRules {
         }
     }
 
-    /** Required, trimmed length 1-200 (the column is VARCHAR(200)). */
+    /**
+     * Required, trimmed length 1-200 (the column is VARCHAR(200)), with no control, format or unpaired surrogate
+     * characters ({@code INVALID_CHARACTERS}). The text is validated, never rewritten or escaped: output escaping is
+     * the renderer's job.
+     */
     public static void requireName(String name) {
         if (name == null) {
             throw new ValidationException(ReasonCode.INVALID_PRODUCT_NAME);
         }
-        int length = name.strip().length();
+        String trimmed = name.strip();
+        int length = trimmed.length();
         if (length < 1 || length > MAX_NAME_LENGTH) {
             throw new ValidationException(ReasonCode.INVALID_PRODUCT_NAME);
         }
+        if (trimmed.codePoints().anyMatch(CatalogRules::isForbiddenCharacter)) {
+            throw new ValidationException(ReasonCode.INVALID_CHARACTERS);
+        }
+    }
+
+    private static boolean isForbiddenCharacter(int codePoint) {
+        int type = Character.getType(codePoint);
+        return type == Character.CONTROL || type == Character.FORMAT || type == Character.SURROGATE;
     }
 
     public static void requireComboUnits(int units) {
