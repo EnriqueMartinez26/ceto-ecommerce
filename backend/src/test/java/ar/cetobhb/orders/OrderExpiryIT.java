@@ -1,16 +1,15 @@
 package ar.cetobhb.orders;
 
+import static ar.cetobhb.support.BuyerFixtures.freshBuyer;
 import static ar.cetobhb.support.CatalogFixtures.product;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.service.InventoryService;
-import ar.cetobhb.orders.domain.Buyer;
 import ar.cetobhb.orders.domain.CancelReason;
 import ar.cetobhb.orders.domain.IllegalOrderTransitionException;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
-import ar.cetobhb.orders.domain.ShippingZone;
 import ar.cetobhb.orders.repository.OrderRepository;
 import ar.cetobhb.orders.service.ExpiryResult;
 import ar.cetobhb.orders.service.OrderLifecycleService;
@@ -52,9 +51,6 @@ class OrderExpiryIT extends AbstractPostgresIT {
 
     private static final int BATCH = 100;
     private static final Duration RESERVATION = Duration.ofHours(48);
-    private static final Buyer BUYER =
-            new Buyer("Maria Perez", "+5493515550000", "Calle Falsa 123", ShippingZone.CORDOBA_CAPITAL);
-
     @Autowired
     private OrderLifecycleService lifecycle;
 
@@ -91,7 +87,7 @@ class OrderExpiryIT extends AbstractPostgresIT {
     }
 
     private long order(PlaceOrderCommand.Line... lines) {
-        return placement.placeOrder(new PlaceOrderCommand(UUID.randomUUID().toString(), BUYER, List.of(lines)))
+        return placement.placeOrder(new PlaceOrderCommand(UUID.randomUUID().toString(), freshBuyer(), List.of(lines)))
                 .orderId();
     }
 

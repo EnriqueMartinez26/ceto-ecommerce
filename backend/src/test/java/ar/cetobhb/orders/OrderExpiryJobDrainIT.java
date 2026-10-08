@@ -1,14 +1,13 @@
 package ar.cetobhb.orders;
 
+import static ar.cetobhb.support.BuyerFixtures.freshBuyer;
 import static ar.cetobhb.support.CatalogFixtures.product;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.config.OrderProperties;
-import ar.cetobhb.orders.domain.Buyer;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
-import ar.cetobhb.orders.domain.ShippingZone;
 import ar.cetobhb.orders.service.OrderExpiryJob;
 import ar.cetobhb.orders.service.OrderLifecycleService;
 import ar.cetobhb.orders.service.OrderPlacementService;
@@ -28,9 +27,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * by hand on a real Postgres: the job is never scheduled in tests.
  */
 class OrderExpiryJobDrainIT extends AbstractPostgresIT {
-
-    private static final Buyer BUYER =
-            new Buyer("Maria Perez", "+5493515550000", "Calle Falsa 123", ShippingZone.CORDOBA_CAPITAL);
 
     @Autowired
     private OrderLifecycleService lifecycle;
@@ -64,7 +60,7 @@ class OrderExpiryJobDrainIT extends AbstractPostgresIT {
         long product = catalog.createBase(product("B", "100.00")).id();
         inventory.createStock(product, 100);
         for (int i = 0; i < count; i++) {
-            placement.placeOrder(new PlaceOrderCommand(UUID.randomUUID().toString(), BUYER,
+            placement.placeOrder(new PlaceOrderCommand(UUID.randomUUID().toString(), freshBuyer(),
                     List.of(new PlaceOrderCommand.Line(product, 1))));
         }
         clock.set(MutableClock.START.plus(Duration.ofHours(49)));

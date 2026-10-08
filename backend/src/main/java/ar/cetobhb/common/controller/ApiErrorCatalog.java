@@ -11,6 +11,7 @@ import ar.cetobhb.orders.domain.IdempotencyConflictException;
 import ar.cetobhb.orders.domain.IllegalOrderTransitionException;
 import ar.cetobhb.orders.domain.OrderNotFoundException;
 import ar.cetobhb.orders.domain.ReservationNotExpiredException;
+import ar.cetobhb.orders.domain.TooManyPendingOrdersException;
 import java.util.Map;
 import org.slf4j.event.Level;
 import org.springframework.http.HttpStatus;
@@ -55,6 +56,8 @@ final class ApiErrorCatalog {
                     "There is not enough stock for this order.", Level.DEBUG)),
             Map.entry(IdempotencyConflictException.class, new ApiError(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT",
                     "The idempotency key was already used for a different order.", Level.INFO)),
+            Map.entry(TooManyPendingOrdersException.class, new ApiError(HttpStatus.TOO_MANY_REQUESTS,
+                    "TOO_MANY_PENDING_ORDERS", "Too many pending orders for this phone.", Level.INFO)),
             // No public endpoint reaches these three yet; explicit rows keep a future endpoint from returning 500.
             Map.entry(IllegalOrderTransitionException.class, CONFLICT),
             Map.entry(StockAlreadyConfiguredException.class, CONFLICT),

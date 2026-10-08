@@ -1,15 +1,14 @@
 package ar.cetobhb.orders;
 
+import static ar.cetobhb.support.BuyerFixtures.freshBuyer;
 import static ar.cetobhb.support.CatalogFixtures.product;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.service.InventoryService;
-import ar.cetobhb.orders.domain.Buyer;
 import ar.cetobhb.orders.domain.CancelReason;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
-import ar.cetobhb.orders.domain.ShippingZone;
 import ar.cetobhb.orders.service.OrderLifecycleService;
 import ar.cetobhb.orders.service.OrderPlacementService;
 import ar.cetobhb.support.AbstractPostgresIT;
@@ -43,9 +42,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class OrderLockOrderingIT extends AbstractPostgresIT {
 
     private static final int ITERATIONS = 20;
-    private static final Buyer BUYER =
-            new Buyer("Maria Perez", "+5493515550000", "Calle Falsa 123", ShippingZone.CORDOBA_CAPITAL);
-
     @Autowired
     private OrderLifecycleService lifecycle;
 
@@ -80,7 +76,7 @@ class OrderLockOrderingIT extends AbstractPostgresIT {
         for (long product : products) {
             lines.add(new PlaceOrderCommand.Line(product, 1));
         }
-        return placement.placeOrder(new PlaceOrderCommand(UUID.randomUUID().toString(), BUYER, lines)).orderId();
+        return placement.placeOrder(new PlaceOrderCommand(UUID.randomUUID().toString(), freshBuyer(), lines)).orderId();
     }
 
     private String status(long orderId) {

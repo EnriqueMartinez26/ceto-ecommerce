@@ -17,7 +17,9 @@ import ar.cetobhb.orders.domain.OrderLimits;
 import ar.cetobhb.orders.domain.OrderNumber;
 import ar.cetobhb.orders.domain.OrderRequestFingerprint;
 import ar.cetobhb.orders.domain.OrderRequestNormalizer;
+import ar.cetobhb.orders.domain.OrderStatus;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
+import ar.cetobhb.orders.domain.TooManyPendingOrdersException;
 import ar.cetobhb.orders.repository.Order;
 import ar.cetobhb.orders.repository.OrderRepository;
 import java.time.Clock;
@@ -40,8 +42,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Places orders (CLAUDE.md rules 3, 6, 7, 10). Prices and totals come from the catalog, never from the request.
  *
- * <p>Everything persistent happens in ONE transaction with a fixed lock order: the order row is inserted and
- * flushed first (the idempotency claim, AD-7), then stock rows are locked in ascending base-product id by
+ * <p>Everything persistent happens in ONE transaction with a fixed lock order: the advisory lock of the buyer phone
+ * (it serializes the pending-orders cap, REQ-ABU-01), then the order row is inserted and flushed first (the idempotency claim, AD-7), then stock rows are locked in ascending base-product id by
  * {@link InventoryService#reserve}. Nothing reads a stock row before that lock query, so no stale instance can sit
  * in the persistence context. A business failure (unavailable product, shortage) is a runtime exception that rolls
  * back the order row too: nothing partial survives.
@@ -61,6 +63,7 @@ public class OrderPlacementService {
     private final OrderRepository orders;
     private final Clock clock;
     private final Duration reservationTime;
+    private final int maxPendingPerPhone;
     private final TransactionTemplate transaction;
 
     public OrderPlacementService(OrderProperties properties, CatalogService catalog, InventoryService inventory,
@@ -72,6 +75,7 @@ public class OrderPlacementService {
         this.orders = orders;
         this.clock = clock;
         this.reservationTime = Duration.ofHours(properties.reservationHours());
+        this.maxPendingPerPhone = properties.maxPendingPerPhone();
         this.transaction = new TransactionTemplate(transactionManager);
     }
 
@@ -107,7 +111,7 @@ public class OrderPlacementService {
             return existing;
         }
         try {
-            return transaction.execute(status -> place(request, fingerprint));
+            return transaction.execute(status -> placeUnderPhoneLock(request, fingerprint));
         } catch (DataIntegrityViolationException e) {
             if (!ConstraintViolations.isConstraint(e, IDEMPOTENCY_KEY_CONSTRAINT)) {
                 throw e;
@@ -151,7 +155,34 @@ public class OrderPlacementService {
             throw new IllegalStateException("placeInCurrentTransaction cannot run in a read-only transaction");
         }
         NormalizedOrderRequest request = normalizer.normalize(command);
+        orders.lockBuyerPhone(request.phoneE164());
+        requirePendingCapacity(request);
         return place(request, OrderRequestFingerprint.of(request));
+    }
+
+    /**
+     * Create path of {@link #placeOrder} (REQ-ABU-01): the per-phone advisory lock FIRST, then the idempotency lookup
+     * AGAIN, then the cap. Taking the lock before counting serializes the count-and-insert of one phone. The re-check
+     * under the lock keeps a retry of an order that was committed while this transaction waited for the lock a 200
+     * replay: counted first it would meet its own order and be rejected. A replay found here writes nothing, reserves
+     * nothing and consumes no order number.
+     */
+    private PlacedOrder placeUnderPhoneLock(NormalizedOrderRequest request, String fingerprint) {
+        orders.lockBuyerPhone(request.phoneE164());
+        PlacedOrder replay = replayOrNull(request, fingerprint);
+        if (replay != null) {
+            return replay;
+        }
+        requirePendingCapacity(request);
+        return place(request, fingerprint);
+    }
+
+    /** Must run after the phone lock, in the same transaction, and before any order number or stock is taken. */
+    private void requirePendingCapacity(NormalizedOrderRequest request) {
+        long pending = orders.countByBuyerPhoneE164AndStatus(request.phoneE164(), OrderStatus.PAGO_PENDIENTE);
+        if (pending >= maxPendingPerPhone) {
+            throw new TooManyPendingOrdersException();
+        }
     }
 
     private PlacedOrder place(NormalizedOrderRequest request, String fingerprint) {

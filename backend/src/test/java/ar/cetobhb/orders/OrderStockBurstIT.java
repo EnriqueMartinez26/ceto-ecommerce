@@ -1,14 +1,13 @@
 package ar.cetobhb.orders;
 
+import static ar.cetobhb.support.BuyerFixtures.freshBuyer;
 import static ar.cetobhb.support.CatalogFixtures.product;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.service.InventoryService;
-import ar.cetobhb.orders.domain.Buyer;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
-import ar.cetobhb.orders.domain.ShippingZone;
 import ar.cetobhb.orders.service.OrderPlacementService;
 import ar.cetobhb.orders.service.PlacedOrder;
 import ar.cetobhb.support.AbstractPostgresIT;
@@ -36,9 +35,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class OrderStockBurstIT extends AbstractPostgresIT {
 
     private static final int THREADS = 12;
-    private static final Buyer BUYER =
-            new Buyer("Maria Perez", "+5493515550000", "Calle Falsa 123", ShippingZone.CORDOBA_CAPITAL);
-
     @Autowired
     private OrderPlacementService placement;
 
@@ -61,7 +57,7 @@ class OrderStockBurstIT extends AbstractPostgresIT {
     private Callable<PlacedOrder> placing(long... productIds) {
         List<PlaceOrderCommand.Line> lines =
                 Arrays.stream(productIds).mapToObj(id -> new PlaceOrderCommand.Line(id, 1)).toList();
-        PlaceOrderCommand command = new PlaceOrderCommand(UUID.randomUUID().toString(), BUYER, lines);
+        PlaceOrderCommand command = new PlaceOrderCommand(UUID.randomUUID().toString(), freshBuyer(), lines);
         return () -> placement.placeOrder(command);
     }
 

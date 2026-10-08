@@ -1,5 +1,6 @@
 package ar.cetobhb.orders.repository;
 
+import ar.cetobhb.orders.domain.OrderStatus;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -60,4 +61,25 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Long> findDueIds(@Param("now") Instant now, @Param("limit") int limit);
 
     Optional<Order> findByIdempotencyKey(UUID idempotencyKey);
+
+    /**
+     * Serializes the pending-orders count-and-insert of ONE buyer phone (REQ-ABU-01): takes the transaction-scoped
+     * Postgres advisory lock keyed by a 64-bit hash of the E.164 phone, waiting if another transaction holds it, and
+     * releases it at commit or rollback. It is the FIRST lock of a placement, before the order row and the stock rows
+     * (lock order: advisory(phone), order row, stock rows ascending); no other code path takes it, so it cannot
+     * close a cycle. Different phones that collide on the hash only serialize needlessly, never wrongly.
+     * {@code pg_advisory_xact_lock} returns void, so it is selected in FROM and the dummy column is returned.
+     *
+     * @return always 1
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    @Query(value = "SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(:phone, 0))", nativeQuery = true)
+    int lockBuyerPhone(@Param("phone") String phoneE164);
+
+    /**
+     * Orders of this phone in the given status (index {@code orders_buyer_phone_idx}). Mandatory transaction: the
+     * count is only meaningful after {@link #lockBuyerPhone} in the same transaction.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    long countByBuyerPhoneE164AndStatus(String buyerPhoneE164, OrderStatus status);
 }
