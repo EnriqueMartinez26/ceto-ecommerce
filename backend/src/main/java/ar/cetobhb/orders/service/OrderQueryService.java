@@ -56,7 +56,8 @@ public class OrderQueryService {
         boolean hasMore = fetched.size() > query.size();
         List<OrderSummaryRow> pageRows = hasMore ? fetched.subList(0, query.size()) : fetched;
         Long nextAfter = hasMore ? pageRows.get(pageRows.size() - 1).id() : null;
-        return new OrderPage(pageRows.stream().map(OrderQueryService::summary).toList(), nextAfter);
+        Instant now = clock.instant();
+        return new OrderPage(pageRows.stream().map(row -> summary(row, now)).toList(), nextAfter);
     }
 
     /** The full admin view of one order, with the countdown of an unpaid reservation computed from the clock. */
@@ -73,12 +74,14 @@ public class OrderQueryService {
                 row.buyerPhoneE164(), row.shippingAddress(), row.zone(), row.total(), row.createdAt(),
                 row.updatedAt(), row.paidAt(), row.dispatchedAt(), row.deliveredAt(), row.cancelledAt(),
                 pending ? row.reservedUntil() : null,
-                ReservationCountdown.secondsLeft(row.status(), row.reservedUntil(), now), lines);
+                ReservationCountdown.secondsLeft(row.status(), row.reservedUntil(), now),
+                ReservationCountdown.overdue(row.status(), row.reservedUntil(), now), lines);
     }
 
-    private static OrderSummary summary(OrderSummaryRow row) {
+    private static OrderSummary summary(OrderSummaryRow row, Instant now) {
         return new OrderSummary(row.id(), row.orderNumber(), row.status(), row.buyerName(), row.buyerPhoneE164(),
                 row.total(), row.createdAt(),
-                row.status() == OrderStatus.PAGO_PENDIENTE ? row.reservedUntil() : null);
+                row.status() == OrderStatus.PAGO_PENDIENTE ? row.reservedUntil() : null,
+                ReservationCountdown.overdue(row.status(), row.reservedUntil(), now));
     }
 }
