@@ -457,7 +457,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   Asuntos de mail sin CRLF.
 - **Tamaño del cuerpo y cabeceras**: `BodySizeLimitFilter` rechaza con 413
   `PAYLOAD_TOO_LARGE` un `Content-Length` mayor que `ceto.web.max-body-bytes`
-  (1024..262144, por defecto 16384) antes de leer, y cuenta los bytes de los
+  (configurable de 1 KB a 256 KB, 1024..262144 bytes; por defecto 16 KB, 16384) antes de leer, y cuenta los bytes de los
   cuerpos sin largo declarado (chunked) con `CountingInputStream`;
   `BodySizeLimitFilterTest`, `CountingInputStreamTest`, `BodySizeLimitHttpIT` y
   `BodySizeLimitServerIT` (socket real, chunked de 100 KB, largo mentido) lo
