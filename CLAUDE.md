@@ -770,7 +770,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 - **Login de administración** (`POST /api/admin/login`, formulario
   `application/x-www-form-urlencoded`, D-20261008-03). Éxito: 204 sin cuerpo y cookie
   `JSESSIONID` (`HttpOnly`, `Secure`, `SameSite=Strict`, fijadas en `application.yml`; la guarda de
-  arranque que rechaza otros valores es del corte de sesión). Todo fallo es el mismo 401
+  arranque que rechaza otros valores es del corte de sesión), nueva en cada login. Todo fallo es el mismo 401
   `INVALID_CREDENTIALS` con texto fijo (`SecurityProblem`, golden
   `admin-error-invalid-credentials.json`): usuario inexistente, clave errónea y campo demasiado
   largo no se distinguen ni en el cuerpo ni en las cabeceras
@@ -790,6 +790,26 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `AdminSessionPermitServerIT`; mutaciones 2026-10-08: permitir `/api/admin/session/**` hizo fallar
   6 casos de ese IT y 1 de `EndpointInventoryIT`, permitir la ruta con cualquier método, 4 y 1). El
   login todavía no tiene límite por IP: no desplegar antes de ese corte.
+- **Cierre de sesión, fijación y registros del login.** `POST /api/admin/logout` exige token
+  CSRF (sin él o con uno inválido es 403 y la sesión sigue viva), responde 204 sin cuerpo, termina la
+  sesión del servidor y vence la cookie `JSESSIONID`; sin sesión también es 204; un GET no cierra nada
+  (`LogoutServerIT`, que además prueba que la cookie vieja da 401 con el golden y que el servidor
+  ya no tiene la sesión; mutación 2026-10-08: con `invalidateHttpSession(false)` falla el test del
+  cierre, y sin `deleteCookies` falla la expiración de la cookie). El logout vence también la cookie
+  `XSRF-TOKEN`: hay que llamar otra vez a `GET /api/admin/session`. Fijación de sesión: el login
+  cambia el id (`changeSessionId`, que también es el valor por defecto de Spring Security; la
+  configuración lo fija explícitamente). `SessionFixationServerIT` crea una sesión real en el
+  Tomcat embebido antes del login, la entrega al navegador y comprueba que el id nuevo es otro, que
+  el viejo ya no existe en el servidor y que no está autenticado; con `sessionFixation().none()`
+  falla (mutación 2026-10-08). `AdminLoginPiiServerIT` captura la salida con login correcto,
+  usuario inexistente y clave errónea (con usuario y clave centinela), y logout: a los niveles de
+  log con que se entrega, y con `org.springframework.web` y `ar.cetobhb` en DEBUG, la salida y los
+  cuerpos no contienen clave, hash, id de sesión, token CSRF, el usuario tecleado ni el nombre de la
+  cuenta; si el código registra el usuario tecleado o el id de sesión fallan los 3 tests (mutación
+  2026-10-08). Hallazgo: con `org.springframework.security` en DEBUG Spring Security imprime el
+  nombre de la cuenta autenticada, la dirección del cliente y el id de la sesión (`Set
+  SecurityContextHolder to ...`, `Invalidated session ...`); un control positivo del mismo IT lo
+  fija. Lo que lo apaga es dejar esa categoría en WARN (corte del límite de login, tarea X6.4).
 - **Credencial de administración** (`ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, sin
   valor por defecto; el login está en el punto siguiente y la política de sesión llega en un corte posterior). Se
   valida en `AdminCredentials.parse` con mensajes fijos, no con Bean Validation:
