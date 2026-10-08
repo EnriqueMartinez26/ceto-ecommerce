@@ -29,7 +29,8 @@ import org.apache.catalina.util.NetMaskSet;
  */
 final class TrustedProxies {
 
-    private static final Pattern IPV4 = Pattern.compile("(?:0|[1-9]\\d{0,2})(?:\\.(?:0|[1-9]\\d{0,2})){3}");
+    private static final String OCTET = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
+    private static final Pattern IPV4 = Pattern.compile(OCTET + "(?:\\." + OCTET + "){3}");
     private static final Pattern IPV6 = Pattern.compile("[0-9a-fA-F:]+");
     private static final Pattern PREFIX = Pattern.compile("0|[1-9]\\d{0,2}");
 
@@ -77,12 +78,22 @@ final class TrustedProxies {
         return new Cidr(addressBytes(address), Integer.parseInt(prefix));
     }
 
+    /**
+     * True only for a canonical dotted-decimal IPv4 (each octet 0-255) or a hex-group IPv6. The check runs BEFORE
+     * {@link InetAddress#getByName}, which would otherwise treat a non-literal such as {@code 256.0.0.0} as a host name
+     * and ask the resolver.
+     */
+    static boolean isLiteralAddress(String address) {
+        return IPV4.matcher(address).matches() || (address.indexOf(':') >= 0 && IPV6.matcher(address).matches());
+    }
+
     private static byte[] addressBytes(String address) {
-        if (!IPV4.matcher(address).matches() && !(address.indexOf(':') >= 0 && IPV6.matcher(address).matches())) {
+        if (!isLiteralAddress(address)) {
             throw new IllegalArgumentException("not a literal IP address");
         }
         try {
-            // Only digits, dots, hex letters and colons reach this point, so the call parses and never resolves.
+            // Only a bounded dotted-decimal IPv4 or a hex-group IPv6 reaches this point; both are parsed as literals,
+            // so the call never falls back to a host-name lookup.
             InetAddress parsed = InetAddress.getByName(address);
             if (address.indexOf(':') >= 0 && !(parsed instanceof Inet6Address)) {
                 throw new IllegalArgumentException("IPv4-mapped form");

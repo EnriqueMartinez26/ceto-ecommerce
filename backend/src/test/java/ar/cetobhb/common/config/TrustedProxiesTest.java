@@ -54,6 +54,26 @@ class TrustedProxiesTest {
         assertThat(TrustedProxies.isSafe(value)).isFalse();
     }
 
+    @ParameterizedTest(name = "[{0}] is a literal address")
+    @ValueSource(strings = {"0.0.0.0", "10.0.0.255", "172.16.0.1", "255.255.255.255", "249.199.99.9", "fd00::1"})
+    void recognisesBoundedLiteralAddresses(String address) {
+        assertThat(TrustedProxies.isLiteralAddress(address)).isTrue();
+    }
+
+    /** Rejected by the pattern itself, so the host-name resolver (InetAddress.getByName) is never reached. */
+    @ParameterizedTest(name = "[{0}] is not a literal address")
+    @ValueSource(strings = {"10.0.0.256", "256.0.0.0", "999.1.1.1", "1.2.3.300", "10.0.0.260", "10.0.0.1000",
+        "example.com", "10.0.0"})
+    void rejectsOutOfRangeOctetsWithoutResolving(String address) {
+        assertThat(TrustedProxies.isLiteralAddress(address)).isFalse();
+    }
+
+    @ParameterizedTest(name = "[{0}] is rejected")
+    @ValueSource(strings = {"10.0.0.256/32", "256.0.0.0/8", "999.1.1.1/32"})
+    void rejectsOutOfRangeOctetEntries(String value) {
+        assertThat(TrustedProxies.isSafe(value)).isFalse();
+    }
+
     @Test
     void theAllowedBlocksThemselvesAreAccepted() {
         for (String block : new String[] {"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",
