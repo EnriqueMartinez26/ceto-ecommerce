@@ -51,14 +51,14 @@ class StockNotConfiguredPlacementIT extends AbstractPostgresIT {
     }
 
     @Test
-    void aBaseWithoutStockRowIsReportedAsUnavailableWithItsOwnId(CapturedOutput output) {
+    void onlyTheRequestedProductsAffectedByTheUnconfiguredBaseAreReported(CapturedOutput output) {
         long healthy = catalog.createBase(product("Healthy", "10.00")).id();
         inventory.createStock(healthy, 5);
         long unconfigured = catalog.createBase(product("No stock row", "10.00")).id();
 
         assertThatThrownBy(() -> placement.placeOrder(order(healthy, unconfigured)))
                 .isInstanceOfSatisfying(ProductNotAvailableException.class,
-                        e -> assertThat(e.productIds()).containsExactlyInAnyOrder(healthy, unconfigured));
+                        e -> assertThat(e.productIds()).isEqualTo(Set.of(unconfigured)));
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM orders", Long.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT reserved FROM inventory_stock WHERE product_id = ?", Long.class,
@@ -76,6 +76,20 @@ class StockNotConfiguredPlacementIT extends AbstractPostgresIT {
                         e -> assertThat(e.productIds()).isEqualTo(Set.of(combo)));
 
         assertThat(output.getAll()).contains("StockNotConfiguredException", "baseProductId=" + base);
+    }
+
+    @Test
+    void theUnconfiguredBaseAndTheComboOverItAreReportedButAHealthyLineIsNot() {
+        long healthy = catalog.createBase(product("Healthy", "10.00")).id();
+        inventory.createStock(healthy, 5);
+        long base = catalog.createBase(product("Base without stock", "10.00")).id();
+        long combo = catalog.createCombo(product("Pack", "27.00"), base, 3).id();
+
+        assertThatThrownBy(() -> placement.placeOrder(order(healthy, base, combo)))
+                .isInstanceOfSatisfying(ProductNotAvailableException.class,
+                        e -> assertThat(e.productIds()).isEqualTo(Set.of(base, combo)));
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM orders", Long.class)).isZero();
     }
 
     @Test
