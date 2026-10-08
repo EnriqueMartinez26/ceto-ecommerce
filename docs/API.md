@@ -296,6 +296,13 @@ la cookie `XSRF-TOKEN` se vence: antes del próximo login se vuelve a llamar a
 | `POST /api/admin/login` | 204 sin cuerpo y cookie `JSESSIONID` (`HttpOnly`, `Secure`, `SameSite=Strict`) nueva: el id anterior se descarta. Cuerpo `application/x-www-form-urlencoded` con `username` y `password`, de hasta 128 caracteres cada uno (la contraseña, además, hasta 72 bytes UTF-8). Cabecera `X-XSRF-TOKEN` obligatoria. | 401 `INVALID_CREDENTIALS` (el mismo cuerpo para usuario inexistente y contraseña incorrecta), 403 `FORBIDDEN` sin token o con uno inválido, 413 `PAYLOAD_TOO_LARGE` si el cuerpo supera `max-body-bytes`. |
 | `POST /api/admin/logout` | 204 sin cuerpo; termina la sesión del servidor y vence la cookie `JSESSIONID`. Sin sesión también es 204. Cabecera `X-XSRF-TOKEN` obligatoria. | 403 `FORBIDDEN` sin token o con uno inválido. |
 
+Política de la sesión: la cookie `JSESSIONID` es `HttpOnly`, `Secure` y `SameSite=Strict` (la
+aplicación no arranca con otra configuración). Solo hay **una sesión de administración**
+a la vez: un login nuevo termina la anterior, y la anterior recibe 401 `UNAUTHENTICATED` en su
+próxima petición (cuerpo problem+json, como cualquier 401). La sesión termina también por
+inactividad (`ADMIN_SESSION_IDLE_MINUTES`, 480 por defecto) y, en ambos casos, la cookie vieja
+no vuelve a servir. Un login correcto siempre cambia el id de la sesión.
+
 Golden: `backend/src/test/resources/contract/admin-session-anonymous.json`
 
 ```json

@@ -19,8 +19,8 @@ server:
   servlet:
     session:
       # The administration session cookie (REQ-AUTH-04): never readable by scripts, never sent over plain HTTP, never sent
-      # cross-site, and the id travels only in the cookie (no URL rewriting). Pinned by the real-server ITs; a startup guard
-      # that refuses any other value arrives with the session-policy slice.
+      # cross-site, and the id travels only in the cookie (no URL rewriting). Pinned by the real-server ITs, and AdminSessionGuard
+      # refuses to start with any other value, in every profile.
       tracking-modes: cookie
       cookie:
         http-only: true

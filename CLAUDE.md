@@ -769,8 +769,8 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   fallar ambas reglas.
 - **Login de administración** (`POST /api/admin/login`, formulario
   `application/x-www-form-urlencoded`, D-20261008-03). Éxito: 204 sin cuerpo y cookie
-  `JSESSIONID` (`HttpOnly`, `Secure`, `SameSite=Strict`, fijadas en `application.yml`; la guarda de
-  arranque que rechaza otros valores es del corte de sesión), nueva en cada login. Todo fallo es el mismo 401
+  `JSESSIONID` (`HttpOnly`, `Secure`, `SameSite=Strict`, fijadas en `application.yml`; y la guarda de
+  arranque `AdminSessionGuard` rechaza otros valores), nueva en cada login. Todo fallo es el mismo 401
   `INVALID_CREDENTIALS` con texto fijo (`SecurityProblem`, golden
   `admin-error-invalid-credentials.json`): usuario inexistente, clave errónea y campo demasiado
   largo no se distinguen ni en el cuerpo ni en las cabeceras
@@ -810,8 +810,45 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   nombre de la cuenta autenticada, la dirección del cliente y el id de la sesión (`Set
   SecurityContextHolder to ...`, `Invalidated session ...`); un control positivo del mismo IT lo
   fija. Lo que lo apaga es dejar esa categoría en WARN (corte del límite de login, tarea X6.4).
+- **Política de la sesión de administración** (X5). *Cookie*: `AdminSessionGuard` (lee el
+  `Environment` efectivo, como `WebConfig`) detiene el arranque, en cualquier perfil, si
+  `server.servlet.session.cookie.secure` o `http-only` no son `true`, `same-site` no es `strict` o
+  `tracking-modes` no es `cookie`; ausente, vacío o cualquier otro valor también cuenta, venga del
+  yml, de un argumento o de una variable de entorno, y el mensaje es fijo y no repite el valor
+  (`AdminSessionGuardTest`, `AdminSessionGuardStartupTest` con `SpringApplication` real y el yml
+  real, `AdminSessionPolicyWiringIT` para que la guarda siga en el contexto real). Los tests no
+  sobrescriben nada: los clientes de prueba aplican `Secure` a mano. Mutaciones 2026-10-08: sin la
+  comprobación de `secure` fallan 10 casos de `AdminSessionGuardTest` y 2 del arranque; sin la guarda
+  Y con `secure: false` en el yml fallan el test de las banderas de `AdminLoginServerIT`, el flujo
+  completo y el de configuración efectiva. *Una sola sesión*: `maximumSessions(1)` con un
+  `SessionRegistry` propio (bean, para poder leerlo) y un `HttpSessionEventPublisher` (Boot no lo
+  registra); la sesión desplazada recibe el 401 problem+json con el golden, no el cuerpo de texto
+  de Security (`SingleSessionServerIT`). Mutaciones: `maximumSessions(-1)` hizo fallar 4 tests; sin
+  el publisher el registro conserva las sesiones destruidas por cierre o por inactividad y fallan 3
+  (`theRegistryForgetsASessionThatIsLoggedOut`, `anExpiredSessionLeavesTheRegistry...`, la cuenta
+  de beans). *Inactividad*: `AdminLoginSuccessHandler` fija `setMaxInactiveInterval` de ESA sesión desde
+  `ceto.admin.session-idle-timeout-minutes` (5 a 1440, 480 por defecto;
+  `AdminLoginSuccessHandlerTest`, y `IdleExpiryServerIT` lee 28800 s de la sesión viva); como no se
+  puede esperar 8 horas ni bajar de 5 minutos, el test acorta la sesión viva por el `Manager` del
+  Tomcat embebido a 1 s, espera 1,6 s y exige el 401 con el golden y que el contenedor la haya
+  descartado (DEV-6). Sin el `setMaxInactiveInterval` fallan 5 + 1 + 1 tests. *Flujo completo*:
+  `AdminSessionFlowServerIT` (bootstrap, id previo, login 204 con id nuevo y banderas, token
+  rotado, llamada con cookie y cabecera, 403 sin cabecera, logout y 401 con la cookie vieja).
+  `AdminLoginPiiServerIT` cubre además una sesión desplazada y una expirada: ni la salida ni los
+  cuerpos contienen ids de sesión ni tokens.
+- **Comando de aprovisionamiento del hash** (`AdminPasswordHashCommand`, X5.4, AUTH-14). Lee la
+  contraseña sin eco desde la terminal (dos veces) o, con la entrada redirigida, la primera línea
+  de la entrada estándar; **nunca** como argumento (cualquier argumento es código de salida 2 sin
+  leer nada); rechaza menos de 14 caracteres o más de 72 bytes UTF-8; imprime solo `{bcrypt}` más el
+  hash de costo 12, en una línea con LF, y borra los buffers que tuvieron la contraseña. No usa
+  logging. `AdminPasswordHashCommandTest` (reglas, centinela fuera de salida y error, buffers
+  borrados, el valor pasa `AdminCredentials.parse`) y `AdminPasswordHashCommandProcessTest` (JVM aparte:
+  códigos de salida y flujos). Cómo se invoca (`PropertiesLauncher`), el `$$` de compose y que cambiar la
+  contraseña es un hash nuevo más un despliegue: `docs/operacion-admin.md`. `BCryptPasswordEncoder`
+  convierte la contraseña a `String` por dentro, que no se puede borrar: la garantía es sobre los
+  buffers propios y sobre la salida, no sobre la memoria del proceso.
 - **Credencial de administración** (`ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, sin
-  valor por defecto; el login está en el punto siguiente y la política de sesión llega en un corte posterior). Se
+  valor por defecto; el login y la política de sesión están en los dos puntos siguientes). Se
   valida en `AdminCredentials.parse` con mensajes fijos, no con Bean Validation:
   el informe de fallo de Boot imprime el valor rechazado, y `{noop}secreto`
   terminaría en el log de arranque. Solo se acepta `{bcrypt}` con costo 10 a 14,

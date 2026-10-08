@@ -121,6 +121,46 @@ class AdminLoginPiiServerIT extends AbstractAdminServerIT {
     }
 
     /**
+     * A session that was superseded by a newer login and one that expired from idleness both end with a 401; neither
+     * may print a session id or a token, at the shipped levels and with the web and application loggers on DEBUG.
+     */
+    @Test
+    void aSupersededAndAnExpiredSessionLeaveNoSessionIdOrTokenInTheOutputOrTheBodies(CapturedOutput output)
+            throws Exception {
+        loggingSystem.setLogLevel("org.springframework.web", LogLevel.DEBUG);
+        loggingSystem.setLogLevel("ar.cetobhb", LogLevel.DEBUG);
+        List<String> secrets = new ArrayList<>(List.of(AdminTestCredentials.password(),
+                AdminTestCredentials.passwordHash()));
+        List<String> responses = new ArrayList<>();
+
+        AdminClient first = loggedInClient();
+        secrets.add(first.cookie(AdminClient.SESSION_COOKIE));
+        secrets.add(first.xsrf());
+        AdminClient second = loggedInClient();
+        String secondSession = second.cookie(AdminClient.SESSION_COOKIE);
+        secrets.add(secondSession);
+        secrets.add(second.xsrf());
+
+        AdminClient.Reply superseded = first.get(AdminClient.PROBE_PATH);
+        responses.add(show(superseded));
+        findServerSession(secondSession).setMaxInactiveInterval(1);
+        Thread.sleep(1_600);
+        AdminClient.Reply expired = second.get(AdminClient.PROBE_PATH);
+        responses.add(show(expired));
+
+        assertThat(superseded.status()).isEqualTo(401);
+        assertThat(expired.status()).isEqualTo(401);
+        assertThat(output.getAll()).as("positive control: the DEBUG lines of the web layer are captured")
+                .contains("/api/admin/session");
+        for (String secret : secrets) {
+            assertThat(output.getAll()).as("the output must not contain a secret (starts %s)", head(secret))
+                    .doesNotContain(secret);
+            responses.forEach(response -> assertThat(response).doesNotContain(secret));
+        }
+        assertThat(output.getAll()).doesNotContain(AdminTestCredentials.username());
+    }
+
+    /**
      * Characterization, and the reason slice X6.4 sets {@code org.springframework.security} to WARN: with the Security
      * loggers on DEBUG the output names the authenticated account ("Set SecurityContextHolder to ... Username=..."),
      * the client address ("RemoteIpAddress=...") and the session id ("Invalidated session ..."). Nothing prints them at the shipped levels
