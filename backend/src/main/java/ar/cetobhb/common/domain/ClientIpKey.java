@@ -5,6 +5,10 @@ package ar.cetobhb.common.domain;
  * by its first 64 bits (/64, so one subscriber rotating inside its prefix keeps one bucket), an IPv4-mapped IPv6
  * address like the IPv4 one. Anything that is not a literal address maps to the single {@value #INVALID} key.
  *
+ * <p>That shared key fails closed: all such clients are limited together, never exempted. It only matters when
+ * the trusted proxies setting (Tomcat's {@code internal-proxies}) is misconfigured and a client-supplied, non-literal {@code X-Forwarded-For}
+ * entry reaches here as the remote address; correctly trusted proxies always yield a literal address.
+ *
  * <p>The text is parsed by hand and never handed to {@code InetAddress.getByName}, which falls back to a DNS lookup
  * for text it cannot read as a literal: this class never touches the network. The input is the container's
  * {@code getRemoteAddr()}, already resolved from trusted proxies; it is never logged here (Ley 25.326).

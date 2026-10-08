@@ -167,6 +167,22 @@ clave en el limitador se mata de forma determinista reteniendo el lock
 inactivas era un equivalente y se reescribió (comparación sin signo, que además
 cubre el retroceso del reloj) para que deje de existir. Duración ~4 min.
 
+### Nueva medición `domain` tras la revisión de S4b-1 (2026-10-08, rama `feat/http-s4b1b-client-ip-key`)
+
+Tras los arreglos de la revisión (reloj releído dentro del lock `admission`,
+máximos de ráfaga e intervalo, balde de desborde con presupuesto propio) se
+repitió `domain`: 360 mutantes en total, 359 muertos (99 %), 0 sin cobertura;
+`TokenBucketLimiter` pasó de 38 a 43 mutantes, todos muertos, y `ClientIpKey`
+sigue en 133 de 133. El único sobreviviente es el equivalente ya aceptado de
+`PhoneNumberNormalizer`. Lo nuevo se cubre así: el escaneo único bajo dos hilos
+encolados se prueba con un reloj guionado por hilo y el contador `scans`
+(hook de paquete); los máximos con sus bordes exactos; el presupuesto propio
+del desborde con una prueba que documenta que, con la tabla llena, las IPs
+nuevas comparten ese balde. La carrera entre escaneos de evicción y
+actualizaciones de una clave rastreada es una prueba de regresión
+concurrente (no tiene RED: no había un defecto observable). Cobertura de
+líneas (solo clases mutadas): 402/416 (97 %). Duración ~1,5 min.
+
 ### Mutantes equivalentes aceptados
 
 | Clase | Línea | Mutación | Por qué es equivalente |
