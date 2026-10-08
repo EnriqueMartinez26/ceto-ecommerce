@@ -512,7 +512,9 @@ primera en este orden: clave, nombre, teléfono, dirección, zona, líneas.
 Estos valores existen en el código pero **no** los devuelven las 3 rutas
 públicas (son del panel y del catálogo): `INVALID_COMBO_LINK`,
 `INVALID_PRICE_PAIR`, `INVALID_PRODUCT_NAME`, `STOCK_BELOW_RESERVED`,
-`INVALID_CANCEL_REASON`.
+`INVALID_CANCEL_REASON`, `INVALID_STOCK_DELTA` (ajuste de stock con delta 0) y
+`STOCK_OUT_OF_RANGE` (el ajuste dejaría el stock físico por encima de
+2147483647).
 
 En errores estructurales de Bean Validation `reason` aparece solo si el mensaje
 de la restricción es uno de los valores de la tabla; si no, el 400 va sin

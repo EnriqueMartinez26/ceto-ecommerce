@@ -135,6 +135,27 @@ public class InventoryStock implements Persistable<Long> {
         touch(now);
     }
 
+    /**
+     * Relative admin correction of the physical count (INV-A1). The sum is computed in {@code long}, so no delta can
+     * overflow: a result below what is reserved (or below zero) is {@link InsufficientStockException}, a result above
+     * the int column is a validation error, and a zero delta is a no-op nobody should send. {@code reserved} never
+     * changes here. Everything is checked before anything is touched.
+     */
+    public void adjustBy(int delta, Instant now) {
+        if (delta == 0) {
+            throw new ValidationException(ReasonCode.INVALID_STOCK_DELTA);
+        }
+        long next = (long) onHand + delta;
+        if (next < reserved || next < 0) {
+            throw new InsufficientStockException(Set.of(productId));
+        }
+        if (next > Integer.MAX_VALUE) {
+            throw new ValidationException(ReasonCode.STOCK_OUT_OF_RANGE);
+        }
+        onHand = (int) next;
+        touch(now);
+    }
+
     private void requirePositive(long units) {
         if (units <= 0) {
             throw new IllegalArgumentException("units must be positive");
