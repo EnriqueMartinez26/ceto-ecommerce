@@ -571,10 +571,17 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   conexión el request termina en 503 `SERVICE_BUSY` + `Retry-After`, escrituras
   y lecturas, y el servicio se recupera al volver las conexiones
   (`PoolExhaustionIT`, golden `contract/error-service-busy.json`; sin
-  `connection-timeout` fallan los 3 tests). Diez conexiones quedan muy por
-  debajo de los 100 de Postgres y los hilos de Tomcat de más esperan en el pool,
-  no en la base. `lock_timeout` de 5 s: regla 3 de §4. Flyway usa el mismo
-  DataSource, así que sus migraciones también corren con ese `lock_timeout`.
+  `connection-timeout` fallan los 3 tests). Diez conexiones por instancia
+  quedan muy por debajo de los 100 de Postgres y los hilos de Tomcat de más
+  esperan en el pool, no en la base. `lock_timeout` de 5 s y lock por teléfono
+  sin espera: regla 3 de §4. Flyway usa el mismo DataSource, así que sus
+  migraciones también corren con ese `lock_timeout`.
+  **Riesgo residual aceptado**: quien rota teléfonos e IPs puede seguir
+  reservando stock hasta que vencen las reservas (D-20261007-21), y con una
+  ráfaga distribuida desde muchas IPs las nuevas comparten un balde de desborde
+  que puede responder 429 (D-20261007-25). La protección del stock es el tope por
+  teléfono; la defensa contra ataques distribuidos es el límite en el borde
+  (Caddy) o Turnstile.
 - **Datos personales (Ley 25.326)**: se pide solo lo necesario; teléfono,
   dirección y email no van a los logs.
 

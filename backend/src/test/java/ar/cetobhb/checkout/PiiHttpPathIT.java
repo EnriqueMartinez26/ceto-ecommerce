@@ -36,10 +36,10 @@ import org.springframework.mock.web.MockHttpServletResponse;
 class PiiHttpPathIT extends AbstractHttpIT {
 
     private static final String PATH = "/api/checkout/orders";
-    private static final String NAME = "SentinelBuyerName";
-    private static final String PHONE_DIGITS = "5559999";
-    private static final String PHONE = "+549351" + PHONE_DIGITS;
-    private static final String ADDRESS = "SentinelAddress 987";
+    private static final String NAME = "SentinelBuyerQ7x2Name";
+    private static final String PHONE_DIGITS = "3515552837";
+    private static final String PHONE = "+549" + PHONE_DIGITS;
+    private static final String ADDRESS = "SentinelAddressQ7x2 987";
     private static final List<String> SENTINELS = List.of(NAME, PHONE_DIGITS, ADDRESS, "SentinelQty", "Failing row");
 
     @Autowired
@@ -55,6 +55,8 @@ class PiiHttpPathIT extends AbstractHttpIT {
 
     @BeforeEach
     void seed() {
+        // A previous run killed mid-test (or a failed @AfterEach) must not leave a probe behind for this one.
+        dropProbes();
         productId = catalog.createBase(product("Solid shampoo", "45000.00")).id();
         inventory.createStock(productId, 10);
     }
