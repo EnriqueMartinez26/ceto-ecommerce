@@ -169,6 +169,25 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   (`OrderPageRepositoryIT`, `OrderQueryServiceIT`). `secondsLeft` es nulo salvo
   en `PAGO_PENDIENTE` y 0 si el plazo pasó y el job no corrió
   (`ReservationCountdownTest`, `OrderQueryServiceIT`).
+- **Acciones de administración sobre pedidos** (`AdminOrderService`, solo
+  servicio, todavía sin rutas): pagar, despachar, entregar y cancelar llaman a
+  `OrderLifecycleService` (la máquina de estados y el stock siguen ahí), escriben
+  una fila de auditoría y devuelven el detalle, todo en una transacción: el
+  motivo de cancelación es `CANCELLED_BY_ADMIN`. La fila solo existe si la
+  transición se confirmó, y una transición no se confirma sin su fila: si el
+  insert de auditoría falla, o la transacción falla al hacer commit, no queda ni
+  el cambio de estado, ni el de stock, ni la fila (`AdminOrderActionsIT`, con
+  triggers de prueba). Una arista ilegal o un id desconocido no escriben nada. El
+  orden de locks no cambia (la auditoría no toma locks). Dos pagos simultáneos del
+  mismo pedido: uno gana y el otro recibe `IllegalOrderTransitionException`, el
+  stock se descuenta una vez (`AdminOrderDoublePayIT`); admin y comprador sobre
+  los mismos productos base, en orden opuesto, sin deadlock en 20 iteraciones
+  (`AdminLockOrderingIT`). Evidencia por mutación (2026-10-08): quitar las
+  llamadas a `record` hizo fallar siete tests de `AdminOrderActionsIT`; leer el
+  pedido con `findById` en vez de `FOR UPDATE` hizo fallar
+  `AdminOrderDoublePayIT` en la iteración 0; bloquear las filas de stock en
+  `release` en orden descendente hizo fallar `AdminLockOrderingIT` (deadlock
+  `40P01`).
 
 ### Frontend (`frontend/`)
 
