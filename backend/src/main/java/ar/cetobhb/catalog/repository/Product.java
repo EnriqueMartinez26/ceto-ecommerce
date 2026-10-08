@@ -1,6 +1,8 @@
 package ar.cetobhb.catalog.repository;
 
+import ar.cetobhb.catalog.domain.CatalogRules;
 import ar.cetobhb.catalog.domain.NewProduct;
+import ar.cetobhb.catalog.domain.ProductEdit;
 import ar.cetobhb.catalog.domain.ProductSnapshot;
 import ar.cetobhb.catalog.domain.ProductView;
 import jakarta.persistence.Column;
@@ -87,11 +89,75 @@ public class Product {
         return p;
     }
 
-    public void deactivate(Instant now) {
+    /**
+     * Admin edit of the three editable fields. The combo link (base product and units) is not a parameter, so an edit
+     * cannot change it. Validates first; when nothing differs the entity is left untouched (no write, no new
+     * {@code updatedAt}). The returned {@link ProductEdit} says which group of fields changed, for the audit.
+     */
+    public ProductEdit update(String newName, BigDecimal newPrice, BigDecimal newCompareAtPrice, Instant now) {
+        CatalogRules.requireName(newName);
+        CatalogRules.requireValidPrices(newPrice, newCompareAtPrice);
+        String strippedName = newName.strip();
+        BigDecimal scaledPrice = newPrice.setScale(2);
+        BigDecimal scaledCompareAt = newCompareAtPrice == null ? null : newCompareAtPrice.setScale(2);
+        BigDecimal priceBefore = price;
+        boolean priceChanged = price.compareTo(scaledPrice) != 0;
+        boolean otherChanged = !name.equals(strippedName) || !sameMoney(compareAtPrice, scaledCompareAt);
+        if (priceChanged || otherChanged) {
+            name = strippedName;
+            price = scaledPrice;
+            compareAtPrice = scaledCompareAt;
+            updatedAt = now;
+        }
+        return new ProductEdit(priceBefore, price, otherChanged);
+    }
+
+    private static boolean sameMoney(BigDecimal a, BigDecimal b) {
+        return a == null ? b == null : b != null && a.compareTo(b) == 0;
+    }
+
+    /** Returns whether the state changed; activating an active product is a no-op. */
+    public boolean activate(Instant now) {
+        if (active) {
+            return false;
+        }
+        active = true;
+        updatedAt = now;
+        return true;
+    }
+
+    /** Returns whether the state changed; deactivating an inactive product is a no-op. */
+    public boolean deactivate(Instant now) {
         if (active) {
             active = false;
             updatedAt = now;
+            return true;
         }
+        return false;
+    }
+
+    public String name() {
+        return name;
+    }
+
+    public BigDecimal price() {
+        return price;
+    }
+
+    public BigDecimal compareAtPrice() {
+        return compareAtPrice;
+    }
+
+    public Long comboBaseProductId() {
+        return comboBaseProductId;
+    }
+
+    public Integer comboBaseUnits() {
+        return comboBaseUnits;
+    }
+
+    public Instant updatedAt() {
+        return updatedAt;
     }
 
     public Long id() {
