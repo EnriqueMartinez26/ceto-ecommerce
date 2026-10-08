@@ -12,6 +12,8 @@ import ar.cetobhb.catalog.domain.ProductAdminView;
 import ar.cetobhb.catalog.domain.ProductEditData;
 import ar.cetobhb.catalog.domain.ProductNotFoundException;
 import ar.cetobhb.catalog.domain.StaleProductVersionException;
+import ar.cetobhb.common.domain.ReasonCode;
+import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.checkout.service.StorefrontService;
 import ar.cetobhb.orders.domain.OrderStatus;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
@@ -107,6 +109,33 @@ class AdminCatalogUpdateIT extends AbstractPostgresIT {
 
         admin.update(id, version(), edit("Frasco 60 caps", "120.00"));
         assertThat(actions()).containsExactly("PRODUCT_UPDATED", "PRICE_CHANGED", "PRODUCT_UPDATED");
+    }
+
+    /** Review batch 4: the offer price alone is not a price change (ACAT-05); it writes PRODUCT_UPDATED only. */
+    @Test
+    void changingOnlyTheOfferPriceWritesProductUpdatedAndNoPriceChanged() {
+        ProductAdminView view = admin.update(id, version(),
+                new ProductEditData("Frasco", new BigDecimal("100.00"), new BigDecimal("130.00")));
+
+        assertThat(view.compareAtPrice()).isEqualByComparingTo("130.00");
+        assertThat(actions()).containsExactly("PRODUCT_UPDATED");
+    }
+
+    /** Review batch 4: a combo cannot go back on sale over an inactive base, and nothing is audited. */
+    @Test
+    void reactivatingAComboOverAnInactiveBaseIsRejectedWithNoAuditRow() {
+        long combo = admin.createCombo(product("Combo x2", "180.00"), id, 2).id();
+        admin.deactivate(combo);
+        admin.deactivate(id);
+        int auditRows = jdbc.queryForObject("SELECT count(*) FROM admin_audit_log", Integer.class);
+
+        assertThatThrownBy(() -> admin.activate(combo)).isInstanceOfSatisfying(ValidationException.class,
+                e -> assertThat(e.reason()).isEqualTo(ReasonCode.INVALID_COMBO_LINK));
+
+        assertThat(jdbc.queryForObject("SELECT active FROM products WHERE id = ?", Boolean.class, combo)).isFalse();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM admin_audit_log", Integer.class)).isEqualTo(auditRows);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM admin_audit_log WHERE action = 'PRODUCT_ACTIVATED'",
+                Integer.class)).isZero();
     }
 
     @Test
