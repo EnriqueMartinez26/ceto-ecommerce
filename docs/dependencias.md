@@ -78,3 +78,31 @@ Versiones resultantes: Spring Framework 7.0.9, Jackson 3.1.5, Tomcat 11.0.24.
 `spring-boot-starter-webmvc-test` aporta `@AutoConfigureMockMvc` y
 `MockMvcTester`. No se agrega el starter de cliente REST: los tests usan
 `MockMvc` y, más adelante, un `Socket` crudo.
+
+## G0 — Spring Security (cambio admin-panel-api) — 2026-10-08
+
+**Aprobada por Mateo el 2026-10-08.** Verificación hecha por el asistente
+sobre los fuentes publicados en Maven Central (spring-boot-dependencies
+4.1.1 y spring-boot-starter-security-test 4.1.1), sin ejecutar código.
+
+| Coordenadas | Alcance | Versión | Publica |
+|---|---|---|---|
+| `org.springframework.boot:spring-boot-starter-security` | compile | gestionada por el BOM de Spring Boot 4.1.1 (Spring Security 7.1.1) | Spring / VMware (Broadcom), grupo `org.springframework.boot`, Apache 2.0 |
+| `org.springframework.boot:spring-boot-starter-security-test` | test | gestionada por el BOM de Spring Boot 4.1.1 (trae `spring-security-test` 7.1.1) | Spring / VMware (Broadcom), grupo `org.springframework.boot`, Apache 2.0 |
+
+Evidencia: `spring-boot-dependencies-4.1.1.pom` define
+`spring-security.version` 7.1.1 e importa `spring-security-bom`; el starter de
+test existe en el mismo BOM. Detalle en la verificación de seguridad del
+cambio (secciones 1 y 2).
+
+**Cambia el comportamiento por defecto de la aplicación.** Al agregar el
+starter, Boot registra una cadena de seguridad por defecto sobre `/*` que
+bloquearía las rutas públicas y, en el desarrollo, genera una contraseña y la
+muestra en el log. Por eso la dependencia no entra sola: viaja en el mismo
+slice (X1, rama `feat/admin-sec-scope`) que el filtro de Spring Security
+acotado a `/api/admin/*` y que la prueba que exige que las rutas públicas
+(`/api/store/**`, `/api/checkout/**`) no pasen nunca por la cadena. Alcance
+de uso: solo el área de administración.
+
+No hay lockfile de Maven: el cambio en `backend/pom.xml` es el único cambio de
+dependencias y exige reconstruir la imagen del backend.
