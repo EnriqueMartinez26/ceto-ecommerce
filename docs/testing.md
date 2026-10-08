@@ -154,6 +154,19 @@ ningún equivalente.
 
 Cobertura de líneas (solo clases mutadas): 305/313 (97 %). Duración ~7 min.
 
+### Nueva medición `domain` (2026-10-08, rama `feat/http-s4b1b-client-ip-key`)
+
+Se corrió `domain` con `TokenBucketLimiter` (38 mutantes) y `ClientIpKey`
+(133 mutantes) en `common.domain`: 355 mutantes en total, 354 muertos (99 %), 0
+sin cobertura; el único sobreviviente es el equivalente ya aceptado de
+`PhoneNumberNormalizer` (abajo). La primera corrida dejó 11 sobrevivientes y 1
+sin cobertura: los límites de clases de caracteres y del `::` de `ClientIpKey`
+se mataron con pruebas de borde; la rama de la carrera perdida al admitir una
+clave en el limitador se mata de forma determinista reteniendo el lock
+`admission` desde la prueba; el límite del enfriamiento del escaneo de claves
+inactivas era un equivalente y se reescribió (comparación sin signo, que además
+cubre el retroceso del reloj) para que deje de existir. Duración ~4 min.
+
 ### Mutantes equivalentes aceptados
 
 | Clase | Línea | Mutación | Por qué es equivalente |
