@@ -455,6 +455,21 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   productos) rechaza caracteres de control y se escapa al renderizar.
   Imágenes por magic bytes, con tope de bytes y de píxeles; nunca SVG.
   Asuntos de mail sin CRLF.
+- **Tamaño del cuerpo y cabeceras**: `BodySizeLimitFilter` rechaza con 413
+  `PAYLOAD_TOO_LARGE` un `Content-Length` mayor que `ceto.web.max-body-bytes`
+  (1024..262144, por defecto 16384) antes de leer, y cuenta los bytes de los
+  cuerpos sin largo declarado (chunked) con `CountingInputStream`;
+  `BodySizeLimitFilterTest`, `CountingInputStreamTest`, `BodySizeLimitHttpIT` y
+  `BodySizeLimitServerIT` (socket real, chunked de 100 KB, largo mentido) lo
+  fijan, y `ApiExceptionHandlerTest` fija que `BodyTooLargeException` en la
+  cadena de causas es 413 y no 400. El filtro corre antes del interceptor del
+  rate limit: una petición demasiado grande no gasta un token. Límite conocido:
+  si algún código llamara a `getParameter` sobre un formulario, Tomcat lo leería
+  por su cuenta (tope `maxPostSize`), fuera del contador; hoy ninguna ruta lo hace.
+  `SecurityHeadersFilter` agrega `X-Content-Type-Options`, `Referrer-Policy` y
+  `Content-Security-Policy` a toda respuesta, incluidos los errores de filtros
+  e interceptor, y nunca hay `Access-Control-Allow-Origin`
+  (`SecurityHeadersHttpIT`, `SecurityHeadersServerErrorIT`).
 - **Errores neutros hacia afuera**: violación de restricción → 409 genérico;
   sin stack traces ni mensajes crudos de validación al usuario final. Guardas:
   un único `@RestControllerAdvice` (`ApiExceptionHandler`, tabla en

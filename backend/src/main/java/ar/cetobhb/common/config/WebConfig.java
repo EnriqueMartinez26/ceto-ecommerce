@@ -5,6 +5,7 @@ import ar.cetobhb.common.web.BodySizeLimitFilter;
 import ar.cetobhb.common.web.CheckoutRateLimitInterceptor;
 import ar.cetobhb.common.web.ProblemResponses;
 import ar.cetobhb.common.web.RequestIdFilter;
+import ar.cetobhb.common.web.SecurityHeadersFilter;
 import java.time.Clock;
 import java.time.Duration;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -107,6 +108,16 @@ public class WebConfig implements WebMvcConfigurer {
         FilterRegistrationBean<RequestIdFilter> registration = new FilterRegistrationBean<>(new RequestIdFilter());
         registration.addUrlPatterns("/*");
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return registration;
+    }
+
+    /** Second, so even the 413 of the body filter and every later error carries the hardening headers. */
+    @Bean
+    FilterRegistrationBean<SecurityHeadersFilter> securityHeadersFilter() {
+        FilterRegistrationBean<SecurityHeadersFilter> registration =
+                new FilterRegistrationBean<>(new SecurityHeadersFilter());
+        registration.addUrlPatterns("/*");
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
         return registration;
     }
 
