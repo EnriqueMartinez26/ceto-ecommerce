@@ -37,6 +37,20 @@ logging:
     org.springframework.web.servlet.PageNotFound: "OFF"
 
 spring:
+  datasource:
+    hikari:
+      # Resource exhaustion limits (REQ-HRD, carry-forward S5c). The pool is bounded and a request waits at most 3 s for
+      # a connection before the advice answers 503 SERVICE_BUSY. 10 connections stay under the Tomcat default of 200
+      # threads on purpose: threads past the pool queue on the pool for 3 s and are then shed, they never pile up on
+      # the database (Postgres allows 100 connections, one JVM uses at most 10).
+      maximum-pool-size: 10
+      connection-timeout: 3000
+      # Every connection of the pool, including the one Flyway borrows at startup (it uses this same DataSource), waits
+      # at most 5 s for any lock (rows, advisory locks: verification U-7, U-12) and then fails with SQLState 55P03,
+      # which becomes 503 SERVICE_BUSY. Without it a phone sending N parallel checkouts parks N-1 pooled connections
+      # in pg_advisory_xact_lock for as long as the first transaction lives. Migrations take no long-held locks on a
+      # quiet database; a migration blocked for 5 s should fail the deploy, not hang it.
+      connection-init-sql: "SET lock_timeout = '5s'"
   # The API serves no static files; unknown paths end in the standard 404 problem body.
   web:
     resources:
