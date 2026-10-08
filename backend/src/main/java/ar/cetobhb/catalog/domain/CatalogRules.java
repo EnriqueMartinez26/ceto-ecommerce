@@ -30,7 +30,9 @@ public final class CatalogRules {
 
     /**
      * Required, trimmed length 1-200 (the column is VARCHAR(200)), with no control, format or unpaired surrogate
-     * characters ({@code INVALID_CHARACTERS}). The text is validated, never rewritten or escaped: output escaping is
+     * characters, line or paragraph separators, private-use or unassigned code points ({@code INVALID_CHARACTERS}),
+     * and at least one visible code point (a name of only blanks, NBSP or fillers is {@code INVALID_PRODUCT_NAME}).
+     * The text is validated, never rewritten or escaped: output escaping is
      * the renderer's job.
      */
     public static void requireName(String name) {
@@ -45,11 +47,28 @@ public final class CatalogRules {
         if (trimmed.codePoints().anyMatch(CatalogRules::isForbiddenCharacter)) {
             throw new ValidationException(ReasonCode.INVALID_CHARACTERS);
         }
+        if (trimmed.codePoints().noneMatch(CatalogRules::isVisible)) {
+            throw new ValidationException(ReasonCode.INVALID_PRODUCT_NAME);
+        }
     }
 
     private static boolean isForbiddenCharacter(int codePoint) {
-        int type = Character.getType(codePoint);
-        return type == Character.CONTROL || type == Character.FORMAT || type == Character.SURROGATE;
+        return switch (Character.getType(codePoint)) {
+            case Character.CONTROL, Character.FORMAT, Character.SURROGATE, Character.LINE_SEPARATOR,
+                    Character.PARAGRAPH_SEPARATOR, Character.PRIVATE_USE, Character.UNASSIGNED -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * A code point a person can see: not white space (Java's {@code isWhitespace} leaves NBSP out, so
+     * {@code isSpaceChar} is checked too) and not one of the letters and symbols that render as blank (Hangul fillers
+     * U+115F, U+1160, U+3164 and U+FFA0, and the Braille blank U+2800).
+     */
+    private static boolean isVisible(int codePoint) {
+        return !Character.isWhitespace(codePoint) && !Character.isSpaceChar(codePoint)
+                && codePoint != 0x115F && codePoint != 0x1160 && codePoint != 0x3164
+                && codePoint != 0xFFA0 && codePoint != 0x2800;
     }
 
     public static void requireComboUnits(int units) {

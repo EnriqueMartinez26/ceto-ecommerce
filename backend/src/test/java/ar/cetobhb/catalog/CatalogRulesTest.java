@@ -34,6 +34,48 @@ class CatalogRulesTest {
         assertInvalid(ReasonCode.INVALID_CHARACTERS, () -> CatalogRules.requireName(name));
     }
 
+    /** Names that look empty but are not: no code point a person can see. */
+    @ParameterizedTest
+    @ValueSource(ints = {0x00A0, 0x2007, 0x202F, 0x3000, 0x3164, 0xFFA0, 0x2800, 0x115F, 0x1160})
+    void requireNameRejectsANameWithNoVisibleCodePoint(int codePoint) {
+        String lone = new String(Character.toChars(codePoint));
+        assertInvalid(ReasonCode.INVALID_PRODUCT_NAME, () -> CatalogRules.requireName(lone));
+        assertInvalid(ReasonCode.INVALID_PRODUCT_NAME, () -> CatalogRules.requireName(lone + lone + lone));
+        assertInvalid(ReasonCode.INVALID_PRODUCT_NAME, () -> CatalogRules.requireName(" " + lone + " "));
+    }
+
+    @Test
+    void requireNameRejectsAMixOfDifferentInvisibleCodePoints() {
+        String mix = cp(0x00A0) + cp(0x3164) + cp(0x2800) + cp(0xFFA0) + cp(0x115F) + cp(0x1160);
+        assertInvalid(ReasonCode.INVALID_PRODUCT_NAME, () -> CatalogRules.requireName(mix));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0x2028, 0x2029, 0xE000, 0xF8FF, 0xF0000, 0x0378, 0x10FFFF})
+    void requireNameRejectsLineSeparatorsPrivateUseAndUnassignedCodePoints(int codePoint) {
+        String name = "Ceto" + cp(codePoint) + "BHB";
+        assertInvalid(ReasonCode.INVALID_CHARACTERS, () -> CatalogRules.requireName(name));
+    }
+
+    @Test
+    void requireNameStillAcceptsAnInvisibleLookingCodePointNextToVisibleText() {
+        // A visible code point is enough; the filler is not rewritten or removed.
+        assertThatCode(() -> CatalogRules.requireName("A" + cp(0x3164))).doesNotThrowAnyException();
+        assertThatCode(() -> CatalogRules.requireName(cp(0x00A0) + "A" + cp(0x00A0))).doesNotThrowAnyException();
+        assertThatCode(() -> CatalogRules.requireName(cp(0x2800) + "Pack")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void requireNameAcceptsSpanishNamesWithAccentsEnyeAndAnEmojiWithoutAJoiner() {
+        assertThatCode(() -> CatalogRules.requireName("Cápsulas de café ñandú 🌿")).doesNotThrowAnyException();
+        assertThatCode(() -> CatalogRules.requireName("Frasco 60 ☕ BHB")).doesNotThrowAnyException();
+        assertThatCode(() -> CatalogRules.requireName("🌿")).doesNotThrowAnyException();
+    }
+
+    private static String cp(int codePoint) {
+        return new String(Character.toChars(codePoint));
+    }
+
     @Test
     void requireNameAcceptsAccentsAndNormalPunctuationWithoutRewritingTheText() {
         assertThatCode(() -> CatalogRules.requireName("Cápsulas Ceto BHB (60 u.) - 100% natural, ¿sí?"))
