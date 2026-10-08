@@ -43,3 +43,4 @@ reemplace y se marca la anterior como reemplazada.
 | D-20261007-22 | Los GET de la tienda no tienen límite por IP en este cambio. | Mateo (delegado al asistente) | 2026-10-07 | Vigente |
 | D-20261007-23 | Los errores de Tomcat fuera de Spring MVC usan `/error` de Boot sin stack trace ni mensaje. | Mateo (delegado al asistente) | 2026-10-07 | Vigente |
 | D-20261007-24 | Un pedido PAGO_PENDIENTE vencido que el job todavía no canceló sigue contando para el tope por teléfono: su reserva todavía bloquea stock. | Mateo (delegado al asistente) | 2026-10-07 | Vigente |
+| D-20261007-25 | Con la tabla del limitador por IP llena, las IPs nuevas comparten un balde de desborde con presupuesto propio; ante un ataque distribuido sostenido pueden recibir 429. La protección del stock es el tope por teléfono; la defensa contra ataques distribuidos es el límite en el borde (Caddy) o Turnstile (D-20261007-21). | Mateo (delegado al asistente) | 2026-10-08 | Vigente |
