@@ -56,6 +56,12 @@ public class InventoryService {
     private static final String UNIQUE_VIOLATION = "23505";
     private static final String STOCK_PK = "inventory_stock_pk";
 
+    /** Largest reconciliation page (AINV-06 asks for a bounded result; the design names no number, so 500). */
+    public static final int MAX_MISMATCH_LIMIT = 500;
+
+    /** Largest id set for {@link #levels}: far below Postgres' 32767 bind parameters per statement. */
+    public static final int MAX_LEVEL_IDS = 1000;
+
     private final InventoryStockRepository stock;
     private final CatalogService catalog;
     private final Clock clock;
@@ -188,6 +194,9 @@ public class InventoryService {
      */
     @Transactional(readOnly = true)
     public Map<Long, StockCounts> levels(Collection<Long> ids) {
+        if (ids == null || ids.size() > MAX_LEVEL_IDS) {
+            throw new IllegalArgumentException("ids must be non-null and hold at most " + MAX_LEVEL_IDS + " entries");
+        }
         if (ids.isEmpty()) {
             return Map.of();
         }
@@ -204,6 +213,9 @@ public class InventoryService {
      */
     @Transactional(readOnly = true)
     public List<ReservationMismatch> reservationMismatches(int limit) {
+        if (limit < 1 || limit > MAX_MISMATCH_LIMIT) {
+            throw new IllegalArgumentException("limit must be between 1 and " + MAX_MISMATCH_LIMIT);
+        }
         return stock.findReservationMismatches(limit).stream()
                 .map(row -> new ReservationMismatch(row.getProductId(), row.getReserved(), row.getExpected()))
                 .toList();
