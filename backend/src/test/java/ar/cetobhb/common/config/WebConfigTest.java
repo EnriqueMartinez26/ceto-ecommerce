@@ -6,9 +6,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import ar.cetobhb.common.domain.TokenBucketLimiter;
 import ar.cetobhb.support.MutableClock;
 import java.time.Clock;
+import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
 import org.springframework.core.env.StandardEnvironment;
@@ -26,6 +28,10 @@ class WebConfigTest {
     private static final String HEADER = "server.tomcat.remoteip.remote-ip-header";
     private static final String TRUSTED = "server.tomcat.remoteip.trusted-proxies";
     private static final String PROXIES_HEADER = "server.tomcat.remoteip.proxies-header";
+    private static final String HOST_HEADER = "server.tomcat.remoteip.host-header";
+    private static final String PORT_HEADER = "server.tomcat.remoteip.port-header";
+    private static final String HTTPS_VALUE = "server.tomcat.remoteip.protocol-header-https-value";
+    private static final String PROTOCOL_HEADER = "server.tomcat.remoteip.protocol-header";
 
     private static MockEnvironment environment(String proxies, String strategy) {
         MockEnvironment environment = new MockEnvironment();
@@ -41,7 +47,23 @@ class WebConfigTest {
 
     /** The effective settings of a correct deployment (what application.yml wires). */
     private static MockEnvironment valid() {
-        return environment("10.0.0.0/8", "native");
+        MockEnvironment environment = environment("10.0.0.0/8", "native");
+        environment.setProperty(HOST_HEADER, "");
+        environment.setProperty(PORT_HEADER, "");
+        environment.setProperty(HTTPS_VALUE, "");
+        return environment;
+    }
+
+    /** The same effective settings as environment variables, in the form the container passes them. */
+    private static Map<String, Object> validVariables() {
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES", "10.0.0.0/8");
+        variables.put("SERVER_FORWARDHEADERSSTRATEGY", "native");
+        variables.put("SERVER_TOMCAT_REMOTEIP_REMOTEIPHEADER", "X-Forwarded-For");
+        variables.put("SERVER_TOMCAT_REMOTEIP_HOSTHEADER", "");
+        variables.put("SERVER_TOMCAT_REMOTEIP_PORTHEADER", "");
+        variables.put("SERVER_TOMCAT_REMOTEIP_PROTOCOLHEADERHTTPSVALUE", "");
+        return variables;
     }
 
     private static WebConfig configWith(MockEnvironment environment) {
@@ -155,13 +177,57 @@ class WebConfigTest {
                 .hasMessageContaining("proxies-header");
     }
 
+    @ParameterizedTest(name = "{0} = [{1}] stops the startup")
+    @CsvSource(delimiter = '|', value = {"server.tomcat.remoteip.host-header|X-Forwarded-Host|host-header",
+        "server.tomcat.remoteip.host-header|Host|host-header",
+        "server.tomcat.remoteip.port-header|X-Forwarded-Port|port-header",
+        "server.tomcat.remoteip.protocol-header-https-value|https|protocol-header-https-value",
+        "server.tomcat.remoteip.protocol-header|X-Forwarded-Protocol|protocol-header",
+        "server.tomcat.remoteip.protocol-header|Forwarded|protocol-header"})
+    void rejectsAnySettingThatLetsATrustedPeerRewriteTheHostPortOrScheme(String property, String value,
+            String message) {
+        MockEnvironment environment = valid();
+        environment.setProperty(property, value);
+
+        assertThatThrownBy(() -> configWith(environment)).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(message);
+    }
+
+    @ParameterizedTest(name = "{0} left unset stops the startup")
+    @ValueSource(strings = {HOST_HEADER, PORT_HEADER, HTTPS_VALUE})
+    void rejectsAnUnsetSettingWhoseBootDefaultIsNotBlank(String property) {
+        // Unset is not blank: Boot would hand its default (X-Forwarded-Host, X-Forwarded-Port, https) to the valve.
+        MockEnvironment environment = environment("10.0.0.0/8", "native");
+        for (String other : new String[] {HOST_HEADER, PORT_HEADER, HTTPS_VALUE}) {
+            if (!other.equals(property)) {
+                environment.setProperty(other, "");
+            }
+        }
+
+        assertThatThrownBy(() -> configWith(environment)).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(property.substring(property.lastIndexOf('.') + 1));
+    }
+
+    @ParameterizedTest(name = "protocol-header [{0}] is accepted")
+    @ValueSource(strings = {"", "  ", "X-Forwarded-Proto", "x-forwarded-proto"})
+    void acceptsABlankOrBootDefaultProtocolHeader(String header) {
+        MockEnvironment environment = valid();
+        environment.setProperty(PROTOCOL_HEADER, header);
+
+        assertThat(configWith(environment)).isNotNull();
+    }
+
+    @Test
+    void acceptsAnUnsetProtocolHeader() {
+        assertThat(configWith(valid())).isNotNull();
+    }
+
     @Test
     void anEnvironmentVariableOverrideOfTheTrustedProxiesStopsTheStartup() {
         // SERVER_TOMCAT_REMOTEIP_TRUSTEDPROXIES has no hyphen: only Boot's relaxed binding maps it to trusted-proxies.
-        StandardEnvironment environment = withEnvironmentVariables(Map.of(
-                "SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES", "10.0.0.0/8", "SERVER_FORWARDHEADERSSTRATEGY", "native",
-                "SERVER_TOMCAT_REMOTEIP_REMOTEIPHEADER", "X-Forwarded-For",
-                "SERVER_TOMCAT_REMOTEIP_TRUSTEDPROXIES", ".*"));
+        Map<String, Object> variables = validVariables();
+        variables.put("SERVER_TOMCAT_REMOTEIP_TRUSTEDPROXIES", ".*");
+        StandardEnvironment environment = withEnvironmentVariables(variables);
 
         assertThatThrownBy(() -> new WebConfig(Clock.systemUTC(), WEB, environment))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("trusted-proxies");
@@ -169,9 +235,9 @@ class WebConfigTest {
 
     @Test
     void anEnvironmentVariableOverrideOfTheHeaderStopsTheStartup() {
-        StandardEnvironment environment = withEnvironmentVariables(Map.of(
-                "SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES", "10.0.0.0/8", "SERVER_FORWARDHEADERSSTRATEGY", "native",
-                "SERVER_TOMCAT_REMOTEIP_REMOTEIPHEADER", "X-Real-IP"));
+        Map<String, Object> variables = validVariables();
+        variables.put("SERVER_TOMCAT_REMOTEIP_REMOTEIPHEADER", "X-Real-IP");
+        StandardEnvironment environment = withEnvironmentVariables(variables);
 
         assertThatThrownBy(() -> new WebConfig(Clock.systemUTC(), WEB, environment))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("remote-ip-header");
@@ -179,9 +245,9 @@ class WebConfigTest {
 
     @Test
     void anEnvironmentVariableOverrideOfTheInternalProxiesStopsTheStartup() {
-        StandardEnvironment environment = withEnvironmentVariables(Map.of(
-                "SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES", ".*", "SERVER_FORWARDHEADERSSTRATEGY", "native",
-                "SERVER_TOMCAT_REMOTEIP_REMOTEIPHEADER", "X-Forwarded-For"));
+        Map<String, Object> variables = validVariables();
+        variables.put("SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES", ".*");
+        StandardEnvironment environment = withEnvironmentVariables(variables);
 
         assertThatThrownBy(() -> new WebConfig(Clock.systemUTC(), WEB, environment))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("internal-proxies");
@@ -189,11 +255,42 @@ class WebConfigTest {
 
     @Test
     void correctEnvironmentVariablesStartUp() {
-        StandardEnvironment environment = withEnvironmentVariables(Map.of(
-                "SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES", "10.0.0.0/8", "SERVER_FORWARDHEADERSSTRATEGY", "native",
-                "SERVER_TOMCAT_REMOTEIP_REMOTEIPHEADER", "X-Forwarded-For"));
+        StandardEnvironment environment = withEnvironmentVariables(validVariables());
 
         assertThat(new WebConfig(Clock.systemUTC(), WEB, environment)).isNotNull();
+    }
+
+    @ParameterizedTest(name = "environment variable {0}={1} stops the startup")
+    @CsvSource(delimiter = '|', value = {"SERVER_TOMCAT_REMOTEIP_HOSTHEADER|X-Forwarded-Host|host-header",
+        "SERVER_TOMCAT_REMOTEIP_PORTHEADER|X-Forwarded-Port|port-header",
+        "SERVER_TOMCAT_REMOTEIP_PROTOCOLHEADERHTTPSVALUE|https|protocol-header-https-value",
+        "SERVER_TOMCAT_REMOTEIP_PROTOCOLHEADER|X-Forwarded-Scheme|protocol-header"})
+    void anEnvironmentVariableThatReEnablesAForwardedHeaderStopsTheStartup(String variable, String value,
+            String property) {
+        Map<String, Object> variables = validVariables();
+        variables.put(variable, value);
+        StandardEnvironment environment = withEnvironmentVariables(variables);
+
+        assertThatThrownBy(() -> new WebConfig(Clock.systemUTC(), WEB, environment))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining(property);
+    }
+
+    @Test
+    void theProtocolHeaderMayBeSetToTheBootDefaultByEnvironmentVariable() {
+        Map<String, Object> variables = validVariables();
+        variables.put("SERVER_TOMCAT_REMOTEIP_PROTOCOLHEADER", "X-Forwarded-Proto");
+
+        assertThat(new WebConfig(Clock.systemUTC(), WEB, withEnvironmentVariables(variables))).isNotNull();
+    }
+
+    @Test
+    void anUnsetHostPortOrHttpsValueSettingStopsTheStartupBecauseBootThenAppliesItsDefault() {
+        // Boot passes X-Forwarded-Host, X-Forwarded-Port and "https" to the valve when nothing overrides them.
+        Map<String, Object> variables = validVariables();
+        variables.remove("SERVER_TOMCAT_REMOTEIP_HOSTHEADER");
+
+        assertThatThrownBy(() -> new WebConfig(Clock.systemUTC(), WEB, withEnvironmentVariables(variables)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("host-header");
     }
 
     /** An environment whose only source is the given variables, bound the way Boot binds the real ones. */

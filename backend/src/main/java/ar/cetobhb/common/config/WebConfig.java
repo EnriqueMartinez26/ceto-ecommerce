@@ -26,6 +26,11 @@ public class WebConfig implements WebMvcConfigurer {
     private static final String REMOTE_IP_HEADER = "server.tomcat.remoteip.remote-ip-header";
     private static final String TRUSTED_PROXIES = "server.tomcat.remoteip.trusted-proxies";
     private static final String PROXIES_HEADER = "server.tomcat.remoteip.proxies-header";
+    private static final String HOST_HEADER = "server.tomcat.remoteip.host-header";
+    private static final String PORT_HEADER = "server.tomcat.remoteip.port-header";
+    private static final String HTTPS_VALUE = "server.tomcat.remoteip.protocol-header-https-value";
+    private static final String PROTOCOL_HEADER = "server.tomcat.remoteip.protocol-header";
+    private static final String BOOT_PROTOCOL_HEADER = "X-Forwarded-Proto";
 
     private final TokenBucketLimiter checkoutLimiter;
 
@@ -34,7 +39,9 @@ public class WebConfig implements WebMvcConfigurer {
      * validated {@code ceto.web.trusted-proxies}, but an environment variable or command-line argument can override it
      * directly (REQ-ABU-03), and the "framework" forward-headers strategy would believe any caller. The header the
      * valve reads must stay {@code X-Forwarded-For} (the integration tests pin its right-to-left walk) and neither
-     * {@code trusted-proxies} nor {@code proxies-header} may be set.
+     * {@code trusted-proxies} nor {@code proxies-header} may be set. {@code host-header}, {@code port-header} and
+     * {@code protocol-header-https-value} must be explicitly empty, and {@code protocol-header} unset, empty or
+     * {@code X-Forwarded-Proto}, so a trusted peer cannot rewrite the host or port the application sees.
      */
     WebConfig(Clock clock, WebProperties web, Environment environment) {
         String proxies = environment.getProperty(INTERNAL_PROXIES);
@@ -49,6 +56,14 @@ public class WebConfig implements WebMvcConfigurer {
         }
         requireBlank(environment, TRUSTED_PROXIES);
         requireBlank(environment, PROXIES_HEADER);
+        requireExplicitlyBlank(environment, HOST_HEADER);
+        requireExplicitlyBlank(environment, PORT_HEADER);
+        requireExplicitlyBlank(environment, HTTPS_VALUE);
+        String protocolHeader = environment.getProperty(PROTOCOL_HEADER);
+        if (protocolHeader != null && !protocolHeader.isBlank()
+                && !BOOT_PROTOCOL_HEADER.equalsIgnoreCase(protocolHeader)) {
+            throw new IllegalStateException(PROTOCOL_HEADER + " must be unset or " + BOOT_PROTOCOL_HEADER);
+        }
         this.checkoutLimiter = checkoutLimiter(clock, web.checkoutRateLimit());
     }
 
@@ -61,6 +76,21 @@ public class WebConfig implements WebMvcConfigurer {
         String value = environment.getProperty(property);
         if (value != null && !value.isBlank()) {
             throw new IllegalStateException(property + " must be unset");
+        }
+    }
+
+    /**
+     * Boot hands {@code host-header} (default {@code X-Forwarded-Host}), {@code port-header} (default
+     * {@code X-Forwarded-Port}) and {@code protocol-header-https-value} (default {@code https}) to the valve even when
+     * nothing sets them, so an UNSET property is not a blank one: the yml must blank them explicitly and an override must
+     * keep them blank. A trusted peer could otherwise rewrite the host, port and scheme the app sees, which is how a
+     * spoofed absolute URL would reach a redirect or a link. The valve still honours {@code X-Forwarded-Proto}
+     * (no Boot default for {@code protocol-header}), which cannot carry a host.
+     */
+    private static void requireExplicitlyBlank(Environment environment, String property) {
+        String value = environment.getProperty(property);
+        if (value == null || !value.isBlank()) {
+            throw new IllegalStateException(property + " must be set to an empty value");
         }
     }
 

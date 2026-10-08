@@ -6,6 +6,11 @@ server:
     remoteip:
       remote-ip-header: X-Forwarded-For
       internal-proxies: "${ceto.web.trusted-proxies}"
+      # Boot passes X-Forwarded-Host, X-Forwarded-Port and "https" to the valve unless they are set to empty here, and
+      # a trusted peer could then rewrite the host and port of absolute URLs. WebConfig refuses to start otherwise.
+      host-header: ""
+      port-header: ""
+      protocol-header-https-value: ""
   error:
     # Errors raised outside Spring MVC render through Boot's /error (D-20261007-23): never expose details.
     include-stacktrace: never
@@ -57,9 +62,11 @@ ceto:
   web:
     # Largest storefront list (WebProperties: 1..500).
     storefront-max-products: 200
-    # Peers allowed to set the client address through X-Forwarded-For (Tomcat internal-proxies: a CIDR list when it
-    # contains "/", otherwise one full-match regex). REQUIRED, no default: unset stops the startup, and a value that
-    # would trust a public address is rejected by WebProperties (D-20261007-17, verification U-6).
+    # Peers allowed to set the client address through X-Forwarded-For. Tomcat reads internal-proxies as a CIDR list when
+    # it contains "/", otherwise as one full-match regex; THIS APPLICATION REJECTS THE REGEX FORM and accepts only CIDR
+    # entries inside the private blocks. Trusting 127.0.0.0/8 or 169.254.0.0/16 trusts every process of the host or
+    # every neighbour on the link, not just the proxy: prefer a /32. REQUIRED, no default: unset stops the startup, and
+    # a value that would trust a public address is rejected by WebProperties (D-20261007-17, verification U-6).
     trusted-proxies: ${TRUSTED_PROXIES}
     # POST /api/checkout/orders: 10 attempts at once, then one more every 6 minutes (10 per hour).
     checkout-rate-limit:
