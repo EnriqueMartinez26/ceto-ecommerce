@@ -19,25 +19,44 @@ import tools.jackson.databind.json.JsonMapper;
 @Component
 public class ProblemResponses {
 
+    /** Longest request path a Security problem echoes in {@code instance}; a longer one is replaced by a fixed value. */
+    public static final int MAX_INSTANCE_LENGTH = 256;
+
+    /** What {@code instance} says for a 401 or 403 whose request path is longer than the cap. */
+    static final String ADMIN_ROOT_INSTANCE = "/api/admin";
+
     private final JsonMapper json;
 
     public ProblemResponses(JsonMapper json) {
         this.json = json;
     }
 
-    /** Writes one of the problems Spring Security answers with, using its fixed status, code and detail. */
+    /**
+     * Writes one of the problems Spring Security answers with, using its fixed status, code and detail. A refused
+     * spelling ({@link SecurityProblem#REJECTED_REQUEST}) has no {@code instance}: the path is exactly what the firewall
+     * refused and is not echoed. A 401 or 403 keeps the request path as {@code instance}, like every public error, but
+     * a path longer than {@link #MAX_INSTANCE_LENGTH} is replaced by {@code /api/admin} so the body stays bounded.
+     */
     public void write(HttpServletRequest request, HttpServletResponse response, SecurityProblem problem)
             throws IOException {
-        write(request, response, problem.status(), problem.code(), problem.detail());
+        URI instance = problem == SecurityProblem.REJECTED_REQUEST ? null : boundedInstance(request);
+        write(request, response, problem.status(), problem.code(), problem.detail(), instance);
     }
 
     public void write(HttpServletRequest request, HttpServletResponse response, HttpStatus status, String code,
             String detail) throws IOException {
+        write(request, response, status, code, detail, instance(request));
+    }
+
+    private void write(HttpServletRequest request, HttpServletResponse response, HttpStatus status, String code,
+            String detail, URI instance) throws IOException {
         ProblemDetail problem = ProblemDetail.forStatus(status);
         problem.setTitle(status.getReasonPhrase());
         problem.setDetail(detail);
-        // Spring fills 'instance' only for MVC return values; here it must be set, and never be null or unparsable.
-        problem.setInstance(instance(request));
+        // Spring fills 'instance' only for MVC return values; here it is set (never unparsable), or omitted on purpose.
+        if (instance != null) {
+            problem.setInstance(instance);
+        }
         problem.setProperty("code", code);
         if (request.getAttribute(RequestIdFilter.ATTRIBUTE) instanceof String requestId) {
             problem.setProperty("requestId", requestId);
@@ -49,6 +68,14 @@ public class ProblemResponses {
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentLength(body.length);
         response.getOutputStream().write(body);
+    }
+
+    private static URI boundedInstance(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        if (path != null && path.length() > MAX_INSTANCE_LENGTH) {
+            return URI.create(ADMIN_ROOT_INSTANCE);
+        }
+        return instance(request);
     }
 
     private static URI instance(HttpServletRequest request) {

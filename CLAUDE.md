@@ -788,7 +788,21 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   caracteres y clave errónea son el mismo `BadCredentialsException`, con un solo
   BCrypt en ambos casos. Ningún hash se versiona: los tests usan una clave
   aleatoria por JVM (`AdminTestCredentials`) y `NoCommittedHashTest` revisa
-  `backend/src` y los archivos de despliegue de la raíz.
+  todos los archivos de texto versionados (`git ls-files`), no una lista de
+  nombres, y detecta el hash con prefijo `{bcrypt}` y el hash suelto, con y sin
+  el escape `$$` de compose (con plantas en `.md`, `.sh` y compose; la aguja
+  anterior no veía la forma `$$`: mutación del 2026-10-08, 3 fallas).
+  El único `PasswordEncoder` del contexto es el `AdminPasswordEncoder` con la
+  guarda de 72 bytes; el BCrypt crudo vive en un contenedor que no es un
+  `PasswordEncoder` (`AdminBcrypt`), así que una inyección por tipo no puede
+  saltarse la guarda (`AdminPasswordEncoderBeanIT`). Spring Security imprime en
+  DEBUG el usuario tecleado (`Failed to find user '...'`): la categoría
+  `org.springframework.security.authentication.dao` está en `OFF` en
+  `application.yml` y `AdminAuthenticationLoggingIT` fija el nivel efectivo, un
+  control positivo con esa categoría en DEBUG y que un login fallido con un
+  usuario centinela no deja rastro aunque `org.springframework.security` esté en
+  DEBUG (sin la línea de `application.yml` fallan 2 de 3). El runbook del
+  operador está en `docs/operacion-admin.md`.
 - **Errores y cabeceras de la cadena de admin.** Un 401 sin autenticar
   (`UNAUTHENTICATED`), un 403 (`FORBIDDEN`, incluido un token CSRF ausente o
   inválido, que cae en el mismo manejador de acceso denegado) y el 400 del
@@ -812,7 +826,15 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   primero fallan ese test, 3 de `AdminSecurityChainIT` y 8 de
   `SecurityFirewallVariantsIT`. M9 (cache de peticiones activada): fallan
   `AdminAnonymousSessionIT`, porque el 401 anónimo abre
-  una sesión.
+  una sesión. `instance` del 401 y el 403 es la ruta pedida, acotada a 256
+  caracteres (más largo vale `/api/admin`); el 400 del firewall no lleva
+  `instance`, porque la ruta es lo rechazado (`ProblemResponsesIT`,
+  `SecurityFirewallVariantsIT`, D-20261008-38). La página de error de Tomcat para
+  esas rutas (barra, contrabarra o NUL codificados, en rutas públicas y de admin)
+  no nombra al servidor, ni versión ni traza, y no hay cabecera `Server`:
+  `ContainerErrorPageIT` lo fija en un servidor real; es el valor por defecto de
+  Tomcat 11.0.24, sin código propio (D-20261008-37), y con un `ErrorReportValve`
+  que muestra reporte e información del servidor el test falla (7 de 7).
 - **Defensa en profundidad sobre los handlers de admin.**
   `AdminAccessGuardInterceptor` (interceptor MVC sobre `/api/admin/**`, con la
   misma resolución de rutas que los handlers) responde 401 `UNAUTHENTICATED` si
