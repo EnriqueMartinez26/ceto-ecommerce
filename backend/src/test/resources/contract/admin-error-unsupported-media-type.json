@@ -1,0 +1,6 @@
+{
+  "title": "Unsupported Media Type",
+  "status": 415,
+  "detail": "The content type is not supported.",
+  "code": "UNSUPPORTED_MEDIA_TYPE"
+}

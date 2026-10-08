@@ -781,7 +781,18 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   más largo; `LoginFieldCapAuthenticationManagerTest` y los casos de 129 y 1000 caracteres de
   `AdminLoginServerIT` con el contador de BCrypt sin cambios; mutación 2026-10-08: sin el tope
   fallan 7 tests unitarios y los 2 del usuario largo, la clave larga la frena además la guarda de
-  72 bytes del encoder). Seguridad rota el token CSRF al autenticar: el 204 trae un
+  72 bytes del encoder). La forma de la petición la fija `LoginRequestGuardFilter`, en la cadena
+  de administración antes de `CsrfFilter` y solo para el procesamiento del login: query string
+  (incluso un `?` vacío) es 400 `MALFORMED_REQUEST`, otro `Content-Type` que
+  `application/x-www-form-urlencoded` (con cualquier `charset`) es 415 `UNSUPPORTED_MEDIA_TYPE`
+  (`SecurityProblem`, golden `admin-error-unsupported-media-type.json`), y un `username` o
+  `password` repetido, ausente o con codificación porcentual inválida es 400; ninguno ejecuta
+  BCrypt ni abre sesión, y el log no recibe ni el usuario ni un fragmento de la clave
+  (`AdminLoginRequestGuardServerIT`, servidor real, con JSON, multipart y `%zz`; mutaciones
+  2026-10-08: sin el chequeo de query fallan 2 casos, sin el de `Content-Type` 9, y registrar la
+  query o el cuerpo crudo hace fallar los 2 tests de salida). `spring.servlet.multipart.enabled` es
+  `false` (ninguna ruta lee multipart; `MultipartDisabledServerIT`). Un `GET /api/admin/login`
+  anónimo es el 401 `UNAUTHENTICATED` y no llega a un handler. Seguridad rota el token CSRF al autenticar: el 204 trae un
   `XSRF-TOKEN` nuevo (`AdminLoginServerIT.theLoginResponseRotatesTheXsrfCookieAndTheNewTokenWorksForTheNextMutation`).
   `GET /api/admin/session` devuelve `{"authenticated":bool}` y es la única ruta anónima: el permiso
   de la cadena es `SessionBootstrapRequest` (método GET y ruta tal como se escribió, no un patrón),

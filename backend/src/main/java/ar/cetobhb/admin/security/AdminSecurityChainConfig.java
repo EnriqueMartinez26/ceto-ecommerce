@@ -21,6 +21,7 @@ import org.springframework.security.web.authentication.AuthenticationFailureHand
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
+import org.springframework.security.web.csrf.CsrfFilter;
 
 /**
  * The administration chains (slice X1 skeleton, hardened in review fix batch 5, problem bodies in slice X3, login and
@@ -87,6 +88,8 @@ class AdminSecurityChainConfig {
                         .requestMatchers(new SessionBootstrapRequest()).permitAll()
                         .anyRequest().authenticated())
                 .csrf(csrf -> csrf.spa().csrfTokenRepository(csrfTokens))
+                // The login request is shaped (no query string, urlencoded, one value per field) before CSRF reads it.
+                .addFilterBefore(new LoginRequestGuardFilter(LOGIN_PATH, problems), CsrfFilter.class)
                 // The login is a form post (UsernamePasswordAuthenticationFilter reads two parameters): 204 on success,
                 // the one neutral 401 on every failure. The manager refuses over-long fields before anything is hashed.
                 .authenticationManager(new LoginFieldCapAuthenticationManager(authenticationManager))
