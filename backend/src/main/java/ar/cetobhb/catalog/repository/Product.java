@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -54,6 +55,11 @@ public class Product {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /** Optimistic lock: bumped by Hibernate on every update, so a stale edit fails instead of overwriting. */
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
     protected Product() {
     }
 
@@ -90,6 +96,10 @@ public class Product {
 
     public Long id() {
         return id;
+    }
+
+    public long version() {
+        return version;
     }
 
     public boolean isActive() {
