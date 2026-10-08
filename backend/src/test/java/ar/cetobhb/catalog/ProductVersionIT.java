@@ -63,7 +63,7 @@ class ProductVersionIT extends AbstractPostgresIT {
         long id = catalog.createBase(product("Base", "10.00")).id();
         assertThat(versionOf(id)).isZero();
 
-        catalog.deactivate(id);
+        catalog.setActive(id, false);
 
         assertThat(versionOf(id)).isEqualTo(1);
     }
@@ -72,7 +72,7 @@ class ProductVersionIT extends AbstractPostgresIT {
     void aStaleDetachedCopyCannotOverwriteANewerRow() {
         long id = catalog.createBase(product("Base", "10.00")).id();
         Product stale = new TransactionTemplate(txManager).execute(status -> products.findById(id).orElseThrow());
-        catalog.deactivate(id);
+        catalog.setActive(id, false);
 
         assertThatThrownBy(() -> new TransactionTemplate(txManager).executeWithoutResult(
                 status -> products.saveAndFlush(stale)))

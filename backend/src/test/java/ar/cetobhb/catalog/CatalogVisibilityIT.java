@@ -48,7 +48,7 @@ class CatalogVisibilityIT extends AbstractPostgresIT {
     void hidesInactiveProducts() {
         ProductSnapshot hidden = catalog.createBase(product("Hidden", "10.00"));
         ProductSnapshot shown = catalog.createBase(product("Shown", "20.00"));
-        catalog.deactivate(hidden.id());
+        catalog.setActive(hidden.id(), false);
 
         assertThat(listedIds(10)).containsExactly(shown.id());
         assertThatThrownBy(() -> catalog.findVisible(hidden.id())).isInstanceOf(ProductNotFoundException.class);
@@ -71,7 +71,7 @@ class CatalogVisibilityIT extends AbstractPostgresIT {
     void hidesAComboWhoseBaseIsInactive() {
         ProductSnapshot base = catalog.createBase(product("Base", "100.00"));
         ProductSnapshot combo = catalog.createCombo(product("Combo", "270.00"), base.id(), 3);
-        catalog.deactivate(base.id());
+        catalog.setActive(base.id(), false);
 
         assertThat(listedIds(10)).isEmpty();
         assertThatThrownBy(() -> catalog.findVisible(combo.id())).isInstanceOf(ProductNotFoundException.class);
@@ -89,7 +89,7 @@ class CatalogVisibilityIT extends AbstractPostgresIT {
     @Test
     void anUnknownIdIsNotFoundAndDoesNotCarryTheStateOfAHiddenOne() {
         ProductSnapshot hidden = catalog.createBase(product("Hidden", "10.00"));
-        catalog.deactivate(hidden.id());
+        catalog.setActive(hidden.id(), false);
 
         assertThatThrownBy(() -> catalog.findVisible(999_999L)).isInstanceOf(ProductNotFoundException.class);
         assertThatThrownBy(() -> catalog.findVisible(hidden.id())).isInstanceOf(ProductNotFoundException.class);

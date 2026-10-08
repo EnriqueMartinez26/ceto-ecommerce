@@ -160,7 +160,7 @@ class OrderIdempotencyIT extends AbstractPostgresIT {
         long b = base(10);
         UUID key = UUID.randomUUID();
         PlacedOrder first = placement.placeOrder(command(key, BUYER, b, 2));
-        catalog.deactivate(b);
+        catalog.setActive(b, false);
 
         PlacedOrder again = placement.placeOrder(command(key, BUYER, b, 2));
 

@@ -64,13 +64,6 @@ public class CatalogService {
         CatalogRules.requireValidPrices(data.price(), data.compareAtPrice());
     }
 
-    @Transactional
-    public void deactivate(long productId) {
-        Product product = products.findById(productId)
-                .orElseThrow(() -> new ProductNotAvailableException(Set.of(productId)));
-        product.deactivate(clock.instant());
-    }
-
     /** Any product by id, active or not (admin use); a missing id is a {@link ProductNotFoundException}. */
     @Transactional(readOnly = true)
     public ProductSnapshot findAnyIncludingInactive(long id) {

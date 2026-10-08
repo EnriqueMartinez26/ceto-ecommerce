@@ -50,8 +50,8 @@ class CatalogVisibilityConsistencyIT extends AbstractPostgresIT {
         long comboOverActive = catalog.createCombo(product("Combo A", "270.00"), activeBase, 3).id();
         long comboOverInactive = catalog.createCombo(product("Combo B", "270.00"), inactiveBase, 3).id();
         long inactiveCombo = catalog.createCombo(product("Combo C", "270.00"), activeBase, 3).id();
-        catalog.deactivate(inactiveBase);
-        catalog.deactivate(inactiveCombo);
+        catalog.setActive(inactiveBase, false);
+        catalog.setActive(inactiveCombo, false);
         List<Long> ids = List.of(
                 activeBase, inactiveBase, comboOverActive, comboOverInactive, inactiveCombo, UNKNOWN_ID);
 

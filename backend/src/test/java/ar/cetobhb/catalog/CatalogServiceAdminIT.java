@@ -92,7 +92,7 @@ class CatalogServiceAdminIT extends AbstractPostgresIT {
         long base = catalog.createBase(product("Base", "100.00")).id();
         long hidden = catalog.createBase(product("Hidden", "50.00")).id();
         long combo = catalog.createCombo(product("Combo", "270.00"), base, 3).id();
-        catalog.deactivate(hidden);
+        catalog.setActive(hidden, false);
 
         List<ProductAdminView> all = catalog.listAll(10);
 

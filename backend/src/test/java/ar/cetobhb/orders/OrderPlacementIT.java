@@ -205,7 +205,7 @@ class OrderPlacementIT extends AbstractPostgresIT {
     void aDeactivatedProductIsRejectedAndNothingIsReserved() {
         long b = base("Base", "100.00", 5);
         long gone = base("Gone", "50.00", 5);
-        catalog.deactivate(gone);
+        catalog.setActive(gone, false);
 
         assertThatThrownBy(() -> placement.placeOrder(command(line(b, 1), line(gone, 1))))
                 .isInstanceOfSatisfying(ProductNotAvailableException.class,
@@ -218,7 +218,7 @@ class OrderPlacementIT extends AbstractPostgresIT {
     void aComboOverADeactivatedBaseIsRejectedAndNothingIsPersisted() {
         long b = base("Base", "100.00", 20);
         long c = combo("Combo x3", "270.00", b, 3);
-        catalog.deactivate(b);
+        catalog.setActive(b, false);
 
         assertThatThrownBy(() -> placement.placeOrder(command(line(c, 1))))
                 .isInstanceOfSatisfying(ProductNotAvailableException.class,
@@ -242,7 +242,7 @@ class OrderPlacementIT extends AbstractPostgresIT {
         long b = base("Base", "100.00", 5);
         PlacedOrder placed = placement.placeOrder(command(line(b, 2)));
 
-        catalog.deactivate(b);
+        catalog.setActive(b, false);
 
         assertThat(count("orders")).isEqualTo(1);
         assertThat(count("order_items")).isEqualTo(1);

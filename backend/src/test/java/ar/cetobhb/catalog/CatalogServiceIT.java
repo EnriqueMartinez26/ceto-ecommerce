@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ar.cetobhb.catalog.domain.NewProduct;
 import ar.cetobhb.catalog.domain.ProductNotAvailableException;
+import ar.cetobhb.catalog.domain.ProductNotFoundException;
 import ar.cetobhb.catalog.domain.ProductSnapshot;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.common.domain.ReasonCode;
@@ -102,7 +103,7 @@ class CatalogServiceIT extends AbstractPostgresIT {
     @Test
     void rejectsComboOverAnInactiveBase() {
         ProductSnapshot base = catalog.createBase(product("Base", "100.00"));
-        catalog.deactivate(base.id());
+        catalog.setActive(base.id(), false);
         long before = productCount();
 
         assertInvalid(ReasonCode.INVALID_COMBO_LINK, () -> catalog.createCombo(product("C", "1.00"), base.id(), 3));
@@ -136,7 +137,7 @@ class CatalogServiceIT extends AbstractPostgresIT {
     void findForOrderFailsForMissingOrInactiveProducts() {
         ProductSnapshot active = catalog.createBase(product("Active", "100.00"));
         ProductSnapshot inactive = catalog.createBase(product("Inactive", "100.00"));
-        catalog.deactivate(inactive.id());
+        catalog.setActive(inactive.id(), false);
 
         assertThatThrownBy(() -> catalog.findForOrder(List.of(active.id(), inactive.id(), 9999L)))
                 .isInstanceOfSatisfying(ProductNotAvailableException.class,
@@ -147,7 +148,7 @@ class CatalogServiceIT extends AbstractPostgresIT {
     void findForOrderFailsForAnActiveComboWhoseBaseWasDeactivated() {
         ProductSnapshot base = catalog.createBase(product("Base", "100.00"));
         ProductSnapshot combo = catalog.createCombo(product("Combo", "270.00"), base.id(), 3);
-        catalog.deactivate(base.id());
+        catalog.setActive(base.id(), false);
 
         assertThatThrownBy(() -> catalog.findForOrder(List.of(combo.id())))
                 .isInstanceOfSatisfying(ProductNotAvailableException.class,
@@ -155,18 +156,16 @@ class CatalogServiceIT extends AbstractPostgresIT {
     }
 
     @Test
-    void deactivatingAMissingProductNamesItsId() {
-        assertThatThrownBy(() -> catalog.deactivate(9999L))
-                .isInstanceOfSatisfying(ProductNotAvailableException.class,
-                        e -> assertThat(e.productIds()).containsExactly(9999L));
+    void deactivatingAMissingProductIsNotFound() {
+        assertThatThrownBy(() -> catalog.setActive(9999L, false)).isInstanceOf(ProductNotFoundException.class);
     }
 
     @Test
     void deactivateKeepsTheRowAndNoDeleteIsExposed() {
         ProductSnapshot base = catalog.createBase(product("Base", "100.00"));
 
-        catalog.deactivate(base.id());
-        catalog.deactivate(base.id());
+        catalog.setActive(base.id(), false);
+        catalog.setActive(base.id(), false);
 
         assertThat(productCount()).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT active FROM products WHERE id = ?", Boolean.class, base.id()))

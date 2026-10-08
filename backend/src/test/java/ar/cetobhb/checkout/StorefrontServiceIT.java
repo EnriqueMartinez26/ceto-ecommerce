@@ -124,8 +124,8 @@ class StorefrontServiceIT extends AbstractPostgresIT {
         long inactive = baseWithStock("Inactive", 5);
         long base = baseWithStock("Base", 5);
         long combo = catalog.createCombo(product("Combo", "270.00"), base, 3).id();
-        catalog.deactivate(inactive);
-        catalog.deactivate(base);
+        catalog.setActive(inactive, false);
+        catalog.setActive(base, false);
 
         assertThat(storefront.listProducts()).isEmpty();
         for (long id : new long[] {inactive, combo, 999_999L}) {

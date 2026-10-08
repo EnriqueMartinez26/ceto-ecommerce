@@ -126,7 +126,7 @@ class InventoryServiceAdjustByIT extends AbstractPostgresIT {
     @Test
     void aDeactivatedProductCanStillBeCorrected() {
         long id = baseWithStock(5, 0);
-        catalog.deactivate(id);
+        catalog.setActive(id, false);
 
         assertThat(inventory.adjustBy(id, 1)).isEqualTo(new StockAdjustment(id, 5, 6, 0));
     }

@@ -88,7 +88,7 @@ class StorefrontHttpIT extends AbstractHttpIT {
                 base, 3).id();
         long visible = catalog.createBase(new NewProduct("Visible", new BigDecimal("5"), null, null, null, null))
                 .id();
-        catalog.deactivate(base);
+        catalog.setActive(base, false);
 
         JsonNode list = json.readTree(send(get("/api/store/products")).getContentAsString(StandardCharsets.UTF_8));
 
@@ -103,8 +103,8 @@ class StorefrontHttpIT extends AbstractHttpIT {
         long combo = catalog.createCombo(new NewProduct("Combo", new BigDecimal("30"), null, null, null, null),
                 base, 3).id();
         long inactive = catalog.createBase(new NewProduct("Off", new BigDecimal("5"), null, null, null, null)).id();
-        catalog.deactivate(inactive);
-        catalog.deactivate(base);
+        catalog.setActive(inactive, false);
+        catalog.setActive(base, false);
 
         String hidden = notFoundBody(combo);
         String off = notFoundBody(inactive);
