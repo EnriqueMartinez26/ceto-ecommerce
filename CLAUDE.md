@@ -220,7 +220,12 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    `Retry-After: 1`), así ningún pedido retiene una conexión del pool esperando.
    Orden completo: advisory(teléfono), fila del pedido, filas de stock
    ascendentes; solo la colocación toma ese lock y nunca espera por él, así que
-   no cierra ciclos.
+   no cierra ciclos. Las migraciones usan `SET LOCAL lock_timeout` (y
+   `statement_timeout`), nunca `SET` a secas: un `SET` de sesión se queda en la
+   conexión del pool y se filtra a los requests siguientes;
+   `MigrationTimeoutScanTest` recorre `db/migration` y falla ante cualquier
+   `SET [SESSION] lock_timeout|statement_timeout|idle_in_transaction_session_timeout`
+   sin `LOCAL`.
 4. **Ciclo de la reserva**: crear el pedido suma a `reserved`; pasar a
    pagado descuenta en firme (`on_hand −= n`, `reserved −= n`); cancelar o
    vencer libera (`reserved −= n`). Una reserva sin pago vence sola a las
