@@ -4,7 +4,10 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 
-/** One requested product: an id and a quantity, nothing else. */
+/**
+ * One requested product: an id and a quantity, nothing else. The quantity cap (100) must equal the {@code @Max}
+ * bound of {@code OrderProperties.maxUnitsPerLine}; {@code CheckoutDtoCapsTest} fails if they diverge.
+ */
 record LineRequest(
         @NotNull(message = "INVALID_LINE") @Min(value = 1, message = "INVALID_LINE")
         @Max(value = 9_007_199_254_740_991L, message = "INVALID_LINE") Long productId,
