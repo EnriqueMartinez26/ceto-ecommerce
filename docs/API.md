@@ -1,0 +1,549 @@
+# API pública de Ceto BHB
+
+Referencia escrita a mano de las 3 rutas públicas del backend, para quien arma
+el frontend y para Mateo (D-20261007-18). Todo lo que figura acá bajo un
+encabezado `Golden:` es copia exacta de un archivo de referencia que los tests
+comparan contra la respuesta real; si cambia el contrato, el test falla y este
+documento se corrige en el mismo cambio.
+
+**No exponer el backend sin Caddy adelante** (ver [Despliegue](#despliegue)).
+
+## Camino rápido
+
+1. `GET /api/store/products`: lista de productos con precio, disponibilidad y
+   el tope de unidades por línea (`maxQuantity`).
+2. La compradora arma el carrito en el navegador (el servidor nunca confía en
+   precios ni totales del cliente: manda solo ids y cantidades).
+3. `POST /api/checkout/orders` con una `Idempotency-Key` nueva por intento
+   (un UUID). 201 si crea el pedido, 200 si es un reintento de la misma clave.
+4. Con la respuesta, el frontend arma el link `https://wa.me/<número>?text=...`
+   y abre WhatsApp (ver [Mensaje de WhatsApp](#mensaje-de-whatsapp)).
+5. Si algo falla, el cuerpo siempre trae `code`; el frontend decide el mensaje
+   según el [catálogo de errores](#errores).
+
+## Convenciones
+
+| Tema | Regla |
+|---|---|
+| Base | Mismo origen que el sitio, detrás de Caddy. No hay CORS ni cabeceras `Access-Control-*` (D-20261007-14). |
+| Formato | JSON UTF-8. Las respuestas son `application/json`; los errores, `application/problem+json` (RFC 9457). |
+| Dinero | String con 2 decimales: `"45000.00"`, `"90301.50"`, nunca un número JSON (D-20261007-16). Parsear con una librería decimal, no con `float`. La moneda no viaja: el precio es el de la tienda. |
+| Fechas | ISO-8601 en UTC, a segundos y con `Z`: `"2026-03-12T12:00:00Z"`. Mostrar en `America/Argentina/Cordoba` es tarea del frontend. |
+| Ids | Enteros positivos de hasta 2^53 − 1 (seguros en JavaScript). |
+| Campos desconocidos | Se rechazan con 400 `MALFORMED_REQUEST`: el cuerpo del `POST` no admite precios, totales ni estado. |
+| Números | `"2"` en lugar de `2` es 400 `MALFORMED_REQUEST`; no hay conversión implícita. |
+| Parámetros de consulta | Se ignoran en todas las rutas. |
+| Id de petición | Toda respuesta trae `X-Request-Id` (un UUID generado por el servidor; el que mande el cliente se ignora). Los errores lo repiten en `requestId`. Mencionarlo al pedir soporte. |
+
+## Endpoints
+
+### `GET /api/store/products`
+
+Lista de productos visibles, por id ascendente, hasta `ceto.web.storefront-max-products`
+(200 por defecto). No hay paginación ni filtros.
+
+Golden: `backend/src/test/resources/contract/storefront-list.json`
+
+```json
+{
+  "products": [
+    {
+      "id": 1,
+      "name": "Solid shampoo",
+      "kind": "BASE",
+      "comboUnits": null,
+      "price": "45000.00",
+      "compareAtPrice": "50000.00",
+      "availability": "AVAILABLE",
+      "maxQuantity": 30
+    },
+    {
+      "id": 2,
+      "name": "Shampoo pack",
+      "kind": "COMBO",
+      "comboUnits": 3,
+      "price": "120000.50",
+      "compareAtPrice": null,
+      "availability": "AVAILABLE",
+      "maxQuantity": 30
+    },
+    {
+      "id": 3,
+      "name": "Cream",
+      "kind": "BASE",
+      "comboUnits": null,
+      "price": "100.00",
+      "compareAtPrice": null,
+      "availability": "SOLD_OUT",
+      "maxQuantity": 30
+    }
+  ]
+}
+```
+
+| Campo | Significado |
+|---|---|
+| `kind` | `BASE` o `COMBO`. Un combo agrupa `comboUnits` (≥ 2) unidades de un producto base y no tiene stock propio. |
+| `price` / `compareAtPrice` | Precio de venta y precio anterior para mostrar tachado; `null` si no hay oferta. |
+| `availability` | `AVAILABLE` o `SOLD_OUT`. La tienda nunca informa cantidades de stock (D-20261007-20, propuesta pendiente de OK de la clienta). |
+| `maxQuantity` | Tope de unidades **por línea de pedido** (no es el stock). Viene de `ORDER_MAX_UNITS_PER_LINE`, 30 por defecto. |
+
+### `GET /api/store/products/{id}`
+
+Un producto visible. Suma `presentation`, `ingredients` y `usage` (los textos
+los provee y aprueba la clienta). `id` va de 1 a 9007199254740991.
+
+Golden: `backend/src/test/resources/contract/storefront-detail.json`
+
+```json
+{
+  "id": 1,
+  "name": "Solid shampoo",
+  "kind": "BASE",
+  "comboUnits": null,
+  "price": "45000.00",
+  "compareAtPrice": "50000.00",
+  "availability": "AVAILABLE",
+  "maxQuantity": 30,
+  "presentation": "100 g bar",
+  "ingredients": "Coconut oil, shea butter",
+  "usage": "Lather on wet hair"
+}
+```
+
+Un producto inactivo, oculto o inexistente da el mismo 404 `NOT_FOUND`, con el
+mismo cuerpo salvo `instance` y `requestId`: no se puede averiguar cuál de los
+tres es. Un `id` fuera de rango o no numérico es 400 `VALIDATION_ERROR`. El
+golden de abajo es el de una ruta inexistente (`instance` apunta a una ruta de
+checkout); la forma del 404 es la misma en la tienda.
+
+Golden: `backend/src/test/resources/contract/error-not-found.json`
+
+```json
+{
+  "title": "Not Found",
+  "status": 404,
+  "detail": "The resource was not found.",
+  "instance": "/api/checkout/unknown",
+  "code": "NOT_FOUND"
+}
+```
+
+### `POST /api/checkout/orders`
+
+Crea el pedido y reserva el stock (48 h por defecto, `ORDER_RESERVATION_HOURS`).
+Cabeceras de la petición: `Content-Type: application/json` e
+`Idempotency-Key: <UUID>`.
+
+Cuerpo (ejemplo del test `CheckoutHttpIT`, constante `BODY`):
+
+```json
+{
+  "buyer": {
+    "name": "Maria Perez",
+    "phone": "+5493515550000",
+    "address": "Calle Falsa 123",
+    "zone": "RESTO_DEL_PAIS"
+  },
+  "lines": [
+    { "productId": 2, "quantity": 3 },
+    { "productId": 1, "quantity": 2 }
+  ]
+}
+```
+
+| Campo | Regla |
+|---|---|
+| `buyer.name` | Obligatorio, hasta 120 caracteres. |
+| `buyer.phone` | Obligatorio. Celular argentino (con o sin `+54`, `9` o `15`, con espacios, guiones o paréntesis) o celular extranjero en formato internacional. Un fijo o texto con letras es `INVALID_PHONE`. El servidor lo guarda como E.164 y nunca lo devuelve. |
+| `buyer.address` | Obligatorio, hasta 500 caracteres. |
+| `buyer.zone` | `CORDOBA_CAPITAL` o `RESTO_DEL_PAIS`. El costo de envío no se calcula en la web: se coordina por WhatsApp (D-20261006-03). |
+| `lines` | Entre 1 y 20 líneas (tope absoluto del esquema: 50), sin productos repetidos. |
+| `lines[].productId` | Id de un producto o combo visible. |
+| `lines[].quantity` | De 1 a `maxQuantity` (30 por defecto). |
+
+Los espacios se normalizan (se recortan y se colapsan) y se rechazan los
+caracteres de control y de formato (`INVALID_CHARACTERS`). El servidor
+reemplaza los precios por los de la base: el total que se cobra es el de la
+respuesta, aunque el precio cambie después.
+
+#### Respuesta 201: pedido creado
+
+Golden: `backend/src/test/resources/contract/checkout-201.json`
+
+```json
+{
+  "orderNumber": "CETO-000001",
+  "status": "PAGO_PENDIENTE",
+  "zone": "RESTO_DEL_PAIS",
+  "total": "90301.50",
+  "reservedUntil": "2026-03-12T12:00:00Z",
+  "replayed": false,
+  "lines": [
+    {
+      "productId": 1,
+      "name": "Solid shampoo",
+      "quantity": 2,
+      "unitPrice": "45000.00",
+      "lineTotal": "90000.00"
+    },
+    {
+      "productId": 2,
+      "name": "Cream",
+      "quantity": 3,
+      "unitPrice": "100.50",
+      "lineTotal": "301.50"
+    }
+  ]
+}
+```
+
+Un precio guardado como número entero también sale con 2 decimales:
+
+Golden: `backend/src/test/resources/contract/checkout-201-whole-price.json`
+
+```json
+{
+  "orderNumber": "CETO-000001",
+  "status": "PAGO_PENDIENTE",
+  "zone": "RESTO_DEL_PAIS",
+  "total": "30.00",
+  "reservedUntil": "2026-03-12T12:00:00Z",
+  "replayed": false,
+  "lines": [
+    {
+      "productId": 3,
+      "name": "Whole price",
+      "quantity": 3,
+      "unitPrice": "10.00",
+      "lineTotal": "30.00"
+    }
+  ]
+}
+```
+
+| Campo | Significado |
+|---|---|
+| `orderNumber` | Número legible (`CETO-000123`); es el que viaja en el WhatsApp para que la clienta lo encuentre en el panel. Crece, pero puede tener huecos. |
+| `status` | Siempre `PAGO_PENDIENTE` al crear. |
+| `total` | Suma de las líneas. No incluye envío. |
+| `reservedUntil` | Hasta cuándo se reserva el stock sin pago. Pasada esa hora el pedido se cancela solo. |
+| `replayed` | `false` al crear, `true` en un reintento. |
+| `lines` | Foto del pedido, ordenada por `productId`, con el nombre y el precio cobrados. |
+
+La respuesta **no** incluye el id interno, el teléfono, la dirección ni el
+nombre de la compradora, y no lleva `Location` (no hay un GET del pedido).
+
+#### Respuesta 200: reintento con la misma clave
+
+Misma clave y mismo contenido devuelve el pedido existente, con los precios
+cobrados en su momento, aunque el producto se haya desactivado, el stock se haya
+agotado o el pedido esté cancelado (D-20261006-11, D-20261007-04). Misma clave
+con otro contenido es 409 `IDEMPOTENCY_CONFLICT`.
+
+Golden: `backend/src/test/resources/contract/checkout-200-replay.json`
+
+```json
+{
+  "orderNumber": "CETO-000001",
+  "status": "PAGO_PENDIENTE",
+  "zone": "RESTO_DEL_PAIS",
+  "total": "90301.50",
+  "reservedUntil": "2026-03-12T12:00:00Z",
+  "replayed": true,
+  "lines": [
+    {
+      "productId": 1,
+      "name": "Solid shampoo",
+      "quantity": 2,
+      "unitPrice": "45000.00",
+      "lineTotal": "90000.00"
+    },
+    {
+      "productId": 2,
+      "name": "Cream",
+      "quantity": 3,
+      "unitPrice": "100.50",
+      "lineTotal": "301.50"
+    }
+  ]
+}
+```
+
+**Regla para el frontend:** generar la `Idempotency-Key` una vez por intento de
+compra y **reusar la misma** en cada reintento (doble toque, red caída, 503).
+Una clave nueva crea un pedido nuevo.
+
+## Cabeceras
+
+| Cabecera | Dirección | Dónde | Detalle |
+|---|---|---|---|
+| `Idempotency-Key` | petición | `POST /api/checkout/orders` | UUID de 36 caracteres. Obligatoria: ausente, mayor a 64 caracteres o que no sea un UUID es 400 `VALIDATION_ERROR` con `reason: MISSING_IDEMPOTENCY_KEY`. |
+| `Content-Type` | petición | `POST` | `application/json`. Otro tipo (o ninguno) es 415. |
+| `Accept` | petición | todas | `application/json` o sin definir. Otro tipo (por ejemplo XML) es 406. |
+| `X-Request-Id` | respuesta | todas | UUID del servidor; los errores lo repiten en `requestId`. El de la petición se ignora. |
+| `Retry-After` | respuesta | 429 y 503 | Segundos de espera. En 429 `RATE_LIMITED` es el tiempo hasta el próximo intento permitido (mínimo 1). En 503 `SERVICE_BUSY` es `1` si hay otro checkout del mismo teléfono en curso y `5` si el servicio está saturado. |
+| `Cache-Control` | respuesta | checkout y todo error | `no-store`. Los `GET` de la tienda no fijan `Cache-Control`: la política de caché de la lista la define el frontend o Caddy. |
+| `Allow` | respuesta | 405 | Métodos permitidos de la ruta. |
+| `Connection` | respuesta | 413 | `close`: el servidor puede no haber leído todo el cuerpo. |
+| `X-Content-Type-Options`, `Referrer-Policy`, `Content-Security-Policy` | respuesta | todas | `nosniff`, `no-referrer` y `default-src 'none'; frame-ancestors 'none'`. `Strict-Transport-Security` lo agrega Caddy. |
+
+## Errores
+
+Todo error es `application/problem+json` con esta forma: `title`, `status`,
+`detail` (texto fijo en inglés, nunca un valor de la petición), `instance` (la
+ruta pedida), `code` (estable, para decidir qué mostrar) y `requestId`. Se suma
+`reason` (solo en `VALIDATION_ERROR`) o `productIds` (solo en
+`PRODUCT_UNAVAILABLE`). Nunca hay `type`, stack trace ni mensajes de excepción.
+Los goldens de abajo no incluyen `requestId` porque el test lo compara aparte
+contra `X-Request-Id`.
+
+| Status | `code` | Cuándo | Campos extra | Reintentar |
+|---|---|---|---|---|
+| 400 | `VALIDATION_ERROR` | Un campo no cumple una regla, la clave de idempotencia falta o está mal, o el `id` de la ruta es inválido. | `reason` (ver abajo) | No: corregir el dato. |
+| 400 | `MALFORMED_REQUEST` | El cuerpo no se puede leer: JSON inválido, campo desconocido o repetido, tipo equivocado, anidado de más de 8 niveles o texto demasiado largo. | | No. |
+| 400 | `BAD_REQUEST` | Otro error de cliente que Spring detecta antes de la lógica y no tiene código propio. | | No. |
+| 404 | `NOT_FOUND` | Ruta inexistente (incluidas variantes como barra final o `//`) o producto inexistente, inactivo u oculto. | | No. |
+| 405 | `METHOD_NOT_ALLOWED` | Método no permitido para la ruta (por ejemplo `POST` a la lista). | `Allow` | No. |
+| 406 | `NOT_ACCEPTABLE` | `Accept` no admite JSON. | | No. |
+| 409 | `PRODUCT_UNAVAILABLE` | Un producto del carrito está inactivo, oculto o sin fila de stock. | `productIds`: ids **pedidos** afectados | No: sacar esos productos. |
+| 409 | `INSUFFICIENT_STOCK` | No alcanza el stock. No dice cuál producto ni cuánto queda. | | Solo si el carrito cambia. |
+| 409 | `IDEMPOTENCY_CONFLICT` | La clave ya se usó con otro contenido. No nombra ningún pedido. | | No: usar una clave nueva si es otro pedido. |
+| 409 | `CONFLICT` | Una restricción de la base o un conflicto de versión que la lógica no previó. | | Una vez, con la misma clave. |
+| 413 | `PAYLOAD_TOO_LARGE` | El cuerpo supera `ceto.web.max-body-bytes` (16 KB por defecto). | | No. |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` distinto de `application/json`. | | No. |
+| 429 | `RATE_LIMITED` | La IP agotó sus intentos de checkout. | `Retry-After` | Sí, después de esa espera. |
+| 429 | `TOO_MANY_PENDING_ORDERS` | El teléfono ya tiene el máximo de pedidos `PAGO_PENDIENTE`. | | No: pagar o esperar que venzan. |
+| 500 | `INTERNAL_ERROR` | Falla inesperada. Se registra con el `requestId`. | | Una vez, con la misma clave. |
+| 503 | `SERVICE_BUSY` | Otro checkout del mismo teléfono está en curso, un lock tardó más de 5 s o no hay conexión a la base. | `Retry-After` | Sí, con la misma clave. |
+
+Los errores que Tomcat genera **antes** de la cadena de filtros (línea de
+petición inválida, 414, 431) no tienen esta forma ni las cabeceras de seguridad:
+los atiende `/error` de Boot sin detalles (D-20261007-23).
+
+Goldens, uno por código que el endpoint de checkout puede devolver:
+
+Golden: `backend/src/test/resources/contract/error-validation.json`
+
+```json
+{
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "The request is invalid.",
+  "instance": "/api/checkout/orders",
+  "code": "VALIDATION_ERROR",
+  "reason": "MISSING_IDEMPOTENCY_KEY"
+}
+```
+
+Golden: `backend/src/test/resources/contract/error-malformed.json`
+
+```json
+{
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "The request could not be read.",
+  "instance": "/api/checkout/orders",
+  "code": "MALFORMED_REQUEST"
+}
+```
+
+Golden: `backend/src/test/resources/contract/error-product-unavailable.json`
+
+```json
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "One or more products are not available.",
+  "instance": "/api/checkout/orders",
+  "code": "PRODUCT_UNAVAILABLE",
+  "productIds": [2]
+}
+```
+
+Golden: `backend/src/test/resources/contract/error-insufficient-stock.json`
+
+```json
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "There is not enough stock for this order.",
+  "instance": "/api/checkout/orders",
+  "code": "INSUFFICIENT_STOCK"
+}
+```
+
+Golden: `backend/src/test/resources/contract/error-idempotency-conflict.json`
+
+```json
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "The idempotency key was already used for a different order.",
+  "instance": "/api/checkout/orders",
+  "code": "IDEMPOTENCY_CONFLICT"
+}
+```
+
+Golden: `backend/src/test/resources/contract/error-payload-too-large.json`
+
+```json
+{
+  "title": "Content Too Large",
+  "status": 413,
+  "detail": "The request is too large.",
+  "instance": "/api/checkout/orders",
+  "code": "PAYLOAD_TOO_LARGE"
+}
+```
+
+Golden: `backend/src/test/resources/contract/error-unsupported-media-type.json`
+
+```json
+{
+  "title": "Unsupported Media Type",
+  "status": 415,
+  "detail": "The content type is not supported.",
+  "instance": "/api/checkout/orders",
+  "code": "UNSUPPORTED_MEDIA_TYPE"
+}
+```
+
+Golden: `backend/src/test/resources/contract/error-rate-limited.json`
+
+```json
+{
+  "title": "Too Many Requests",
+  "status": 429,
+  "detail": "Too many requests. Try again later.",
+  "instance": "/api/checkout/orders",
+  "code": "RATE_LIMITED"
+}
+```
+
+Golden: `backend/src/test/resources/contract/error-too-many-pending.json`
+
+```json
+{
+  "title": "Too Many Requests",
+  "status": 429,
+  "detail": "Too many pending orders for this phone.",
+  "instance": "/api/checkout/orders",
+  "code": "TOO_MANY_PENDING_ORDERS"
+}
+```
+
+Golden: `backend/src/test/resources/contract/error-service-busy.json`
+
+```json
+{
+  "title": "Service Unavailable",
+  "status": 503,
+  "detail": "The service is busy. Try again shortly.",
+  "instance": "/api/checkout/orders",
+  "code": "SERVICE_BUSY"
+}
+```
+
+### Valores de `reason`
+
+Solo acompaña a `VALIDATION_ERROR`. Si varias reglas fallan, se informa la
+primera en este orden: clave, nombre, teléfono, dirección, zona, líneas.
+
+| `reason` | Cuándo |
+|---|---|
+| `MISSING_IDEMPOTENCY_KEY` | `Idempotency-Key` ausente, de más de 64 caracteres o que no es un UUID. |
+| `BLANK_BUYER_NAME` | Sin `buyer` o nombre vacío. |
+| `BUYER_NAME_TOO_LONG` | Más de 120 caracteres. |
+| `INVALID_PHONE` | No es un celular válido, tiene letras, extensión o más de 64 caracteres. |
+| `BLANK_ADDRESS` | Dirección vacía. |
+| `ADDRESS_TOO_LONG` | Más de 500 caracteres. |
+| `INVALID_CHARACTERS` | Nombre o dirección con caracteres de control o de formato. |
+| `INVALID_ZONE` | Zona ausente o distinta de `CORDOBA_CAPITAL` y `RESTO_DEL_PAIS`. |
+| `EMPTY_CART` | Sin líneas. |
+| `TOO_MANY_LINES` | Más de 20 líneas (el tope absoluto del esquema es 50). |
+| `INVALID_LINE` | Línea nula o `productId` ausente, menor a 1 o mayor a 9007199254740991. |
+| `QUANTITY_BELOW_MIN` | Cantidad ausente o menor a 1. |
+| `QUANTITY_ABOVE_MAX` | Cantidad mayor a `maxQuantity` (30 por defecto; el esquema admite hasta 100). |
+| `DUPLICATE_PRODUCT_LINE` | El mismo `productId` en dos líneas. |
+| `ORDER_TOTAL_OUT_OF_RANGE` | El total calculado no entra en `NUMERIC(12,2)`. |
+
+Estos valores existen en el código pero **no** los devuelven las 3 rutas
+públicas (son del panel y del catálogo): `INVALID_COMBO_LINK`,
+`INVALID_PRICE_PAIR`, `INVALID_PRODUCT_NAME`, `STOCK_BELOW_RESERVED`,
+`INVALID_CANCEL_REASON`.
+
+En errores estructurales de Bean Validation `reason` aparece solo si el mensaje
+de la restricción es uno de los valores de la tabla; si no, el 400 va sin
+`reason`. Por ejemplo, un `id` inválido en `/api/store/products/{id}` es
+`VALIDATION_ERROR` sin `reason`.
+
+## Mensaje de WhatsApp
+
+El servidor no arma ni devuelve el link (D-20261006-02: no se usa la API de
+WhatsApp Business). El frontend lo construye con los campos de la respuesta 201
+o 200: `https://wa.me/<número de la clienta>?text=<texto url-encoded>`, donde el
+texto lleva `orderNumber`, las `lines` (`name`, `quantity`, `lineTotal`), el
+`total` y `zone`, y aclara "costo de envío a coordinar por WhatsApp"
+(D-20261006-03). El pedido ya está registrado cuando se abre WhatsApp: si no
+abre, la clienta lo ve igual en el panel. El texto del mensaje lo define la
+clienta; este documento no lo redacta.
+
+## Límites y abuso
+
+| Límite | Valor | Respuesta | Decisión |
+|---|---|---|---|
+| Intentos de checkout por IP | 10 de golpe y uno más cada 6 minutos (10 por hora). Solo cuenta el `POST`, antes de leer el cuerpo. Un cuerpo demasiado grande no gasta intento. | 429 `RATE_LIMITED` + `Retry-After` | D-20261007-17 |
+| Pedidos `PAGO_PENDIENTE` por teléfono | 3 (`ORDER_MAX_PENDING_PER_PHONE`, de 1 a 20). Un pendiente vencido que el job aún no canceló sigue contando. Pagado, cancelado y vencido liberan el cupo. | 429 `TOO_MANY_PENDING_ORDERS` | D-20261007-19 (propuesta, pendiente de OK de la clienta), D-20261007-24 |
+| Checkouts simultáneos del mismo teléfono | Uno. El lock por teléfono no espera: el segundo recibe 503 al instante y ningún pedido retiene una conexión esperando. | 503 `SERVICE_BUSY` + `Retry-After: 1` | D-20261008-01 |
+| Tabla del limitador por IP llena | Las IPs nuevas comparten un balde de desborde (100 de golpe, 100 por hora). | 429 `RATE_LIMITED` | D-20261007-25 |
+| Tamaño del cuerpo | 16 KB por defecto (1 KB a 256 KB) | 413 `PAYLOAD_TOO_LARGE` | |
+| Unidades por línea / líneas por pedido | 30 (1 a 100) / 20 | 400 `VALIDATION_ERROR` | D-20261007-13, D-20261007-05 |
+| Los `GET` de la tienda | Sin límite por IP | | D-20261007-22 |
+
+Un reintento de la misma clave que llega mientras el primer pedido todavía se
+está creando recibe 503 (`Retry-After: 1`); uno posterior recibe 200. Un
+reintento con un pedido ya creado nunca es 429, ni siquiera con el teléfono en
+el tope.
+
+### Riesgo residual
+
+Quien rota teléfonos e IPs puede reservar stock sin pagar hasta que vencen las
+reservas (48 h): se acepta (D-20261007-21, propuesta pendiente de OK de la
+clienta). Ante una ráfaga distribuida desde muchas IPs, las nuevas comparten el
+balde de desborde y pueden recibir 429 (D-20261007-25). La protección del stock
+es el tope por teléfono; la defensa contra ataques distribuidos es el límite en
+el borde (Caddy) o Turnstile, que son trabajo futuro.
+
+## Despliegue
+
+**El backend no debe publicarse sin Caddy adelante.** La aplicación no termina
+TLS, no agrega `Strict-Transport-Security`, y confía en `X-Forwarded-For` solo
+de los proxies que se le declaran. Solo Caddy publica puertos; el backend queda
+en la red interna de Docker Compose.
+
+| Requisito | Detalle |
+|---|---|
+| `TRUSTED_PROXIES` | **Obligatoria, sin valor por defecto**: si falta, la aplicación no arranca. Lista CIDR separada por comas, sin regex, con cada entrada dentro de rangos privados (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `fc00::/7`, `fe80::/10`, `::1/128`). Ejemplos válidos: `172.18.0.5/32`, `172.18.0.0/16`. Rechazados: `0.0.0.0/0`, `::/0`, `.*`, rangos públicos, entradas vacías. Preferir el `/32` o la subred de la red de Compose donde vive Caddy: confiar en `127.0.0.0/8` o `169.254.0.0/16` confía en todo el host o todo el enlace. Si el valor es incorrecto, todas las IPs parecen la del proxy y el límite por IP deja de distinguir compradoras. |
+| Caddy | Debe descartar el `X-Forwarded-For` que mande el cliente y fijar la IP real. No declarar `trusted_proxies` en Caddy salvo que haya otro proxy adelante, y verificar el despliegue con una petición con un `X-Forwarded-For` falso: no debe cambiar la IP que ve la aplicación. Agrega `Strict-Transport-Security` y es el lugar para un límite de borde. |
+| Variables `ORDER_*` | `ORDER_RESERVATION_HOURS` (48; 1 a 168), `ORDER_MAX_UNITS_PER_LINE` (30; 1 a 100), `ORDER_MAX_PENDING_PER_PHONE` (3; 1 a 20). Un valor fuera de rango detiene el arranque. |
+| Propiedades `ceto.web.*` | `max-body-bytes` (16384; 1024 a 262144), `storefront-max-products` (200; 1 a 500) y `checkout-rate-limit.{burst, refill-interval-seconds, max-tracked-clients, overflow-burst, overflow-refill-per-hour}`. Se cambian en `application.yml` o con variables de entorno en la forma canónica de Spring Boot (mayúsculas, puntos a guion bajo y sin guiones: `CETO_WEB_MAXBODYBYTES`). Todas se validan con mínimo y máximo. |
+| Pool de conexiones | 10 por instancia, 3 s de espera por una conexión; sin conexión, 503 `SERVICE_BUSY`. Postgres permite 100: no subir el pool sin revisar ese techo. |
+| `lock_timeout` | 5 s en cada conexión: una espera de lock más larga termina en 503 `SERVICE_BUSY` con `Retry-After: 5`. Las migraciones usan `SET LOCAL`. |
+| `idle_in_transaction_session_timeout` | 30 s en cada conexión: respaldo contra una transacción que retiene locks y dejó de hablar con la base. |
+| Cuerpo | Tope de 16 KB por defecto, verificado por `Content-Length` y contando los bytes del cuerpo chunked; Tomcat además limita lo que absorbe (`max-swallow-size` 64 KB, formularios iguales al tope de la aplicación). |
+| Arranque | Postgres 16, `ddl-auto: validate` y migraciones solo por Flyway. |
+
+Verificación previa a exponer: `./mvnw clean verify` en verde (compila,
+pruebas unitarias, integración con Postgres real y reglas de arquitectura).
+
+## Referencias
+
+- Goldens: `backend/src/test/resources/contract/*.json`, comparados por
+  `StorefrontHttpIT`, `CheckoutHttpIT`, `CheckoutErrorsHttpIT`, `RateLimitIT`,
+  `LockTimeoutIT`, `PoolExhaustionIT` y `BodySizeLimitHttpIT`.
+- Este documento se verifica con `ApiDocConsistencyTest`: cada bloque marcado
+  con `Golden:` es idéntico al archivo citado, todo golden está citado, todo
+  `code` del catálogo de errores y todo `reason` del código figuran acá.
+- Decisiones: `docs/DECISIONES.md`. Reglas duras y guardas: `CLAUDE.md` (§4
+  reglas 3 y 10, §5).
