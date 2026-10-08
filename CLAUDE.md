@@ -196,7 +196,12 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    `InventoryService.release` para lockear las filas de stock en orden de id
    DESCENDENTE (en vez de ascendente) hizo fallar la misma ráfaga en la
    iteración 0 con `40P01 deadlock detected` de Postgres; con el orden
-   ascendente restaurado el test pasa.
+   ascendente restaurado el test pasa. Al crear un pedido, ANTES de la fila
+   del pedido, se toma el advisory lock transaccional del teléfono de la
+   compradora (`OrderRepository.lockBuyerPhone`, `pg_advisory_xact_lock`) para
+   serializar el tope de pedidos pendientes por teléfono (regla 10). Orden
+   completo: advisory(teléfono), fila del pedido, filas de stock ascendentes;
+   solo la colocación toma ese lock, así que no cierra ciclos.
 4. **Ciclo de la reserva**: crear el pedido suma a `reserved`; pasar a
    pagado descuenta en firme (`on_hand −= n`, `reserved −= n`); cancelar o
    vencer libera (`reserved −= n`). Una reserva sin pago vence sola a las
@@ -321,6 +326,22 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     `sameKeyBurstOnTheLastUnitStillCreatesOneOrder`,
     `sameKeyBurstWithDifferentPayloadsKeepsTheWinnerAndRejectsTheOthers`,
     `sameKeyBurstWhoseWinnerRollsBackLeavesNoOrderAndDoesNotBurnTheKey`).
+    **Tope de pedidos pendientes por teléfono** (D-20261007-19,
+    `ceto.orders.max-pending-per-phone`, 3 por defecto, 1..20): un pedido nuevo
+    con 3 `PAGO_PENDIENTE` del mismo teléfono E.164 lanza
+    `TooManyPendingOrdersException` (429 `TOO_MANY_PENDING_ORDERS`, sin teléfono
+    ni cuenta) antes de reservar stock y de consumir `order_number_seq`. Orden:
+    lock del teléfono, segunda búsqueda por clave (un reintento con el pedido ya
+    creado es 200, nunca 429, aunque la compradora esté en el tope), conteo,
+    alta. Pagado, cancelado y vencido liberan el cupo. Pruebas:
+    `OrderPendingCapIT` (reglas secuenciales y el lock) y `OrderPendingCapBurstIT`
+    (10 claves distintas del mismo teléfono: exactamente 3 pedidos; evidencia por
+    mutación del 2026-10-07: sin la llamada a `lockBuyerPhone` fallaron las 10
+    iteraciones de `distinctKeysOfOnePhoneInABurstYieldExactlyTheCap`; sin la
+    segunda búsqueda falló `oneKeyRetriedInABurstBelowTheCapCreatesOneOrderAndNeverRejects`
+    5 de 5). Por HTTP: golden `contract/error-too-many-pending.json` y el
+    reintento en el tope sigue siendo 200 (`CheckoutErrorsHttpIT`). Los ITs que colocan muchos pedidos usan `BuyerFixtures.freshBuyer()`
+    (un teléfono por pedido), si no el tope y el lock los serializan.
 
 ### Checkout, WhatsApp y envío
 

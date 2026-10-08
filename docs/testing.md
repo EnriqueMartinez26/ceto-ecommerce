@@ -112,6 +112,31 @@ sobrevivientes nuevos ni mutantes sin cobertura.
 
 Cobertura de líneas (solo clases mutadas): 276/282 (98 %).
 
+### Nueva medición `services` (2026-10-07, rama `feat/http-s4a-pending-per-phone`)
+
+Se re-corrió `services` con el tope de pedidos pendientes por teléfono (S4a,
+`OrderPlacementService`: lock advisory, segunda búsqueda de la clave, conteo) y
+el `try/catch` de `reserve()` de S3b-1. La primera corrida dejó 3 mutantes
+sin matar en `OrderPlacementService` (2 sobrevivientes y 1 sin cobertura:
+`return` nulo del primer `replayOrNull` y de las dos ramas de la carrera
+perdida de la clave). Dejaron de ser equivalentes porque el lock por teléfono y
+la segunda búsqueda hacen que esas ramas ya no se alcancen por la ruta
+habitual. Se mataron con pruebas, sin aceptar equivalentes nuevos:
+`aReplayNeverWaitsForTheLockOfItsPhone` (el reintento no espera el lock del
+teléfono), `oneKeyAcrossManyPhonesInABurstCreatesOneOrderAndConflictsTheRest`
+(la misma clave desde teléfonos distintos pierde la carrera por la restricción
+única) y `aLostIdempotencyRaceWhoseWinnerHoldsTheSameRequestIsReplayed`
+(rama defensiva, con mocks).
+
+| Corrida | Paquete | Mutantes | Antes | Después |
+|---|---|---|---|---|
+| services | `orders.service` | 89 (+10) | 79 (100 %) | 89 (100 %) |
+| services | `inventory.service` | 29 | 29 (100 %) | 29 (100 %) |
+| services | `catalog.service` | 25 | 25 (100 %) | 25 (100 %) |
+| **Total** | | **143** | **133 (100 %)** | **143 (100 %)** |
+
+Cobertura de líneas (solo clases mutadas): 299/305 (98 %). Duración ~17 min.
+
 ### Mutantes equivalentes aceptados
 
 | Clase | Línea | Mutación | Por qué es equivalente |
