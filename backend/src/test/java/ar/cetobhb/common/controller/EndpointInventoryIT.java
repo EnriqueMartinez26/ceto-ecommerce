@@ -2,6 +2,7 @@ package ar.cetobhb.common.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 
 import ar.cetobhb.support.AbstractHttpIT;
 import jakarta.validation.Valid;
@@ -23,11 +24,13 @@ import java.util.Set;
 import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.autoconfigure.error.BasicErrorController;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.MethodParameter;
+import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -314,13 +317,17 @@ class EndpointInventoryIT extends AbstractHttpIT {
         assertThat(response.getContentType()).startsWith("application/problem+json");
     }
 
-    @Test
-    void aDirectRequestToTheBootErrorEndpointLeaksNothing() throws Exception {
-        MockHttpServletResponse response = send(get("/error").accept("application/json"));
+    /** A direct request is not an error dispatch: /error answers the standard 404, whatever the method or Accept. */
+    @ParameterizedTest
+    @CsvSource({"GET,application/json", "GET,text/html", "POST,application/json", "PUT,*/*", "DELETE,*/*",
+            "PATCH,*/*", "OPTIONS,*/*"})
+    void aDirectRequestToTheBootErrorEndpointIsTheStandard404(String method, String accept) throws Exception {
+        MockHttpServletResponse response = send(request(HttpMethod.valueOf(method), "/error").accept(accept));
 
-        String body = response.getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
-        // Reached directly (no container error attributes): a generic server error, never a trace or a message.
-        assertThat(response.getStatus()).isEqualTo(500);
-        assertThat(body).doesNotContain("trace", "exception", "message", "at ar.cetobhb");
+        assertThat(response.getStatus()).isEqualTo(404);
+        JsonNode body = JSON.readTree(response.getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(body.get("code").asString()).isEqualTo("NOT_FOUND");
+        assertThat(body.has("trace")).isFalse();
+        assertThat(response.getContentType()).startsWith("application/problem+json");
     }
 }

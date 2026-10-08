@@ -3,6 +3,7 @@ package ar.cetobhb.common.config;
 import ar.cetobhb.common.domain.TokenBucketLimiter;
 import ar.cetobhb.common.web.BodySizeLimitFilter;
 import ar.cetobhb.common.web.CheckoutRateLimitInterceptor;
+import ar.cetobhb.common.web.ErrorEndpointGuardInterceptor;
 import ar.cetobhb.common.web.ProblemResponses;
 import ar.cetobhb.common.web.RequestIdFilter;
 import ar.cetobhb.common.web.SecurityHeadersFilter;
@@ -134,9 +135,13 @@ public class WebConfig implements WebMvcConfigurer {
         return registration;
     }
 
-    /** Only the POST: the storefront GETs are not limited (D-20261007-22). */
+    /**
+     * The rate limit applies to the POST only: the storefront GETs are not limited (D-20261007-22). The guard keeps
+     * Boot's {@code /error} reachable only through a container error dispatch.
+     */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new CheckoutRateLimitInterceptor(checkoutLimiter)).addPathPatterns(CHECKOUT_PATH);
+        registry.addInterceptor(new ErrorEndpointGuardInterceptor()).addPathPatterns("/error");
     }
 }

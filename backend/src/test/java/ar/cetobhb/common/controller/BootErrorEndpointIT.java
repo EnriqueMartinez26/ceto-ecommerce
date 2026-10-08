@@ -6,12 +6,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ar.cetobhb.support.AbstractPostgresIT;
+import jakarta.servlet.DispatcherType;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * D-20261007-23: errors raised outside Spring MVC (Tomcat-level) render through Boot's {@code /error}. That body must
@@ -27,6 +29,14 @@ class BootErrorEndpointIT extends AbstractPostgresIT {
     @Autowired
     private Environment environment;
 
+    /** The container makes the ERROR dispatch to /error; a direct request is a 404 (EndpointInventoryIT). */
+    private static MockHttpServletRequestBuilder errorDispatch(MockHttpServletRequestBuilder request) {
+        return request.with(r -> {
+            r.setDispatcherType(DispatcherType.ERROR);
+            return r;
+        });
+    }
+
     @Test
     void errorDetailsAreExplicitlyDisabled() {
         assertThat(environment.getProperty("server.error.include-stacktrace")).isEqualTo("never");
@@ -37,7 +47,7 @@ class BootErrorEndpointIT extends AbstractPostgresIT {
 
     @Test
     void errorEndpointBodyHasNoTraceMessageOrExceptionName() throws Exception {
-        String body = mvc.perform(get("/error").accept(MediaType.APPLICATION_JSON)
+        String body = mvc.perform(errorDispatch(get("/error")).accept(MediaType.APPLICATION_JSON)
                         .requestAttr("jakarta.servlet.error.status_code", 500)
                         .requestAttr("jakarta.servlet.error.message", SECRET)
                         .requestAttr("jakarta.servlet.error.exception", new IllegalStateException(SECRET)))
@@ -51,7 +61,7 @@ class BootErrorEndpointIT extends AbstractPostgresIT {
 
     @Test
     void whitelabelHtmlBodyHasNoTraceMessageOrExceptionName() throws Exception {
-        String body = mvc.perform(get("/error").accept(MediaType.TEXT_HTML)
+        String body = mvc.perform(errorDispatch(get("/error")).accept(MediaType.TEXT_HTML)
                         .requestAttr("jakarta.servlet.error.status_code", 500)
                         .requestAttr("jakarta.servlet.error.message", SECRET)
                         .requestAttr("jakarta.servlet.error.exception", new IllegalStateException(SECRET)))

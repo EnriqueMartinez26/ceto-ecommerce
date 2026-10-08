@@ -487,7 +487,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   texto fijo, y `ApiExceptionHandlerTest` verifica la tabla completa sin filtrar
   mensajes; `ApiErrorCatalogTest` hace fallar el build si una subclase concreta de
   `DomainException` no tiene fila; `BootErrorEndpointIT` fija que el `/error` de
-  Boot no devuelve stack trace ni mensaje (D-20261007-23). Logs sin datos
+  Boot no devuelve stack trace ni mensaje (D-20261007-23). Un GET directo a
+  `/error` (sin despacho ERROR del contenedor) responde el 404 estandar
+  (`ErrorEndpointGuardInterceptor`, segun el spec; antes devolvia el 500
+  generico de Boot) y `ErrorDispatchServerIT` prueba que un error real del contenedor
+  sigue renderizando el cuerpo generico. Logs sin datos
   personales: nunca se loguea el mensaje de una excepción de framework,
   persistencia o Jackson (`SafeErrors` emite clases, SQLState y restricción;
   `SafeErrorsTest`), el logger de errores SQL de Hibernate 7
