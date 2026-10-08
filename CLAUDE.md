@@ -784,6 +784,30 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   BCrypt en ambos casos. Ningún hash se versiona: los tests usan una clave
   aleatoria por JVM (`AdminTestCredentials`) y `NoCommittedHashTest` revisa
   `backend/src` y los archivos de despliegue de la raíz.
+- **Errores y cabeceras de la cadena de admin.** Un 401 sin autenticar
+  (`UNAUTHENTICATED`), un 403 (`FORBIDDEN`, incluido un token CSRF ausente o
+  inválido, que cae en el mismo manejador de acceso denegado) y el 400 del
+  firewall (`MALFORMED_REQUEST`) son `application/problem+json` con texto fijo,
+  escritos por `ProblemResponses` desde `common.web.SecurityProblem`, la única
+  fuente de código y texto (`SecurityProblemTest`; el catálogo deriva las filas
+  y `ApiDocConsistencyTest` exige que estén en `docs/API.md` y que los tres
+  goldens `admin-error-*.json` estén citados). `AdminSecurityChainIT` fija los
+  tres cuerpos contra sus goldens (sin `instance`, que se compara aparte contra
+  la ruta pedida), que `X-Request-Id` es igual a `requestId`, que cada cabecera
+  de endurecimiento aparece una sola vez, `Cache-Control` con `no-store`, ningún
+  `Access-Control-Allow-Origin` ni `Strict-Transport-Security` (tampoco en
+  peticiones seguras: HSTS lo agrega Caddy; mutación 2026-10-08: sin
+  `headers.httpStrictTransportSecurity(disable)` falla) y que el cuerpo no repite
+  nada de lo que mandó el cliente. `SecurityFirewallVariantsIT` (Tomcat real)
+  fija que `;`, `//`, `/./` y `/../` son un 400 con ese cuerpo y las cabeceras;
+  una barra, contrabarra o NUL codificados los rechaza Tomcat antes de cualquier
+  filtro (sin cuerpo de problema, ya documentado en `docs/API.md`). El orden de
+  los filtros (id de petición, cabeceras, límite de cuerpo y recién después
+  Security) lo fija `SecurityFilterOrderIT`; mutación 2026-10-08: con Security
+  primero fallan ese test, 3 de `AdminSecurityChainIT` y 8 de
+  `SecurityFirewallVariantsIT`. M9 (cache de peticiones activada): fallan
+  `AdminAnonymousSessionIT`, porque el 401 anónimo abre
+  una sesión.
 - **Una sola cuenta: la de administración.** Contraseña con BCrypt o
   Argon2, login con rate limit y bloqueo temporal, sesión en cookie
   `HttpOnly` + `Secure` + `SameSite`. Nunca un token en `localStorage`.
