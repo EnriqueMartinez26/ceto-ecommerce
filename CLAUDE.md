@@ -220,11 +220,23 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    `Retry-After: 1`), así ningún pedido retiene una conexión del pool esperando.
    Orden completo: advisory(teléfono), fila del pedido, filas de stock
    ascendentes; solo la colocación toma ese lock y nunca espera por él, así que
-   no cierra ciclos. Las migraciones usan `SET LOCAL lock_timeout` (y
-   `statement_timeout`), nunca `SET` a secas: un `SET` de sesión se queda en la
-   conexión del pool y se filtra a los requests siguientes;
-   `MigrationTimeoutScanTest` recorre `db/migration` y falla ante cualquier
-   `SET [SESSION] lock_timeout|statement_timeout|idle_in_transaction_session_timeout`
+   no cierra ciclos. Las demás esperas de lock están acotadas: cada conexión del
+   pool arranca con `SET lock_timeout = '5s'` y
+   `SET idle_in_transaction_session_timeout = '30s'`
+   (`spring.datasource.hikari.connection-init-sql`; el segundo es el respaldo
+   contra una transacción que retiene locks y dejó de hablar con la base).
+   Vencido el `lock_timeout`, Postgres responde `55P03`, Spring lo traduce a
+   `CannotAcquireLockException` y la API contesta 503 `SERVICE_BUSY` con
+   `Retry-After: 5` sin dejar filas (`LockTimeoutIT`: fila de stock retenida por
+   otra transacción; un teléfono ocupado responde 503 al instante; un tick del
+   job de vencimiento tras un lock termina sin lanzar, corta el respaldo por
+   pedido en el primer timeout y reintenta en el siguiente). Una ruta
+   `JdbcTemplate` que tome locks recibe `UncategorizedSQLException`: el advice la
+   mapea a 503 por su SQLState `55P03`. Las migraciones usan
+   `SET LOCAL lock_timeout` (y `statement_timeout`), nunca `SET` a secas: un `SET`
+   de sesión se queda en la conexión del pool y se filtra a los requests
+   siguientes; `MigrationTimeoutScanTest` recorre `db/migration` y falla ante
+   cualquier `SET [SESSION] lock_timeout|statement_timeout|idle_in_transaction_session_timeout`
    sin `LOCAL`.
 4. **Ciclo de la reserva**: crear el pedido suma a `reserved`; pasar a
    pagado descuenta en firme (`on_hand −= n`, `reserved −= n`); cancelar o
@@ -543,13 +555,26 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   advice (no del recorrido HTTP completo), que ni una violación CHECK real
   provocada por un repositorio ni un valor rechazado por Jackson llegan al log,
   y que los cuatro loggers silenciados siguen apagados en la configuración
-  efectiva. Cada request lleva un id
+  efectiva. `PiiHttpPathIT` cubre el recorrido HTTP completo con nombre,
+  teléfono y dirección centinela: éxito (201 sin datos de la compradora),
+  validación, cuerpo malformado, una violación CHECK forzada (409) y un fallo de
+  base de datos que termina en 500 (un trigger cuyo mensaje lleva la fila); la
+  salida completa capturada nunca contiene un centinela (evidencia por
+  mutación: loggers de Hibernate/MVC en WARN y el advice logueando el mensaje
+  hacen fallar los tests). Cada request lleva un id
   generado en el servidor (`RequestIdFilter`; `X-Request-Id` entrante se ignora)
   y los filtros escriben errores con `ProblemResponses`. El parseo JSON es
   estricto (`JacksonConfigTest`: propiedad extra, `"2"` por `2`, clave
-  duplicada, profundidad > 8, strings y nombres largos). **[Guarda pendiente]**
-  el recorrido HTTP completo (éxito, validación, malformado, CHECK forzado y 500
-  por el endpoint real) en `PiiLoggingIT`, cambio `checkout-http` S5c.
+  duplicada, profundidad > 8, strings y nombres largos).
+- **Recursos acotados** (agotamiento de recursos): el pool de
+  Hikari tiene 10 conexiones y espera 3 s por una (`connection-timeout`); sin
+  conexión el request termina en 503 `SERVICE_BUSY` + `Retry-After`, escrituras
+  y lecturas, y el servicio se recupera al volver las conexiones
+  (`PoolExhaustionIT`, golden `contract/error-service-busy.json`; sin
+  `connection-timeout` fallan los 3 tests). Diez conexiones quedan muy por
+  debajo de los 100 de Postgres y los hilos de Tomcat de más esperan en el pool,
+  no en la base. `lock_timeout` de 5 s: regla 3 de §4. Flyway usa el mismo
+  DataSource, así que sus migraciones también corren con ese `lock_timeout`.
 - **Datos personales (Ley 25.326)**: se pide solo lo necesario; teléfono,
   dirección y email no van a los logs.
 
