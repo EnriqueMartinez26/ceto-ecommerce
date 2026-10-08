@@ -243,6 +243,30 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `AdminInventoryServiceAdjustIT`. Los caminos de stock no loguean nombres de
   producto ni datos de la compradora (`AdminStockPiiLoggingIT`; evidencia por
   mutación: imprimir los nombres en la vista lo hizo fallar).
+- **Catálogo de administración** (`AdminCatalogService`, solo servicio,
+  todavía sin rutas): crear un producto base crea en la misma transacción su
+  fila de stock en 0 y la fila `PRODUCT_CREATED`, así que la tienda lo muestra
+  `SOLD_OUT` sin error y `AVAILABLE` tras reponer; la creación vive en la
+  fachada y no en `CatalogService` porque `inventory` ya depende de `catalog`
+  (`AdminCatalogCreateBaseIT`, con un trigger de prueba que hace fallar el
+  insert del stock). Un combo no crea fila de stock, su disponible se deriva y
+  `CatalogRules.requireComboUnits` acota las unidades de 2 a 100
+  (`AdminCatalogCreateComboIT`, `CatalogRulesTest`). La edición escribe una fila
+  por grupo de campos que cambió (`PRICE_CHANGED` con precio antes y después,
+  `PRODUCT_UPDATED`); una edición sin cambios no escribe filas ni sube la
+  versión, una versión vieja no cambia nada, y activar o desactivar escribe
+  una fila solo si cambió el estado; desactivar no toca los pedidos pendientes,
+  que siguen pagables y cancelables, y un pedido conserva su precio tras una
+  edición (`AdminCatalogUpdateIT`). Listar incluye inactivos y combos con su
+  tope (`AdminCatalogListIT`, `AdminCatalogServiceCapsTest`). Si falla el
+  insert de auditoría vuelve atrás el cambio. Evidencia por mutación
+  (2026-10-08): quitar la creación de la fila de stock hizo fallar tres tests
+  de `AdminCatalogCreateBaseIT`; quitar las llamadas a `record` hizo fallar seis
+  tests de las tres clases de creación y edición; auditar siempre el precio o
+  la activación, aunque no cambien, hizo fallar tres de `AdminCatalogUpdateIT`.
+  Los caminos de catálogo no loguean nombres de producto ni datos de la
+  compradora (`AdminCatalogPiiLoggingIT`; evidencia por mutación: imprimir el
+  nombre al crear lo hizo fallar).
 
 ### Frontend (`frontend/`)
 
