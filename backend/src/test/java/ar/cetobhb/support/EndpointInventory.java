@@ -28,8 +28,16 @@ public final class EndpointInventory {
     public static final Set<String> PUBLIC_ROUTES = Set.of(
             "GET /api/store/products", "GET /api/store/products/{id}", "POST /api/checkout/orders");
 
-    /** Every MVC handler of the administration area. Empty until the first admin controller exists. */
-    public static final Set<String> ADMIN_ROUTES = Set.of();
+    /** Every MVC handler of the administration area (login and logout are Security filters, asserted by behaviour). */
+    public static final Set<String> ADMIN_ROUTES = Set.of("GET /api/admin/session");
+
+    /**
+     * The administration routes an anonymous client may call, and only with the method listed: the session bootstrap.
+     * {@code POST /api/admin/login} is anonymous-allowed too, but it is a Security filter route (no MVC handler), so it
+     * is recorded here in words and asserted by behaviour in {@code AdminLoginServerIT}. Every other method on these
+     * paths, and every other admin route, is 401 for an anonymous client.
+     */
+    public static final Set<String> ANONYMOUS_ADMIN_ROUTES = Set.of("GET /api/admin/session");
 
     public static final String ADMIN_PREFIX = "/api/admin/";
 
@@ -86,19 +94,28 @@ public final class EndpointInventory {
         return unexpected;
     }
 
-    /** The routes outside the public set: what must answer 401 to an anonymous client. */
+    /** The routes outside the public set (the anonymous-allowed bootstrap included). */
     public static List<Mapped> nonPublicRoutes(ApplicationContext context) {
         return mvcRoutes(context).stream().filter(m -> !PUBLIC_ROUTES.contains(m.route())).toList();
+    }
+
+    /** The routes an anonymous client must never reach at all: non-public and not in {@link #ANONYMOUS_ADMIN_ROUTES}. */
+    public static List<Mapped> protectedRoutes(ApplicationContext context) {
+        return nonPublicRoutes(context).stream().filter(m -> !ANONYMOUS_ADMIN_ROUTES.contains(m.route())).toList();
     }
 
     /**
      * An anonymous call to a mapped route: path variables become {@code 1}, and a mutating method carries a VALID
      * CSRF token, so the only thing that can stop it is the missing login. A mapping with no method answers every
-     * method, so it is tried with all the ones a client could use, HEAD and OPTIONS included.
+     * method, so it is tried with all the ones a client could use, HEAD and OPTIONS included. For an
+     * anonymous-allowed route the calls are the methods it does NOT allow.
      */
     public static List<MockHttpServletRequestBuilder> anonymousCalls(Mapped route) {
         String path = concretePath(route);
-        List<String> methods = route.method().equals("ANY") ? ANY_METHODS : List.of(route.method());
+        // An anonymous-allowed route keeps its one allowed method; every OTHER method on it must be a 401.
+        List<String> methods = ANONYMOUS_ADMIN_ROUTES.contains(route.route())
+                ? ANY_METHODS.stream().filter(method -> !method.equals(route.method())).toList()
+                : route.method().equals("ANY") ? ANY_METHODS : List.of(route.method());
         List<MockHttpServletRequestBuilder> calls = new ArrayList<>();
         for (String method : methods) {
             MockHttpServletRequestBuilder call = MockMvcRequestBuilders.request(HttpMethod.valueOf(method), path);

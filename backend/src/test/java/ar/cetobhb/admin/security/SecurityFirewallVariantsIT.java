@@ -84,8 +84,10 @@ class SecurityFirewallVariantsIT extends AbstractAdminProbeServerIT {
     }
 
     @ParameterizedTest(name = "{0}")
-    @ValueSource(strings = {"/api/admin/orders/", "/api/admin/orders/1", "/api/admin/session", "/api/admin/login"})
+    @ValueSource(strings = {"/api/admin/orders/", "/api/admin/orders/1", "/api/admin/login", "/api/admin/logout"})
     void aWellFormedAnonymousAdminPathIsA401EvenWhenNothingIsMappedThere(String path) throws Exception {
+        // GET /api/admin/session is the one exception (the bootstrap): AdminSessionPermitServerIT pins it and every
+        // other spelling and method of that path.
         Raw reply = raw("GET", path, null, null);
 
         assertThat(reply.status()).isEqualTo(401);

@@ -56,6 +56,20 @@ class EndpointInventoryTest {
                 .map(EndpointInventoryTest::methodOf)).containsExactly("PUT");
     }
 
+    @Test
+    void anAnonymousAllowedRouteIsCalledWithEveryMethodExceptTheOneItAllows() {
+        List<String> methods = EndpointInventory.anonymousCalls(route("GET", "/api/admin/session")).stream()
+                .map(EndpointInventoryTest::methodOf).toList();
+
+        assertThat(methods).containsExactly("POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
+    }
+
+    @Test
+    void theAnonymousAllowanceIsExactlyTheSessionGetAndIsPartOfTheAdminRoutes() {
+        assertThat(EndpointInventory.ANONYMOUS_ADMIN_ROUTES).containsExactly("GET /api/admin/session");
+        assertThat(EndpointInventory.ADMIN_ROUTES).containsAll(EndpointInventory.ANONYMOUS_ADMIN_ROUTES);
+    }
+
     private static String methodOf(MockHttpServletRequestBuilder call) {
         return call.buildRequest(new MockServletContext()).getMethod();
     }

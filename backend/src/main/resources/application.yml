@@ -16,6 +16,16 @@ server:
       host-header: ""
       port-header: ""
       protocol-header-https-value: ""
+  servlet:
+    session:
+      # The administration session cookie (REQ-AUTH-04): never readable by scripts, never sent over plain HTTP, never sent
+      # cross-site, and the id travels only in the cookie (no URL rewriting). Pinned by the real-server ITs; a startup guard
+      # that refuses any other value arrives with the session-policy slice.
+      tracking-modes: cookie
+      cookie:
+        http-only: true
+        secure: true
+        same-site: strict
   error:
     # Errors raised outside Spring MVC render through Boot's /error (D-20261007-23): never expose details.
     include-stacktrace: never

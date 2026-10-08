@@ -12,10 +12,10 @@ import org.junit.jupiter.api.Test;
 class SecurityProblemTest {
 
     @Test
-    void theEnumHasExactlyTheRowsOfSlice3() {
-        // INVALID_CREDENTIALS arrives with the login slice and LOGIN_RATE_LIMITED with the limiter slice.
+    void theEnumHasExactlyTheRowsOfTheLoginSlice() {
+        // LOGIN_RATE_LIMITED arrives with the limiter slice.
         assertThat(SecurityProblem.values()).containsExactly(SecurityProblem.UNAUTHENTICATED,
-                SecurityProblem.FORBIDDEN, SecurityProblem.REJECTED_REQUEST);
+                SecurityProblem.INVALID_CREDENTIALS, SecurityProblem.FORBIDDEN, SecurityProblem.REJECTED_REQUEST);
     }
 
     @Test
@@ -43,6 +43,9 @@ class SecurityProblemTest {
     void theStatusesAndCodesAreTheDocumentedOnes() {
         assertThat(SecurityProblem.UNAUTHENTICATED.status().value()).isEqualTo(401);
         assertThat(SecurityProblem.UNAUTHENTICATED.code()).isEqualTo("UNAUTHENTICATED");
+        assertThat(SecurityProblem.INVALID_CREDENTIALS.status().value()).isEqualTo(401);
+        assertThat(SecurityProblem.INVALID_CREDENTIALS.code()).isEqualTo("INVALID_CREDENTIALS");
+        assertThat(SecurityProblem.INVALID_CREDENTIALS.detail()).isEqualTo("The credentials are not valid.");
         assertThat(SecurityProblem.FORBIDDEN.status().value()).isEqualTo(403);
         assertThat(SecurityProblem.FORBIDDEN.code()).isEqualTo("FORBIDDEN");
         assertThat(SecurityProblem.REJECTED_REQUEST.status().value()).isEqualTo(400);

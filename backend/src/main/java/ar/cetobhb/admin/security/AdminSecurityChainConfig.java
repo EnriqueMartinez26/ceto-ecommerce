@@ -2,15 +2,20 @@ package ar.cetobhb.admin.security;
 
 import ar.cetobhb.common.web.ProblemResponses;
 import ar.cetobhb.common.web.SecurityProblem;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.authentication.AuthenticationFailureHandler;
+import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 /**
@@ -35,12 +40,15 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 @Configuration(proxyBeanMethods = false)
 class AdminSecurityChainConfig {
 
+    static final String LOGIN_PATH = "/api/admin/login";
+
     /** The admin chain is consulted first. */
     static final int ADMIN_CHAIN_ORDER = 0;
 
     @Bean
     @Order(ADMIN_CHAIN_ORDER)
-    SecurityFilterChain adminSecurityFilterChain(HttpSecurity http, ProblemResponses problems) throws Exception {
+    SecurityFilterChain adminSecurityFilterChain(HttpSecurity http, ProblemResponses problems,
+            @Qualifier("adminAuthenticationManager") AuthenticationManager authenticationManager) throws Exception {
         // The default repository keeps the token in the HTTP session, which would open a server session (and set a
         // JSESSIONID) for every anonymous POST. The cookie repository keeps the token on the client and the server
         // stateless until someone logs in. The cookie is readable by the SPA (that is how it echoes it back), Secure
@@ -49,8 +57,16 @@ class AdminSecurityChainConfig {
         csrfTokens.setCookieCustomizer(cookie -> cookie.secure(true).sameSite("Strict").path("/"));
         return http
                 .securityMatcher("/api/admin/**")
-                .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
+                // The one anonymous allowance: GET /api/admin/session, matched exactly (method and path as written).
+                .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers(new SessionBootstrapRequest()).permitAll()
+                        .anyRequest().authenticated())
                 .csrf(csrf -> csrf.spa().csrfTokenRepository(csrfTokens))
+                // The login is a form post (UsernamePasswordAuthenticationFilter reads two parameters): 204 on success,
+                // the one neutral 401 on every failure. The manager refuses over-long fields before anything is hashed.
+                .authenticationManager(new LoginFieldCapAuthenticationManager(authenticationManager))
+                .formLogin(login -> login.loginPage(LOGIN_PATH).loginProcessingUrl(LOGIN_PATH)
+                        .successHandler(loggedIn()).failureHandler(invalidCredentials(problems)))
                 // CsrfFilter reports a missing or invalid token to this same access-denied handler.
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(unauthenticated(problems))
@@ -81,6 +97,15 @@ class AdminSecurityChainConfig {
                 .httpBasic(basic -> basic.disable())
                 .headers(headers -> headers.httpStrictTransportSecurity(hsts -> hsts.disable()))
                 .build();
+    }
+
+    private static AuthenticationSuccessHandler loggedIn() {
+        return (request, response, authentication) -> response.setStatus(HttpStatus.NO_CONTENT.value());
+    }
+
+    /** Every authentication failure is the same response: unknown account, wrong password, over-long field. */
+    private static AuthenticationFailureHandler invalidCredentials(ProblemResponses problems) {
+        return (request, response, exception) -> problems.write(request, response, SecurityProblem.INVALID_CREDENTIALS);
     }
 
     private static AuthenticationEntryPoint unauthenticated(ProblemResponses problems) {

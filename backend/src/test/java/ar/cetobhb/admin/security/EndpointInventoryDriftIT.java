@@ -35,7 +35,7 @@ class EndpointInventoryDriftIT extends AbstractAdminProbeHttpIT {
 
     @Test
     void everyGeneratedAnonymousCallToAMappedNonPublicRouteIsThe401Golden() throws Exception {
-        List<EndpointInventory.Mapped> routes = EndpointInventory.nonPublicRoutes(context);
+        List<EndpointInventory.Mapped> routes = EndpointInventory.protectedRoutes(context);
         assertThat(routes).as("the fixture maps routes").hasSize(11);
 
         for (EndpointInventory.Mapped route : routes) {
@@ -58,7 +58,7 @@ class EndpointInventoryDriftIT extends AbstractAdminProbeHttpIT {
      */
     @Test
     void aRouteWithNoDeclaredMethodGetsA401ForEveryMethodIncludingHeadAndOptions() throws Exception {
-        EndpointInventory.Mapped any = EndpointInventory.nonPublicRoutes(context).stream()
+        EndpointInventory.Mapped any = EndpointInventory.protectedRoutes(context).stream()
                 .filter(route -> route.method().equals("ANY")).findFirst().orElseThrow();
 
         List<MockHttpServletRequestBuilder> calls = EndpointInventory.anonymousCalls(any);

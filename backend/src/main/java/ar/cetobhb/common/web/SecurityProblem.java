@@ -13,6 +13,12 @@ public enum SecurityProblem {
     /** No authenticated principal (an anonymous request, or a session that ended). */
     UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Authentication is required."),
 
+    /**
+     * The login failed: unknown account, wrong password or a field the application refuses to check. One row for all of
+     * them, so the response never tells which.
+     */
+    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "The credentials are not valid."),
+
     /** An authenticated principal that may not do this, including a missing or invalid CSRF token. */
     FORBIDDEN(HttpStatus.FORBIDDEN, "FORBIDDEN", "The request is not allowed."),
 
