@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import ar.cetobhb.orders.config.OrderProperties;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -67,8 +68,8 @@ class OrderExpiryJobTest {
 
         job.run();
 
-        assertThat(messages(Level.INFO)).containsExactly(
-                "Expiry tick: 2 unpaid orders expired and their reservations released, 0 failed");
+        assertThat(messages(Level.INFO)).singleElement(InstanceOfAssertFactories.STRING).matches(
+                "Expiry tick: 2 unpaid orders expired and their reservations released, 0 failed \\(took \\d+ ms\\)");
         assertThat(messages(Level.WARN)).isEmpty();
     }
 
@@ -79,8 +80,8 @@ class OrderExpiryJobTest {
         job.run();
 
         assertThat(messages(Level.WARN)).containsExactly("Expiry tick ended early: 2 orders failed in the last batch");
-        assertThat(messages(Level.INFO)).containsExactly(
-                "Expiry tick: 0 unpaid orders expired and their reservations released, 2 failed");
+        assertThat(messages(Level.INFO)).singleElement(InstanceOfAssertFactories.STRING).matches(
+                "Expiry tick: 0 unpaid orders expired and their reservations released, 2 failed \\(took \\d+ ms\\)");
     }
 
     @Test
@@ -90,7 +91,7 @@ class OrderExpiryJobTest {
 
         job.run();
 
-        assertThat(messages(Level.INFO)).containsExactly(
-                "Expiry tick: 7 unpaid orders expired and their reservations released, 2 failed");
+        assertThat(messages(Level.INFO)).singleElement(InstanceOfAssertFactories.STRING).matches(
+                "Expiry tick: 7 unpaid orders expired and their reservations released, 2 failed \\(took \\d+ ms\\)");
     }
 }

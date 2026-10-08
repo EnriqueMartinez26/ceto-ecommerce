@@ -1,6 +1,7 @@
 package ar.cetobhb.orders.service;
 
 import ar.cetobhb.orders.config.OrderProperties;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -20,7 +21,9 @@ import org.springframework.stereotype.Component;
  * (1 to 100, default 10). A tick therefore drains up to batch size times that cap, and a backlog beyond it waits
  * for the next tick, so one tick cannot run unbounded. A batch with failed orders (the service fell back and some
  * orders still failed) ends the tick right away with one WARN: those orders are retried by every iteration, and
- * the next tick tries again.
+ * the next tick tries again. The service itself stops its per-order fallback at the first lock timeout, so a tick
+ * behind a held lock costs about two lock waits, not one per due order. A tick that expired or failed something logs
+ * how long it took.
  *
  * <p>Failures: a batch that fails is rolled back by the service and retried order by order; the orders that still
  * fail are logged by the service at ERROR (id, exception class, SQLState) and stay PAGO_PENDIENTE, the rest
@@ -45,6 +48,7 @@ public class OrderExpiryJob {
 
     @Scheduled(fixedDelayString = "${ceto.orders.expiry.fixed-delay-ms}")
     public void run() {
+        long startedNanos = System.nanoTime();
         int expired = 0;
         int failed = 0;
         for (int batch = 0; batch < maxBatchesPerTick; batch++) {
@@ -62,8 +66,9 @@ public class OrderExpiryJob {
             }
         }
         if (expired > 0 || failed > 0) {
-            LOG.info("Expiry tick: {} unpaid orders expired and their reservations released, {} failed", expired,
-                    failed);
+            // Duration only (no order data): a tick stuck behind a lock shows up here as a multiple of lock_timeout.
+            LOG.info("Expiry tick: {} unpaid orders expired and their reservations released, {} failed (took {} ms)",
+                    expired, failed, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos));
         }
     }
 }

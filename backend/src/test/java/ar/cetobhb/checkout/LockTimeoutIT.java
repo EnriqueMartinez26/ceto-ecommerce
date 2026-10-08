@@ -205,23 +205,30 @@ class LockTimeoutIT extends AbstractHttpIT {
     /**
      * The expiry job is a scheduled task: a lock timeout in its batch is a RuntimeException that falls back to one
      * order at a time, and a timeout there is logged and counted as failed. The tick ends normally, the order stays
-     * pending (its reservation is untouched) and the next tick expires it.
+     * pending (its reservation is untouched) and the next tick expires it. The per-order fallback stops at the first
+     * lock timeout: with several orders behind the same locked stock row the tick costs about two lock waits (the
+     * batch and the first order), not one per order.
      */
     @Test
-    void anExpiryTickBehindAStockRowLockEndsWithoutThrowingAndRetriesNextTick() throws Exception {
-        placement.placeOrder(new PlaceOrderCommand(UUID.randomUUID().toString(), freshBuyer(),
-                List.of(new PlaceOrderCommand.Line(productId, 1))));
+    void anExpiryTickBehindAStockRowLockEndsAfterTwoLockWaitsWithoutThrowingAndRetriesNextTick() throws Exception {
+        for (int i = 0; i < 4; i++) {
+            placement.placeOrder(new PlaceOrderCommand(UUID.randomUUID().toString(), freshBuyer(),
+                    List.of(new PlaceOrderCommand.Line(productId, 1))));
+        }
         clock.set(MutableClock.START.plus(Duration.ofHours(49)));
         OrderExpiryJob job = new OrderExpiryJob(lifecycle,
                 new OrderProperties(48, 10, 20, 3, new OrderProperties.Expiry(10, 60_000, 10)));
 
         try (LockHolder holder = holdStockRow()) {
+            long started = System.nanoTime();
             job.run();
+            // Batch wait + first order wait = about 10 s; one wait per order would be 25 s (and outlive the holder).
+            assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(17));
         }
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM orders WHERE status = 'PAGO_PENDIENTE'", Long.class))
-                .isEqualTo(1L);
-        assertThat(reserved()).isEqualTo(1L);
+                .isEqualTo(4L);
+        assertThat(reserved()).isEqualTo(4L);
 
         job.run();
 

@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class OrderLifecycleService {
 
     private static final Logger LOG = LoggerFactory.getLogger(OrderLifecycleService.class);
+    /** Postgres SQLState of lock_not_available (a lock_timeout expiring). */
+    private static final String LOCK_NOT_AVAILABLE = "55P03";
 
     private final OrderRepository orders;
     private final InventoryService inventory;
@@ -108,7 +111,9 @@ public class OrderLifecycleService {
      * meantime is skipped, not a failure), then that order's snapshot demand is released, ascending by base product
      * id. The global lock order holds in both paths. An order that still fails is logged at ERROR with its id, the
      * exception class and the SQLState when the cause chain has one (no PII), collected in {@link ExpiryResult#failedOrderIds()} and left PAGO_PENDIENTE until it is repaired by
-     * hand; the others advance. A failed order keeps occupying a slot of the oldest-due window, so as many corrupt
+     * hand; the others advance. The fallback stops at the FIRST lock timeout (lock_timeout, SQLState 55P03): a lock
+     * held that long would make every following order wait the full timeout too; the orders not tried stay pending
+     * for the next tick. A failed order keeps occupying a slot of the oldest-due window, so as many corrupt
      * orders as the batch size would starve the younger ones: that is what the ERROR log is for.
      *
      * <p>This method is deliberately NOT {@code @Transactional}: the batch and each order run in their own
@@ -165,9 +170,22 @@ public class OrderLifecycleService {
                             sql.getSQLState());
                 }
                 failed.add(id);
+                if (isLockTimeout(failure, sql)) {
+                    // A lock is held for longer than the wait: the orders behind it would each wait the full
+                    // lock_timeout too and the tick would run for minutes. The next tick retries them.
+                    LOG.warn("Expiry fallback stopped at the first lock timeout; the remaining orders wait for the"
+                            + " next tick");
+                    break;
+                }
             }
         }
         return new ExpiryResult(expired, failed);
+    }
+
+    private static boolean isLockTimeout(RuntimeException failure, SQLException sql) {
+        return failure instanceof PessimisticLockingFailureException
+                || failure instanceof jakarta.persistence.LockTimeoutException
+                || (sql != null && LOCK_NOT_AVAILABLE.equals(sql.getSQLState()));
     }
 
     private static SQLException sqlCause(Throwable failure) {
