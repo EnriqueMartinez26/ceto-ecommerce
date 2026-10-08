@@ -10,6 +10,7 @@ import ar.cetobhb.common.web.SafeErrors;
 import ar.cetobhb.orders.domain.CheckoutInProgressException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -30,6 +31,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.method.ParameterErrors;
@@ -112,6 +114,10 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         if (causedByBodyLimit(ex)) {
             return respondLogging(ApiErrorCatalog.PAYLOAD_TOO_LARGE, ex, request, new HttpHeaders());
         }
+        if (ex instanceof UncategorizedSQLException && hasSqlState(ex, LOCK_NOT_AVAILABLE)) {
+            // A raw JdbcTemplate lock timeout (verification U-10): Spring cannot classify it, the SQLState can.
+            return handleServiceBusy(ex, request);
+        }
         return respondLogging(ApiErrorCatalog.INTERNAL, ex, request, new HttpHeaders());
     }
 
@@ -140,6 +146,25 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     /** Upper bound on the cause chain walked, so a pathological or cyclic chain cannot loop. */
     private static final int MAX_CAUSE_DEPTH = 16;
+
+    /** Postgres SQLState of lock_not_available: a {@code lock_timeout} expired. */
+    private static final String LOCK_NOT_AVAILABLE = "55P03";
+
+    /** True when some SQLException in the cause chain (or its next-exception chain) carries this SQLState. */
+    private static boolean hasSqlState(Throwable ex, String sqlState) {
+        Throwable cause = ex;
+        for (int depth = 0; cause != null && depth < MAX_CAUSE_DEPTH; depth++) {
+            if (cause instanceof SQLException sql) {
+                for (SQLException next = sql; next != null; next = next.getNextException()) {
+                    if (sqlState.equals(next.getSQLState())) {
+                        return true;
+                    }
+                }
+            }
+            cause = cause.getCause() == cause ? null : cause.getCause();
+        }
+        return false;
+    }
 
     /** True when the request body limit stopped the read somewhere in the cause chain (Jackson wraps IO errors). */
     private static boolean causedByBodyLimit(Throwable ex) {

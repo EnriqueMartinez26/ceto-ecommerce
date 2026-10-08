@@ -179,9 +179,9 @@ class ApiExceptionHandlerTest {
     }
 
     /**
-     * Known gap (verification U-10): a raw JdbcTemplate lock timeout surfaces as {@code UncategorizedSQLException},
-     * which is not in this family and therefore answers 500. Repositories that need 503 must go through JPA or
-     * translate the SQLState themselves.
+     * Exceptions Spring classifies as lock, pool or timeout failures. A raw JdbcTemplate lock timeout is the exception
+     * (verification U-10): it surfaces as {@code UncategorizedSQLException} and the advice maps it by its SQLState
+     * 55P03 (see the dedicated tests below).
      */
     static Stream<Throwable> serviceBusyFamily() {
         return Stream.of(new CannotAcquireLockException(SECRET), new PessimisticLockingFailureException(SECRET),
@@ -202,6 +202,40 @@ class ApiExceptionHandlerTest {
         result.andExpect(status().isServiceUnavailable())
                 .andExpect(header().string("Retry-After", "5"))
                 .andExpect(jsonPath("$.code").value("SERVICE_BUSY"));
+        assertThat(body(result)).doesNotContain("+54");
+    }
+
+    @Test
+    void aRawJdbcLockTimeoutIsServiceBusyToo() throws Exception {
+        // verification U-10: JdbcTemplate surfaces SQLState 55P03 (lock_not_available) as UncategorizedSQLException.
+        THROWN.set(new org.springframework.jdbc.UncategorizedSQLException("task", "select " + SECRET,
+                new java.sql.SQLException(SECRET, "55P03")));
+
+        ResultActions result = mvc.perform(get("/boom"));
+
+        result.andExpect(status().isServiceUnavailable())
+                .andExpect(header().string("Retry-After", "5"))
+                .andExpect(jsonPath("$.code").value("SERVICE_BUSY"));
+        assertThat(body(result)).doesNotContain("+54", "55P03", "select");
+    }
+
+    @Test
+    void aRawJdbcFailureWithTheLockTimeoutStateDeepInTheCauseChainIsServiceBusy() throws Exception {
+        THROWN.set(new org.springframework.jdbc.UncategorizedSQLException("task", "sql",
+                new java.sql.SQLException("wrapper", "XX000", new java.sql.SQLException(SECRET, "55P03"))));
+
+        mvc.perform(get("/boom")).andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("SERVICE_BUSY"));
+    }
+
+    @Test
+    void aRawJdbcFailureWithAnyOtherStateStaysAnInternalError() throws Exception {
+        THROWN.set(new org.springframework.jdbc.UncategorizedSQLException("task", "sql",
+                new java.sql.SQLException(SECRET, "40P01")));
+
+        ResultActions result = mvc.perform(get("/boom"));
+
+        result.andExpect(status().isInternalServerError()).andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
         assertThat(body(result)).doesNotContain("+54");
     }
 
