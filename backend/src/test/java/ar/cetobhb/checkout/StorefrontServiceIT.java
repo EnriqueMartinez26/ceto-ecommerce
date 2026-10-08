@@ -11,6 +11,7 @@ import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.checkout.domain.StockStatus;
 import ar.cetobhb.checkout.domain.StorefrontProduct;
 import ar.cetobhb.checkout.service.StorefrontService;
+import ar.cetobhb.common.config.WebProperties;
 import ar.cetobhb.inventory.domain.BaseUnitDemand;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.config.OrderProperties;
@@ -137,19 +138,11 @@ class StorefrontServiceIT extends AbstractPostgresIT {
         baseWithStock("A", 1);
         baseWithStock("B", 1);
         baseWithStock("C", 1);
-        StorefrontService capped = new StorefrontService(catalog, inventory, orderProperties, 2);
+        WebProperties twoProducts = new WebProperties(2, "127.0.0.1/32",
+                new WebProperties.CheckoutRateLimit(10, 360, 10_000));
+        StorefrontService capped = new StorefrontService(catalog, inventory, orderProperties, twoProducts);
 
         assertThat(capped.listProducts()).hasSize(2);
         assertThat(storefront.listProducts()).hasSize(3);
-    }
-
-    @Test
-    void failsClosedOnAnOutOfRangeCap() {
-        assertThatThrownBy(() -> new StorefrontService(catalog, inventory, orderProperties, 0))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new StorefrontService(catalog, inventory, orderProperties, 501))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThat(new StorefrontService(catalog, inventory, orderProperties, 1)).isNotNull();
-        assertThat(new StorefrontService(catalog, inventory, orderProperties, 500)).isNotNull();
     }
 }

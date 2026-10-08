@@ -1,4 +1,11 @@
 server:
+  # The container resolves the client address (RemoteIpValve), the application only reads getRemoteAddr().
+  # The "framework" strategy must not be used here (REQ-ABU-03). Only peers matching internal-proxies are believed.
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      remote-ip-header: X-Forwarded-For
+      internal-proxies: "${ceto.web.trusted-proxies}"
   error:
     # Errors raised outside Spring MVC render through Boot's /error (D-20261007-23): never expose details.
     include-stacktrace: never
@@ -48,5 +55,14 @@ ceto:
       fixed-delay-ms: 60000
       max-batches-per-tick: 10
   web:
-    # Largest storefront list (1..500, validated by StorefrontService); WebProperties takes it over in a later slice.
+    # Largest storefront list (WebProperties: 1..500).
     storefront-max-products: 200
+    # Peers allowed to set the client address through X-Forwarded-For (Tomcat internal-proxies: a CIDR list when it
+    # contains "/", otherwise one full-match regex). REQUIRED, no default: unset stops the startup, and a value that
+    # would trust a public address is rejected by WebProperties (D-20261007-17, verification U-6).
+    trusted-proxies: ${TRUSTED_PROXIES}
+    # POST /api/checkout/orders: 10 attempts at once, then one more every 6 minutes (10 per hour).
+    checkout-rate-limit:
+      burst: 10
+      refill-interval-seconds: 360
+      max-tracked-clients: 10000

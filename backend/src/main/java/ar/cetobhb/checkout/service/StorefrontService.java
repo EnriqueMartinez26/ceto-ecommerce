@@ -4,13 +4,13 @@ import ar.cetobhb.catalog.domain.ProductView;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.checkout.domain.StockStatus;
 import ar.cetobhb.checkout.domain.StorefrontProduct;
+import ar.cetobhb.common.config.WebProperties;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.config.OrderProperties;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,25 +22,18 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class StorefrontService {
 
-    private static final int MIN_PRODUCTS = 1;
-    private static final int MAX_PRODUCTS = 500;
-
     private final CatalogService catalog;
     private final InventoryService inventory;
     private final int maxQuantity;
     private final int maxProducts;
 
-    /** Fail-closed: a cap outside 1..500 stops the startup instead of serving an unbounded or empty list. */
+    /** The list cap comes from {@link WebProperties}, which rejects a value outside 1..500 at startup. */
     public StorefrontService(CatalogService catalog, InventoryService inventory, OrderProperties orders,
-            @Value("${ceto.web.storefront-max-products}") int maxProducts) {
-        if (maxProducts < MIN_PRODUCTS || maxProducts > MAX_PRODUCTS) {
-            throw new IllegalArgumentException(
-                    "ceto.web.storefront-max-products must be between " + MIN_PRODUCTS + " and " + MAX_PRODUCTS);
-        }
+            WebProperties web) {
         this.catalog = catalog;
         this.inventory = inventory;
         this.maxQuantity = orders.maxUnitsPerLine();
-        this.maxProducts = maxProducts;
+        this.maxProducts = web.storefrontMaxProducts();
     }
 
     /** Visible products by id ascending, at most the configured cap. */
