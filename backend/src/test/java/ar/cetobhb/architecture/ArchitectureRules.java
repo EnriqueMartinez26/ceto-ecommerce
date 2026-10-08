@@ -1,6 +1,7 @@
 package ar.cetobhb.architecture;
 
 import static com.tngtech.archunit.core.domain.JavaAccess.Predicates.target;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.belongToAnyOf;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.type;
 import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.name;
@@ -19,6 +20,8 @@ import com.tngtech.archunit.core.domain.JavaAnnotation;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaField;
 import com.tngtech.archunit.core.domain.JavaModifier;
+import com.tngtech.archunit.core.domain.JavaParameterizedType;
+import com.tngtech.archunit.core.domain.JavaType;
 import com.tngtech.archunit.core.domain.JavaParameter;
 import com.tngtech.archunit.core.domain.JavaConstructorCall;
 import com.tngtech.archunit.core.domain.JavaMethod;
@@ -37,11 +40,17 @@ import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.RequestEntity;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -216,8 +225,16 @@ final class ArchitectureRules {
             })
             .as("a feature's ..repository.. is accessed only by the same feature's ..service..");
 
-    private static final String[] WEB_API_PACKAGES = {
-            "jakarta.servlet..", "org.springframework.web..", "org.springframework.http.."};
+    /**
+     * INBOUND web: what a request handler touches. Outbound clients ({@code org.springframework.web.client},
+     * {@code org.springframework.http.client}, {@code HttpHeaders}, {@code MediaType}) stay allowed so a future payment
+     * or mail adapter is not blocked by a rule about the inbound side.
+     */
+    private static final String[] INBOUND_WEB_PACKAGES = {
+            "jakarta.servlet..", "org.springframework.web.bind..", "org.springframework.web.context.request..",
+            "org.springframework.web.servlet..", "org.springframework.web.multipart..",
+            "org.springframework.web.server..", "org.springframework.web.filter..", "org.springframework.web.method..",
+            "org.springframework.http.server..", "org.springframework.boot.web..", "org.springframework.boot.webmvc.."};
 
     /**
      * Controllers and advice live in {@code ..controller..} packages (AD-H1), so the HTTP surface is found in one kind
@@ -229,13 +246,19 @@ final class ArchitectureRules {
             .as("@Controller, @RestController and @(Rest)ControllerAdvice classes reside in ..controller.. packages");
 
     /**
-     * Services and domain classes know nothing of HTTP: no servlet API, no Spring web or http types. The translation
-     * from HTTP to a core call and back is the controller's job.
+     * Feature services and domain classes know nothing of INBOUND HTTP: no servlet API, no Spring MVC/web binding, no
+     * Boot web or webmvc types, no ResponseEntity/HttpStatus/ProblemDetail/RequestEntity. The translation from HTTP
+     * to a core call and back is the controller's job. Only feature-layer packages count: a package that merely
+     * ends in {@code service} or {@code domain} below a {@code web} package (e.g. {@code common.web.service}) is web
+     * code, not a feature layer. Outbound clients are allowed (see {@link #INBOUND_WEB_PACKAGES}).
      */
     static final ArchRule SERVICES_AND_DOMAIN_ARE_WEB_FREE = noClasses()
-            .that().resideInAnyPackage(SERVICES, DOMAIN)
-            .should().dependOnClassesThat().resideInAnyPackage(WEB_API_PACKAGES)
-            .as("..service.. and ..domain.. classes must not depend on the servlet API or on Spring web/http types");
+            .that().resideInAnyPackage(SERVICES, DOMAIN).and().resideOutsideOfPackage("..web..")
+            .should().dependOnClassesThat().resideInAnyPackage(INBOUND_WEB_PACKAGES)
+            .orShould().dependOnClassesThat(belongToAnyOf(ResponseEntity.class, RequestEntity.class, HttpStatus.class,
+                    ProblemDetail.class))
+            .as("..service.. and ..domain.. classes must not depend on the servlet API or on inbound Spring web/http"
+                    + " types");
 
     /**
      * Same-origin by design (D-20261007-14, REQ-HRD-04): no {@code @CrossOrigin}, no use of Spring's CORS types and no
@@ -245,9 +268,14 @@ final class ArchitectureRules {
             .of(noClasses().should().dependOnClassesThat().haveFullyQualifiedName(CrossOrigin.class.getName())
                     .orShould().dependOnClassesThat().resideInAPackage("org.springframework.web.cors..")
                     .orShould().dependOnClassesThat().haveFullyQualifiedName(
-                            "org.springframework.web.servlet.config.annotation.CorsRegistry"))
+                            "org.springframework.web.filter.CorsFilter")
+                    .orShould().dependOnClassesThat().haveFullyQualifiedName(
+                            "org.springframework.web.servlet.config.annotation.CorsRegistry")
+                    .orShould().dependOnClassesThat().haveFullyQualifiedName(
+                            "org.springframework.web.servlet.config.annotation.CorsRegistration"))
             .and(noMethods().should().haveName("addCorsMappings"))
-            .as("no @CrossOrigin, no CORS configuration types, no addCorsMappings");
+            .as("no @CrossOrigin, no CORS configuration types (CorsFilter, CorsRegistry, CorsRegistration), no"
+                    + " addCorsMappings");
 
     /**
      * Annotated controllers are the only way to expose an endpoint: functional endpoints ({@code RouterFunction},
@@ -259,7 +287,7 @@ final class ArchitectureRules {
                     "org.springframework.web.servlet.function..", "org.springframework.web.reactive.function.server..")
             .as("no functional endpoints: no RouterFunction, HandlerFunction or ServerResponse");
 
-    private static final Set<String> NUMERIC_TYPES =Set.of("byte", "short", "int", "long", "float", "double",
+    private static final Set<String> NUMERIC_TYPES = Set.of("byte", "short", "int", "long", "float", "double",
             "java.lang.Byte", "java.lang.Short", "java.lang.Integer", "java.lang.Long", "java.lang.Float",
             "java.lang.Double", "java.math.BigDecimal", "java.math.BigInteger");
     private static final String BV = "jakarta.validation.constraints.";
@@ -271,56 +299,110 @@ final class ArchitectureRules {
     private static final Set<String> LENGTH_BOUNDS = Set.of(BV + "Size", "org.hibernate.validator.constraints.Length");
     /** Packages whose classes are not request DTOs: they are not walked for fields. */
     private static final List<String> FOREIGN_PACKAGES = List.of("java.", "javax.", "jakarta.", "org.", "com.", "tools.");
+    private static final Set<String> VALIDATED = Set.of("jakarta.validation.Valid",
+            "org.springframework.validation.annotation.Validated");
 
     /**
-     * Everything a client controls must be bounded (CLAUDE.md section 5, REQ-HRD-05): every numeric handler parameter
-     * and every numeric component of a {@code @RequestBody} type (walked through nested DTOs and collections) declares
-     * a minimum and a maximum; every string or collection declares {@code @Size(max)}. Un-annotated simple parameters
-     * of a handler are query parameters and count too.
+     * Everything a client controls must be bounded and validated (CLAUDE.md section 5, REQ-HRD-05).
+     *
+     * <ul>
+     * <li>Every numeric input declares a minimum and a maximum; every string, collection, map or array declares
+     * {@code @Size(max)}. Inputs are handler parameters (un-annotated simple parameters are query parameters and
+     * count), the {@code @RequestBody} parameter ITSELF (top-level {@code List<Dto>}, {@code Map}, {@code String},
+     * {@code Long}), and the members of every body, {@code @ModelAttribute} or un-annotated application-type
+     * parameter, walked through nested types, generic arguments and arrays. {@code Optional<X>} is treated as X.</li>
+     * <li>{@code @Valid} (or {@code @Validated}) is REQUIRED on the body parameter, on every model object, and on
+     * each walked member that is a DTO or a collection of DTOs. For a collection of DTOs the annotation must sit on
+     * the member itself ({@code @Valid List<Line>}), not on the element type ({@code List<@Valid Line>}): ArchUnit
+     * does not model annotations on type arguments, and the member form cascades the same way.</li>
+     * <li>A DTO is an application class with instance fields; enums, interfaces and annotations are never walked, so
+     * an enum with fields is not mistaken for an input.</li>
+     * </ul>
+     *
+     * <p>Known gap: the ELEMENTS of a collection ({@code List<@Size(max = 10) String>}) are not checked; no collection
+     * of simple values is accepted from a client today, and the Spring-side check in {@code EndpointInventoryIT}
+     * documents the same gap.
      */
     static final ArchRule REQUEST_INPUTS_ARE_BOUNDED = methods()
             .that().areMetaAnnotatedWith(RequestMapping.class)
             .should(new ArchCondition<JavaMethod>("have every client-controlled input bounded (numbers with min and"
-                    + " max, strings and collections with @Size(max))") {
+                    + " max, strings, collections, maps and arrays with @Size(max)) and every body, model object and"
+                    + " nested DTO validated with @Valid") {
                 @Override
                 public void check(JavaMethod handler, ConditionEvents events) {
                     for (JavaParameter parameter : handler.getParameters()) {
                         String where = handler.getFullName() + " parameter " + parameter.getIndex();
-                        if (hasAnnotation(parameter.getAnnotations(), RequestBody.class.getName())) {
-                            walkBody(parameter.getRawType(), where, new HashSet<>(), handler, events);
-                        } else if (isInput(parameter.getRawType())) {
-                            report(unboundedReason(parameter.getRawType(), parameter.getAnnotations()), where,
-                                    handler, events);
+                        JavaClass type = effective(parameter.getType());
+                        boolean body = hasAnnotation(parameter.getAnnotations(), RequestBody.class.getName());
+                        if (body && !isValidated(parameter.getAnnotations())) {
+                            report("is a @RequestBody and lacks @Valid", where, handler, events);
+                        }
+                        if (isInput(type)) {
+                            report(unboundedReason(type, parameter.getAnnotations()), where, handler, events);
+                        } else if (isDto(type) && !body && !isValidated(parameter.getAnnotations())) {
+                            report("is a model object and lacks @Valid", where, handler, events);
+                        }
+                        if (body || isDto(type)) {
+                            walk(parameter.getType(), where, new HashSet<>(), handler, events);
                         }
                     }
                 }
             });
 
-    private static void walkBody(JavaClass type, String path, Set<String> seen, JavaMethod handler,
+    private static void walk(JavaType root, String path, Set<String> seen, JavaMethod handler,
             ConditionEvents events) {
-        if (FOREIGN_PACKAGES.stream().anyMatch(type.getName()::startsWith) || type.isPrimitive()
-                || !seen.add(type.getName())) {
-            return;
-        }
-        for (JavaField field : type.getFields()) {
-            if (field.getModifiers().contains(JavaModifier.STATIC)) {
+        for (JavaClass type : dtosIn(root)) {
+            if (!seen.add(type.getName())) {
                 continue;
             }
-            String fieldPath = path + " -> " + type.getSimpleName() + "." + field.getName();
-            if (isInput(field.getRawType())) {
-                report(unboundedReason(field.getRawType(), field.getAnnotations()), fieldPath, handler, events);
-            }
-            if (!NUMERIC_TYPES.contains(field.getRawType().getName())) {
-                for (JavaClass involved : field.getType().getAllInvolvedRawTypes()) {
-                    walkBody(involved, fieldPath, seen, handler, events);
+            for (JavaField field : type.getAllFields()) {
+                if (field.getModifiers().contains(JavaModifier.STATIC)) {
+                    continue;
+                }
+                String fieldPath = path + " -> " + type.getSimpleName() + "." + field.getName();
+                JavaClass fieldType = effective(field.getType());
+                if (isInput(fieldType)) {
+                    report(unboundedReason(fieldType, field.getAnnotations()), fieldPath, handler, events);
+                }
+                if (!dtosIn(field.getType()).isEmpty()) {
+                    if (!isValidated(field.getAnnotations())) {
+                        report("is a nested DTO or a collection of DTOs and lacks @Valid", fieldPath, handler, events);
+                    }
+                    walk(field.getType(), fieldPath, seen, handler, events);
                 }
             }
         }
     }
 
+    /** The erasure of a type, looking through {@code Optional<X>} to X. */
+    private static JavaClass effective(JavaType type) {
+        if (type instanceof JavaParameterizedType parameterized && parameterized.toErasure().isEquivalentTo(Optional.class)
+                && parameterized.getActualTypeArguments().size() == 1) {
+            return parameterized.getActualTypeArguments().get(0).toErasure();
+        }
+        return type.toErasure();
+    }
+
+    /** The DTO classes a type is made of: itself, its generic arguments and its array component. */
+    private static List<JavaClass> dtosIn(JavaType type) {
+        return type.getAllInvolvedRawTypes().stream()
+                .map(involved -> involved.isArray() ? involved.getBaseComponentType() : involved)
+                .filter(ArchitectureRules::isDto).distinct().toList();
+    }
+
+    private static boolean isDto(JavaClass type) {
+        return FOREIGN_PACKAGES.stream().noneMatch(type.getName()::startsWith) && !type.isPrimitive()
+                && !type.isEnum() && !type.isInterface() && !type.isAnnotation()
+                && type.getAllFields().stream().anyMatch(field -> !field.getModifiers().contains(JavaModifier.STATIC));
+    }
+
     private static boolean isInput(JavaClass type) {
-        return NUMERIC_TYPES.contains(type.getName()) || type.isEquivalentTo(String.class)
-                || type.isAssignableTo(Collection.class);
+        return NUMERIC_TYPES.contains(type.getName()) || type.isEquivalentTo(String.class) || type.isArray()
+                || type.isAssignableTo(Collection.class) || type.isAssignableTo(Map.class);
+    }
+
+    private static boolean isValidated(Set<? extends JavaAnnotation<?>> annotations) {
+        return annotations.stream().anyMatch(a -> VALIDATED.contains(a.getRawType().getName()));
     }
 
     /** What is missing on an input, or null when it is bounded. */
@@ -335,7 +417,7 @@ final class ArchitectureRules {
         }
         boolean sized = annotations.stream().anyMatch(a -> LENGTH_BOUNDS.contains(a.getRawType().getName())
                 && a.tryGetExplicitlyDeclaredProperty("max").isPresent());
-        return sized ? null : "is a string or collection and lacks @Size(max = ...)";
+        return sized ? null : "is a string, collection, map or array and lacks @Size(max = ...)";
     }
 
     private static void report(String reason, String where, JavaMethod handler, ConditionEvents events) {

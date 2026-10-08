@@ -10,6 +10,7 @@ import com.tngtech.archunit.lang.ArchRule;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -200,6 +201,74 @@ class ArchitectureRulesTest {
                         .contains("lacks a maximum", "lacks a minimum", "lacks a minimum and a maximum",
                                 "lacks @Size(max = ...)")
                         .doesNotContain("UnboundedBody.sizedList is", "Nested.boundedInNested is"));
+    }
+
+    /** The violation lines of a rule on a fixture package: one entry per reported violation. */
+    private static List<String> violations(ArchRule rule, String fixture) {
+        try {
+            rule.check(fixtures(fixture));
+        } catch (AssertionError expected) {
+            return expected.getMessage().lines().toList();
+        }
+        throw new AssertionError("expected " + rule.getDescription() + " to fail on " + fixture);
+    }
+
+    private static void assertViolation(List<String> lines, String where, String reason) {
+        assertThat(lines).as("a violation about '%s' that %s", where, reason)
+                .anyMatch(line -> line.contains(where) && line.contains(reason));
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            ".topLevelListInput(|lacks @Size(max = ...)",
+            ".topLevelMapInput(|lacks @Size(max = ...)",
+            ".rawStringInput(|lacks @Size(max = ...)",
+            ".rawLongInput(|lacks a minimum and a maximum",
+            ".arrayInput(|lacks @Size(max = ...)",
+            ".mapInput(|lacks @Size(max = ...)",
+            ".optionalNumberInput(|lacks a minimum and a maximum",
+            ".optionalTextInput(|lacks @Size(max = ...)",
+            "ModelInput.modelName|lacks @Size(max = ...)",
+            "PlainInput.plainCount|lacks a minimum and a maximum",
+            ".unvalidatedBodyInput(|is a @RequestBody and lacks @Valid",
+            ".unvalidatedModelInput(|is a model object and lacks @Valid",
+            "Holder.unvalidatedMember |is a nested DTO or a collection of DTOs and lacks @Valid",
+            "Holder.unvalidatedMembers |is a nested DTO or a collection of DTOs and lacks @Valid"})
+    void inputsRuleFailsOnHiddenContainersOptionalsModelObjectsAndMissingValid(String where, String reason) {
+        assertViolation(violations(ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED, "unbounded"), where, reason);
+    }
+
+    @Test
+    void inputsRuleIgnoresValidatedBoundedMembersAndEnumsWithFields() {
+        List<String> lines = violations(ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED, "unbounded");
+
+        assertThat(lines).noneMatch(line -> line.contains("Kind.wireValue"))
+                .noneMatch(line -> line.contains("Holder.validatedMember"))
+                .noneMatch(line -> line.contains(".plainObjectInput(") && line.contains("lacks @Valid"))
+                .noneMatch(line -> line.contains(".modelAttributeInput(") && line.contains("lacks @Valid"))
+                .noneMatch(line -> line.contains("Item.count") || line.contains("Item.label"));
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "BootWebAwareService|org.springframework.boot.web.server.WebServer",
+            "BootWebAwareService|org.springframework.boot.webmvc.autoconfigure.error.BasicErrorController"})
+    void webFreeRuleFailsOnBootWebTypes(String where, String type) {
+        assertViolation(violations(ArchitectureRules.SERVICES_AND_DOMAIN_ARE_WEB_FREE, "webfree"), where, type);
+    }
+
+    @Test
+    void webFreeRuleOnlyAppliesToFeatureLayerPackagesNotToServicePackagesUnderWeb() {
+        assertThatCode(() -> ArchitectureRules.SERVICES_AND_DOMAIN_ARE_WEB_FREE.check(fixtures("webexempt")))
+                .doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "CorsTypes|org.springframework.web.filter.CorsFilter",
+            "CorsTypes|org.springframework.web.servlet.config.annotation.CorsRegistration"})
+    void crossOriginRuleNamesTheCorsFilterAndTheCorsRegistration(String where, String type) {
+        assertViolation(violations(ArchitectureRules.NO_CROSS_ORIGIN, "crossorigin"), where, type);
     }
 
     @Test

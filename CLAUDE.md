@@ -99,13 +99,20 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `archfixtures`, fuera del paquete escaneado por Spring) que cada regla
   falla ante una violación. Reglas de la capa HTTP en el mismo lugar:
   `WEB_TYPES_ONLY_IN_CONTROLLER_PACKAGES` (controllers y advice solo en
-  `..controller..`), `SERVICES_AND_DOMAIN_ARE_WEB_FREE` (sin servlet, Spring
-  web ni http en `..service..`/`..domain..`), `NO_CROSS_ORIGIN` (ni
-  `@CrossOrigin`, ni tipos CORS, ni `addCorsMappings`) y
-  `REQUEST_INPUTS_ARE_BOUNDED` (sección 5). `EndpointInventoryIT` fija el
+  `..controller..`), `SERVICES_AND_DOMAIN_ARE_WEB_FREE` (sin web ENTRANTE en
+  `..service..`/`..domain..` de una funcionalidad: servlet, `web.bind`,
+  `web.servlet`, `boot.web`/`boot.webmvc`, `ResponseEntity`/`HttpStatus`/
+  `ProblemDetail`/`RequestEntity`; los clientes salientes como `RestClient` se
+  permiten y un paquete `service` bajo `..web..` no cuenta), `NO_CROSS_ORIGIN`
+  (ni `@CrossOrigin`, ni `CorsFilter`/`CorsRegistry`/`CorsRegistration`/tipos
+  `web.cors`, ni `addCorsMappings`), `NO_FUNCTIONAL_ENDPOINTS` (ni
+  `RouterFunction` ni `ServerResponse`) y `REQUEST_INPUTS_ARE_BOUNDED`
+  (sección 5). `EndpointInventoryIT` fija el
   inventario: las 3 rutas públicas más `ANY /error` de `BasicErrorController`
-  (permitido por tipo de handler, no por ruta), sin mapeos de recursos ni
-  actuator, y todo otro camino es el 404 estándar; no hay `CorsFilter`. La regla de capas ya no usa `allowEmptyShould` ni
+  (permitido por tipo de handler, no por ruta), todos los `HandlerMapping` por
+  clase (los de URL, welcome page y `RouterFunctionMapping` vacíos), sin
+  `RouterFunction`, sin mapeos de recursos ni actuator, y todo otro camino es
+  el 404 estándar; no hay `CorsFilter`. La regla de capas ya no usa `allowEmptyShould` ni
   capas opcionales porque existen controllers (`StorefrontController`): si un
   renombre o movimiento deja una capa vacía, el build falla
   (`layeringRuleFailsWhenNoLayerHasAnyClassSoARenameCannotEmptyIt`) y los
@@ -460,10 +467,19 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   alcanzable. Las propiedades de `ceto.orders.*` ya cumplen la regla
   (`OrderPropertiesValidationTest`). Para la API la guarda es la regla ArchUnit
   `REQUEST_INPUTS_ARE_BOUNDED` (`ArchitectureTest`, con fixtures en
-  `ArchitectureRulesTest`): todo parámetro numérico de un handler y todo
-  componente numérico de un `@RequestBody` (recorrido por DTO anidados y
-  colecciones) declara mínimo y máximo, y todo `String` o colección
-  `@Size(max)`; un parámetro simple sin anotar cuenta como query param.
+  `ArchitectureRulesTest`): todo parámetro numérico de un handler, el propio
+  `@RequestBody` (también `List<Dto>`, `Map`, `String`, `Long`) y todo
+  componente numérico de un body, `@ModelAttribute` u objeto de la app sin
+  anotar (recorrido por DTO anidados, genéricos y arrays; `Optional<X>` cuenta
+  como X) declara mínimo y máximo, y todo `String`, colección, mapa o array
+  `@Size(max)`; un parámetro simple sin anotar cuenta como query param. Además
+  exige `@Valid` en el body, en cada objeto modelo y en cada miembro que sea un
+  DTO o una colección de DTOs; en una colección va sobre el miembro
+  (`@Valid List<Line>`), no sobre el elemento. Los enums no se recorren.
+  Hueco conocido: los elementos de una colección (`List<@Size String>`) no se
+  verifican; hoy no se acepta ninguna colección de valores simples.
+  `EndpointInventoryIT` repite la comprobación desde el lado Spring sobre los
+  handlers realmente registrados.
 - **Entrada hostil**: el texto libre que se publica (reseñas, nombre corto,
   productos) rechaza caracteres de control y se escapa al renderizar.
   Imágenes por magic bytes, con tope de bytes y de píxeles; nunca SVG.

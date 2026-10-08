@@ -1,5 +1,6 @@
 package archfixtures.ar.cetobhb.unbounded.controller;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -45,12 +46,12 @@ public class UnboundedController {
     }
 
     @PostMapping("/body")
-    public String body(@RequestBody UnboundedBody body) {
+    public String body(@RequestBody @Valid UnboundedBody body) {
         return "x";
     }
 
-    public record UnboundedBody(Integer unboundedQuantity, String unsizedText, List<Nested> unsizedList,
-            @Size(max = 5) List<Nested> sizedList) {
+    public record UnboundedBody(Integer unboundedQuantity, String unsizedText, @Valid List<Nested> unsizedList,
+            @Valid @Size(max = 5) List<Nested> sizedList) {
     }
 
     public record Nested(@Min(0) @Max(9) int boundedInNested, java.math.BigDecimal unboundedPrice) {
