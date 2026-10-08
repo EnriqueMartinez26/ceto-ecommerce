@@ -64,7 +64,7 @@ class AdminCatalogPiiLoggingIT extends AbstractPostgresIT {
                 List.of(new PlaceOrderCommand.Line(base, 1))));
         admin.createCombo(data(PRODUCT + " combo", "250.00"), base, 2);
 
-        long version = admin.list().get(0).version();
+        long version = admin.list().rows().get(0).version();
         admin.update(base, version, new ProductEditData(PRODUCT + " 2", new BigDecimal("120.00"), null));
         assertThatThrownBy(() -> admin.update(base, version, new ProductEditData(PRODUCT, new BigDecimal("1.00"), null)))
                 .isInstanceOf(StaleProductVersionException.class);

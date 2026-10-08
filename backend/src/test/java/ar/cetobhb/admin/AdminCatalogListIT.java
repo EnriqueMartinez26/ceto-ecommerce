@@ -24,7 +24,7 @@ class AdminCatalogListIT extends AbstractPostgresIT {
         admin.deactivate(alfa);
         admin.deactivate(combo);
 
-        List<ProductAdminView> list = admin.list();
+        List<ProductAdminView> list = admin.list().rows();
 
         assertThat(list).extracting(ProductAdminView::id).containsExactly(zeta, alfa, combo);
         assertThat(list).extracting(ProductAdminView::active).containsExactly(true, false, false);

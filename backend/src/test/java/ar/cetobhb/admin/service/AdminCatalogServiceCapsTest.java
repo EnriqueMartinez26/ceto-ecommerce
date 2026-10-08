@@ -11,18 +11,18 @@ import ar.cetobhb.inventory.service.InventoryService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** The configured product cap reaches the catalog read: the facade never asks for more rows than allowed. */
+/** The configured product cap reaches the catalog read: the facade asks for exactly one row more than the cap, to detect truncation. */
 class AdminCatalogServiceCapsTest {
 
     @Test
-    void theListAsksTheCatalogForAtMostTheConfiguredProductCap() {
+    void theListAsksTheCatalogForTheConfiguredProductCapPlusOne() {
         CatalogService catalog = mock(CatalogService.class);
-        when(catalog.listAll(37)).thenReturn(List.of());
+        when(catalog.listAll(38)).thenReturn(List.of());
         AdminCatalogService admin = new AdminCatalogService(catalog, mock(InventoryService.class),
                 mock(AdminAuditService.class), new AdminProperties(37, 11));
 
-        assertThat(admin.list()).isEmpty();
+        assertThat(admin.list().rows()).isEmpty();
 
-        verify(catalog).listAll(37);
+        verify(catalog).listAll(38);
     }
 }

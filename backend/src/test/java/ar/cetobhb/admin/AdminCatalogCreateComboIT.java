@@ -60,7 +60,7 @@ class AdminCatalogCreateComboIT extends AbstractPostgresIT {
         assertThat(combo.comboBaseProductId()).isEqualTo(base);
         assertThat(combo.comboBaseUnits()).isEqualTo(3);
         assertThat(count("inventory_stock")).isEqualTo(stockRows);
-        assertThat(adminInventory.stockView()).filteredOn(e -> e.productId() == combo.id())
+        assertThat(adminInventory.stockView().rows()).filteredOn(e -> e.productId() == combo.id())
                 .singleElement().satisfies(entry -> assertThat(entry.available()).isEqualTo(3L));
         assertThat(storefront.product(combo.id()).availability()).isEqualTo(StockStatus.AVAILABLE);
         Map<String, Object> row = jdbc.queryForMap("SELECT * FROM admin_audit_log WHERE entity_id = ?"

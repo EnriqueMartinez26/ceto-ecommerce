@@ -3,6 +3,7 @@ package ar.cetobhb.admin.service;
 import ar.cetobhb.admin.config.AdminProperties;
 import ar.cetobhb.admin.domain.AuditAction;
 import ar.cetobhb.admin.domain.AuditEntry;
+import ar.cetobhb.admin.domain.CappedList;
 import ar.cetobhb.catalog.domain.NewProduct;
 import ar.cetobhb.catalog.domain.ProductAdminView;
 import ar.cetobhb.catalog.domain.ProductChange;
@@ -10,7 +11,6 @@ import ar.cetobhb.catalog.domain.ProductEditData;
 import ar.cetobhb.catalog.domain.ProductSnapshot;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.service.InventoryService;
-import java.util.List;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,10 +39,14 @@ public class AdminCatalogService {
         this.properties = properties;
     }
 
-    /** Every product, active or not, by id ascending, at most {@code ceto.admin.max-listed-products}. */
+    /**
+     * Every product, active or not, by id ascending, at most {@code ceto.admin.max-listed-products}; {@code truncated}
+     * says whether more existed (the catalog is asked for one row more than the cap).
+     */
     @Transactional(readOnly = true)
-    public List<ProductAdminView> list() {
-        return catalog.listAll(properties.maxListedProducts());
+    public CappedList<ProductAdminView> list() {
+        int cap = properties.maxListedProducts();
+        return CappedList.fromFetchOfCapPlusOne(catalog.listAll(cap + 1), cap);
     }
 
     /**
