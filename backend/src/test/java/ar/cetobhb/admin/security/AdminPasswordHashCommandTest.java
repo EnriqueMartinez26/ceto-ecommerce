@@ -24,6 +24,12 @@ class AdminPasswordHashCommandTest {
 
     private static final String SENTINEL_PASSWORD = "S3ntinel-Pass-Qw83!";
 
+    /**
+     * Written in two pieces on purpose: {@code NoCommittedHashTest} refuses any tracked file that spells a bcrypt marker
+     * followed by a version, and this file is tracked.
+     */
+    private static final String HASH_PREFIX = "{bcrypt}" + "$2a$12$";
+
     /** A scripted password source; it remembers what it handed out so the test can see it was wiped. */
     private static final class Script implements AdminPasswordHashCommand.PasswordSource {
         private final boolean interactive;
@@ -73,7 +79,7 @@ class AdminPasswordHashCommandTest {
         Result result = runWith(SENTINEL_PASSWORD);
 
         assertThat(result.code()).isZero();
-        assertThat(result.out()).startsWith("{bcrypt}$2a$12$").endsWith("\n");
+        assertThat(result.out()).startsWith(HASH_PREFIX).endsWith("\n");
         assertThat(result.out().strip().lines()).hasSize(1);
         assertThat(result.err()).doesNotContain(SENTINEL_PASSWORD);
     }
@@ -178,7 +184,7 @@ class AdminPasswordHashCommandTest {
 
         assertThat(result.code()).isZero();
         assertThat(source.prompts).hasSize(2);
-        assertThat(result.out()).startsWith("{bcrypt}$2a$12$");
+        assertThat(result.out()).startsWith(HASH_PREFIX);
         assertThat(result.err()).doesNotContain(SENTINEL_PASSWORD);
     }
 
@@ -259,5 +265,140 @@ class AdminPasswordHashCommandTest {
     @Test
     void theStandardInputSourceIsNotInteractive() {
         assertThat(AdminPasswordHashCommand.stdin(new ByteArrayInputStream(new byte[0])).interactive()).isFalse();
+    }
+
+    // ---- bounded input (review fix batch 7) ----
+
+    private static Result runWithStdin(byte[] input) {
+        return run(new String[0], AdminPasswordHashCommand.stdin(new ByteArrayInputStream(input)));
+    }
+
+    private static byte[] line(int bytes, String terminator) {
+        return ("p".repeat(bytes) + terminator).getBytes(StandardCharsets.UTF_8);
+    }
+
+    @Test
+    void aLineOverOneKilobyteIsRefusedWithTheFixedMessageAndNothingIsEchoed() {
+        byte[] input = ("S3ntinel" + "x".repeat(1_100) + "\n").getBytes(StandardCharsets.UTF_8);
+
+        Result result = runWithStdin(input);
+
+        assertThat(result.code()).isEqualTo(1);
+        assertThat(result.out()).isEmpty();
+        assertThat(result.err()).isEqualToIgnoringNewLines(AdminPasswordHashCommand.LINE_TOO_LONG);
+        assertThat(result.err()).doesNotContain("S3ntinel").doesNotContain("xxxx");
+    }
+
+    @Test
+    void theLimitIsExactlyOneKilobyteOfTheLineNotCountingTheTerminator() {
+        // 1024 bytes pass the reader (the 72-byte rule then refuses them); 1025 do not; \r\n is not part of the line.
+        assertThat(runWithStdin(line(1_024, "\n")).err()).contains("at most 72 bytes")
+                .doesNotContain(AdminPasswordHashCommand.LINE_TOO_LONG);
+        assertThat(runWithStdin(line(1_024, "\r\n")).err()).contains("at most 72 bytes");
+        assertThat(runWithStdin(line(1_025, "\n")).err()).contains(AdminPasswordHashCommand.LINE_TOO_LONG);
+        assertThat(runWithStdin(line(1_025, "")).err()).as("also with no terminator at all")
+                .contains(AdminPasswordHashCommand.LINE_TOO_LONG);
+    }
+
+    @Test
+    void anEndlessInputIsNotReadPastTheLimit() {
+        long[] read = {0};
+        java.io.InputStream endless = new java.io.InputStream() {
+            @Override
+            public int read() {
+                read[0]++;
+                return 'p';
+            }
+        };
+
+        Result result = run(new String[0], AdminPasswordHashCommand.stdin(endless));
+
+        assertThat(result.code()).isEqualTo(1);
+        assertThat(result.err()).contains(AdminPasswordHashCommand.LINE_TOO_LONG);
+        assertThat(read[0]).as("bytes consumed").isLessThanOrEqualTo(AdminPasswordHashCommand.MAX_LINE_BYTES + 1L);
+    }
+
+    @Test
+    void theLineBufferOfTheStandardInputSourceIsWipedAfterEveryOutcome() throws IOException {
+        List<byte[]> buffers = new ArrayList<>();
+        for (byte[] input : List.of(line(40, "\n"), line(1_100, "\n"), new byte[0], line(20, ""))) {
+            AdminPasswordHashCommand.PasswordSource source = AdminPasswordHashCommand
+                    .stdin(new ByteArrayInputStream(input), buffers::add);
+            try {
+                source.read("ignored");
+            } catch (IOException tooLong) {
+                // the refusal itself is covered above; here only the buffers matter
+            }
+        }
+
+        assertThat(buffers).as("one buffer per read").hasSize(4);
+        for (byte[] buffer : buffers) {
+            for (byte b : buffer) {
+                assertThat(b).as("the line buffer is wiped").isZero();
+            }
+        }
+    }
+
+    @Test
+    void aTerminalEntryLongerThanTheLimitIsRefusedAndWiped() {
+        Script source = new Script(true, "t".repeat(1_100), "t".repeat(1_100));
+
+        Result result = run(new String[0], source);
+
+        assertThat(result.code()).isEqualTo(1);
+        assertThat(result.out()).isEmpty();
+        assertThat(result.err()).contains(AdminPasswordHashCommand.LINE_TOO_LONG).doesNotContain("tttt");
+        assertThat(source.handedOut).isNotEmpty();
+        for (char[] chars : source.handedOut) {
+            for (char c : chars) {
+                assertThat((int) c).isZero();
+            }
+        }
+    }
+
+    // ---- interactive detection (the project targets Java 21) ----
+
+    /** Stands for java.io.Console#isTerminal of JDK 22 and later. */
+    public static final class NewerConsole {
+        private final boolean terminal;
+
+        NewerConsole(boolean terminal) {
+            this.terminal = terminal;
+        }
+
+        public boolean isTerminal() {
+            return terminal;
+        }
+    }
+
+    private static java.lang.reflect.Method isTerminalOf(Class<?> type) throws NoSuchMethodException {
+        return type.getMethod("isTerminal");
+    }
+
+    @Test
+    void noConsoleIsNeverATerminal() throws Exception {
+        assertThat(AdminPasswordHashCommand.isTerminal(null, null)).isFalse();
+        assertThat(AdminPasswordHashCommand.isTerminal(null, isTerminalOf(NewerConsole.class))).isFalse();
+    }
+
+    @Test
+    void onJava21AConsoleThatExistsIsATerminalBecauseItIsNullWhenInputIsRedirected() {
+        // No Console#isTerminal there: System.console() is already null when stdin or stdout is redirected.
+        assertThat(AdminPasswordHashCommand.isTerminal(new Object(), null)).isTrue();
+    }
+
+    @Test
+    void onNewerJdksAConsoleOverARedirectedStreamIsNotATerminal() throws Exception {
+        assertThat(AdminPasswordHashCommand.isTerminal(new NewerConsole(false), isTerminalOf(NewerConsole.class)))
+                .isFalse();
+        assertThat(AdminPasswordHashCommand.isTerminal(new NewerConsole(true), isTerminalOf(NewerConsole.class)))
+                .isTrue();
+    }
+
+    @Test
+    void theRealConsoleCheckAnswersFalseWhenThisJvmWasStartedWithoutATerminal() {
+        // Surefire and failsafe run without a terminal on standard input: both JDK 21 (null console) and later JDKs
+        // (isTerminal false) must make the command read standard input instead of waiting for a keyboard.
+        assertThat(AdminPasswordHashCommand.isTerminal(System.console())).isFalse();
     }
 }

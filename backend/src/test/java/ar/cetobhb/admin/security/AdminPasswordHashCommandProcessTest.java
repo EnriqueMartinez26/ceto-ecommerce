@@ -67,6 +67,16 @@ class AdminPasswordHashCommandProcessTest {
     }
 
     @Test
+    void aPipedLineOverOneKilobyteExitsOneWithTheFixedMessageAndNothingEchoed() throws Exception {
+        Outcome outcome = launch("S3ntinel-" + "x".repeat(5_000) + "\n");
+
+        assertThat(outcome.exit()).isEqualTo(1);
+        assertThat(outcome.out()).isEmpty();
+        assertThat(outcome.err()).isEqualToIgnoringNewLines(AdminPasswordHashCommand.LINE_TOO_LONG);
+        assertThat(outcome.err()).doesNotContain("S3ntinel").doesNotContain("xxxx");
+    }
+
+    @Test
     void anEmptyStandardInputExitsOne() throws Exception {
         Outcome outcome = launch("");
 
