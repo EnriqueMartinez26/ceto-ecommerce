@@ -1,6 +1,7 @@
 package ar.cetobhb.support;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -32,6 +33,7 @@ public abstract class AbstractServerIT extends AbstractPostgresIT {
             .connectTimeout(Duration.ofSeconds(5)).build();
 
     private static final AtomicInteger NEXT_CLIENT = new AtomicInteger();
+    private static final String CHECKOUT_PATH = "/api/checkout/orders";
 
     @LocalServerPort
     protected int port;
@@ -57,8 +59,34 @@ public abstract class AbstractServerIT extends AbstractPostgresIT {
      */
     protected Reply postFrom(String host, String forwardedFor, String idempotencyKey, String body)
             throws IOException, InterruptedException {
-        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://" + host + ":" + port
-                        + "/api/checkout/orders"))
+        return exchange(CLIENT, host, CHECKOUT_PATH, forwardedFor, idempotencyKey, body);
+    }
+
+    /**
+     * POST from 127.0.0.1 to an arbitrary request target (path with parameters, case or slash variants), written
+     * exactly as given, with an optional raw {@code X-Forwarded-For} value.
+     */
+    protected Reply postToPath(String rawPath, String forwardedFor, String idempotencyKey, String body)
+            throws IOException, InterruptedException {
+        return exchange(CLIENT, "127.0.0.1", rawPath, forwardedFor, idempotencyKey, body);
+    }
+
+    /**
+     * Like {@link #postFrom} to 127.0.0.1, but the client socket is bound to the given local loopback address, so the
+     * server sees that address as the peer. Every address of 127.0.0.0/8 is loopback on Linux and Windows. Failing to
+     * bind or connect is an exception, never a skipped test.
+     */
+    protected Reply postBoundTo(String localAddress, String forwardedFor, String idempotencyKey, String body)
+            throws IOException, InterruptedException {
+        try (HttpClient bound = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofSeconds(5)).localAddress(InetAddress.getByName(localAddress)).build()) {
+            return exchange(bound, "127.0.0.1", CHECKOUT_PATH, forwardedFor, idempotencyKey, body);
+        }
+    }
+
+    private Reply exchange(HttpClient client, String host, String path, String forwardedFor, String idempotencyKey,
+            String body) throws IOException, InterruptedException {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://" + host + ":" + port + path))
                 .timeout(Duration.ofSeconds(30))
                 .header("Content-Type", "application/json").header("Accept", "application/json")
                 .header("Idempotency-Key", idempotencyKey)
@@ -66,7 +94,7 @@ public abstract class AbstractServerIT extends AbstractPostgresIT {
         if (forwardedFor != null) {
             request.header("X-Forwarded-For", forwardedFor);
         }
-        HttpResponse<String> response = CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = client.send(request.build(), HttpResponse.BodyHandlers.ofString());
         return new Reply(response.statusCode(), response.body());
     }
 }

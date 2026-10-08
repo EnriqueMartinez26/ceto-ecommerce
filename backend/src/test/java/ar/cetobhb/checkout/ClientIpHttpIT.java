@@ -1,18 +1,14 @@
 package ar.cetobhb.checkout;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assumptions.assumeThat;
 
 import ar.cetobhb.support.AbstractServerIT;
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.util.function.IntFunction;
 import org.junit.jupiter.api.Test;
 
 /**
- * Client address resolution on a real server (REQ-ABU-03, verification U-6): Tomcat's remote IP valve trusts only the
- * IPv4 loopback in the test profile, and the limiter keys on whatever {@code getRemoteAddr()} returns afterwards.
+ * Client address resolution on a real server (REQ-ABU-03, verification U-6): Tomcat's remote IP valve trusts only
+ * 127.0.0.1/32 in the test profile, and the limiter keys on whatever {@code getRemoteAddr()} returns afterwards.
  * Each test spends the burst of ONE client key with unreadable bodies (400 = passed the limiter, 429 = stopped by it)
  * and then looks at which other requests share that key. Addresses come from the documentation ranges, one per test.
  */
@@ -20,7 +16,7 @@ class ClientIpHttpIT extends AbstractServerIT {
 
     private static final int BURST = 10;
     private static final String LOOPBACK = "127.0.0.1";
-    private static final String IPV6_LOOPBACK = "[::1]";
+    private static final String UNTRUSTED_PEER = "127.0.0.2";
 
     private int attempt(String host, String forwardedFor) throws Exception {
         return postFrom(host, forwardedFor, "key-" + System.nanoTime(), "{").status();
@@ -76,22 +72,18 @@ class ClientIpHttpIT extends AbstractServerIT {
 
     @Test
     void theHeaderOfAnUntrustedPeerIsIgnored() throws Exception {
-        assumeThat(canConnect(IPV6_LOOPBACK)).as("IPv6 loopback reachable").isTrue();
-        // Only 127.0.0.1 is trusted; this peer is ::1, so every forwarded value is just a header.
-        spendBurst(IPV6_LOOPBACK, i -> "203.0.113." + (100 + i));
+        // Only 127.0.0.1/32 is trusted. This peer connects from 127.0.0.2: loopback too, but not a trusted proxy, so
+        // every forwarded value is just a header. No IPv6 or other optional network feature is involved.
+        for (int i = 0; i < BURST; i++) {
+            assertThat(untrustedAttempt("203.0.113." + (100 + i))).as("attempt %d", i + 1).isEqualTo(400);
+        }
 
-        assertThat(attempt(IPV6_LOOPBACK, "203.0.113.200")).isEqualTo(429);
-        assertThat(attempt(IPV6_LOOPBACK, null)).isEqualTo(429);
-        assertThat(attempt(LOOPBACK, "203.0.113.100")).isEqualTo(400);
+        assertThat(untrustedAttempt("203.0.113.200")).isEqualTo(429);
+        assertThat(untrustedAttempt(null)).isEqualTo(429);
+        assertThat(attempt(LOOPBACK, "203.0.113.100")).as("the forwarded value never became a key").isEqualTo(400);
     }
 
-    private boolean canConnect(String bracketedHost) {
-        String host = bracketedHost.substring(1, bracketedHost.length() - 1);
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(host, port), 1000);
-            return true;
-        } catch (IOException unreachable) {
-            return false;
-        }
+    private int untrustedAttempt(String forwardedFor) throws Exception {
+        return postBoundTo(UNTRUSTED_PEER, forwardedFor, "key-" + System.nanoTime(), "{").status();
     }
 }
