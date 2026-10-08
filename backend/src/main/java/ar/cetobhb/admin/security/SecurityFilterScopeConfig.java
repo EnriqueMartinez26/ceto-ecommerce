@@ -1,6 +1,8 @@
 package ar.cetobhb.admin.security;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.web.servlet.DelegatingFilterProxyRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -28,16 +30,37 @@ class SecurityFilterScopeConfig {
     static final String SECURITY_FILTER_NAME = "springSecurityFilterChain";
 
     @Bean
-    static BeanPostProcessor securityFilterScope() {
-        return new BeanPostProcessor() {
-            @Override
-            public Object postProcessAfterInitialization(Object bean, String beanName) {
-                if (bean instanceof DelegatingFilterProxyRegistrationBean registration
-                        && SECURITY_FILTER_NAME.equals(registration.getFilterName())) {
-                    registration.setUrlPatterns(List.of(ADMIN_FILTER_PATTERN));
-                }
-                return bean;
+    static SecurityFilterScope securityFilterScope() {
+        return new SecurityFilterScope();
+    }
+
+    /**
+     * Rewrites the registration and counts what it rewrote. Once every singleton exists the count must be exactly
+     * one: zero means Boot stopped creating (or renamed) the registration and the scoping silently no longer applies;
+     * more than one means an unexpected second Security filter. Either way the startup fails instead of running with
+     * Security in the wrong place.
+     */
+    static final class SecurityFilterScope implements BeanPostProcessor, SmartInitializingSingleton {
+
+        private final AtomicInteger rewritten = new AtomicInteger();
+
+        @Override
+        public Object postProcessAfterInitialization(Object bean, String beanName) {
+            if (bean instanceof DelegatingFilterProxyRegistrationBean registration
+                    && SECURITY_FILTER_NAME.equals(registration.getFilterName())) {
+                registration.setUrlPatterns(List.of(ADMIN_FILTER_PATTERN));
+                rewritten.incrementAndGet();
             }
-        };
+            return bean;
+        }
+
+        @Override
+        public void afterSingletonsInstantiated() {
+            int count = rewritten.get();
+            if (count != 1) {
+                throw new IllegalStateException("The Spring Security filter registration must be re-scoped to "
+                        + ADMIN_FILTER_PATTERN + " exactly one time, but " + count + " registrations were rewritten");
+            }
+        }
     }
 }
