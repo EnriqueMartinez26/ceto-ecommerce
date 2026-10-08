@@ -743,8 +743,9 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `IllegalStateException` salvo que se reescriba exactamente un registro del
   filtro (`SecurityFilterScopeFailFastTest`; mutación: con otro nombre de filtro
   `SecurityFilterScopeIT` no levanta el contexto). Boot no crea usuario ni
-  contraseña generados porque hay un `UserDetailsService` que no conoce a nadie
-  (`NoGeneratedUserIT` en el contexto real y `NoGeneratedPasswordTest`, que
+  contraseña generados porque hay un `UserDetailsService` propio
+  (`AdminUserDetailsService`, que solo conoce la cuenta configurada;
+  `NoGeneratedUserIT` en el contexto real y `NoGeneratedPasswordTest`, que
   además tiene un control positivo de que Boot sí lo crea y lo loguea sin él).
   El filtro de Security se registra para los cinco tipos de despacho (REQUEST,
   ASYNC, ERROR, FORWARD, INCLUDE), fijado en
@@ -760,6 +761,29 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   muerde. Evidencia por mutación (2026-10-08): mapear un controller de la tienda
   bajo `/api/admin/` o agregarle un `getRequestDispatcher(..).forward(..)` hizo
   fallar ambas reglas.
+- **Credencial de administración** (`ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, sin
+  valor por defecto; el login y la sesión llegan en cortes siguientes). Se
+  valida en `AdminCredentials.parse` con mensajes fijos, no con Bean Validation:
+  el informe de fallo de Boot imprime el valor rechazado, y `{noop}secreto`
+  terminaría en el log de arranque. Solo se acepta `{bcrypt}` con costo 10 a 14,
+  usuario de 1 a 64 caracteres sin espacios ni caracteres de control o de
+  formato, y un `${...}` sin resolver (el binder lo deja como texto literal en
+  vez de fallar) se rechaza. `AdminCredentialsTest` (valores inválidos y
+  centinela fuera del mensaje), `AdminCredentialsStartupTest` (corre
+  `SpringApplication` real: el valor rechazado no aparece en la salida, con un
+  control positivo de que Boot sí imprime un valor rechazado por validación) y
+  `AdminPropertiesValidationTest` (rangos de sesión y del límite de login, con
+  mínimo y máximo). `AdminProperties.toString()` no imprime usuario ni hash.
+  No hay `DelegatingPasswordEncoder`. `AdminPasswordEncoder` responde `false` sin
+  hacer BCrypt si la clave es nula o pasa de 72 bytes UTF-8
+  (`AdminPasswordEncoderTest`; mutación M6, 2026-10-08: sin la guarda fallaron 4
+  tests); el usuario se compara con `MessageDigest.isEqual`
+  (`AdminAuthenticationTest.theUsernameIsComparedInConstantTime`, estructural:
+  con `Arrays.equals` falla) y usuario desconocido, usuario de más de 128
+  caracteres y clave errónea son el mismo `BadCredentialsException`, con un solo
+  BCrypt en ambos casos. Ningún hash se versiona: los tests usan una clave
+  aleatoria por JVM (`AdminTestCredentials`) y `NoCommittedHashTest` revisa
+  `backend/src` y los archivos de despliegue de la raíz.
 - **Una sola cuenta: la de administración.** Contraseña con BCrypt o
   Argon2, login con rate limit y bloqueo temporal, sesión en cookie
   `HttpOnly` + `Secure` + `SameSite`. Nunca un token en `localStorage`.
