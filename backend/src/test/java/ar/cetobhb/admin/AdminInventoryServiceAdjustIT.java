@@ -153,6 +153,36 @@ class AdminInventoryServiceAdjustIT extends AbstractPostgresIT {
         assertThat(admin.adjust(base, 10_000, StockAdjustmentReason.OTHER).onHand()).isEqualTo(10_005);
     }
 
+    /** Review batch 4: stock of a deactivated base can still be corrected (the operator counts what is on the shelf). */
+    @Test
+    void aDeactivatedBaseProductCanStillBeAdjustedAndTheAdjustmentIsAudited() {
+        catalog.setActive(base, false);
+
+        AdjustedStock result = admin.adjust(base, 4, StockAdjustmentReason.COUNT_CORRECTION);
+
+        assertThat(result).isEqualTo(new AdjustedStock(base, 9, 2, 7));
+        assertThat(onHand()).isEqualTo(9);
+        assertThat(auditRows()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT reason FROM admin_audit_log", String.class))
+                .isEqualTo("COUNT_CORRECTION");
+    }
+
+    /** Review batch 4: the Integer range is enforced at the facade, with no change and no audit row. */
+    @Test
+    void anAdjustmentBeyondTheIntegerRangeIsRejectedAtTheFacadeWithNoChangeAndNoRow() {
+        jdbc.update("UPDATE inventory_stock SET on_hand = ? WHERE product_id = ?", Integer.MAX_VALUE - 5, base);
+
+        assertThatThrownBy(() -> admin.adjust(base, 10, StockAdjustmentReason.RESTOCK))
+                .isInstanceOfSatisfying(ValidationException.class,
+                        e -> assertThat(e.reason()).isEqualTo(ReasonCode.STOCK_OUT_OF_RANGE));
+
+        assertThat(onHand()).isEqualTo(Integer.MAX_VALUE - 5);
+        assertThat(reserved()).isEqualTo(2);
+        assertThat(auditRows()).isZero();
+        assertThat(admin.adjust(base, 5, StockAdjustmentReason.RESTOCK).onHand())
+                .as("the exact maximum is reachable").isEqualTo(Integer.MAX_VALUE);
+    }
+
     @Test
     void anAuditInsertThatFailsRollsTheStockChangeBack() {
         try {

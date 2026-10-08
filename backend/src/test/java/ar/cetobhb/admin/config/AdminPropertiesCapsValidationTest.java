@@ -8,6 +8,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
+import org.springframework.boot.test.context.assertj.AssertableApplicationContext;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;
 import org.springframework.context.annotation.Configuration;
@@ -31,6 +32,12 @@ class AdminPropertiesCapsValidationTest {
             .withConfiguration(AutoConfigurations.of(ValidationAutoConfiguration.class))
             .withUserConfiguration(Config.class);
 
+    /** The startup abort must name the offending property, so an operator can find the bad setting. */
+    private static void assertFailureNames(AssertableApplicationContext context, String property) {
+        assertThat(context).hasFailed();
+        assertThat(context.getStartupFailure()).hasStackTraceContaining(property);
+    }
+
     @Test
     void theShippedDefaultsAre200ProductsAnd100ReconciliationRows() {
         shipped.run(context -> {
@@ -45,14 +52,14 @@ class AdminPropertiesCapsValidationTest {
     @ValueSource(strings = {"0", "-1", "501", "2147483647"})
     void aProductCapOutsideOneTo500AbortsStartup(String value) {
         bare.withPropertyValues("ceto.admin.max-listed-products=" + value, "ceto.admin.max-reconciliation-rows=100")
-                .run(context -> assertThat(context).hasFailed());
+                .run(context -> assertFailureNames(context, "ceto.admin.maxListedProducts"));
     }
 
     @ParameterizedTest(name = "max-reconciliation-rows {0} aborts startup")
     @ValueSource(strings = {"0", "-1", "1001", "2147483647"})
     void aReconciliationCapOutsideOneTo1000AbortsStartup(String value) {
         bare.withPropertyValues("ceto.admin.max-listed-products=200", "ceto.admin.max-reconciliation-rows=" + value)
-                .run(context -> assertThat(context).hasFailed());
+                .run(context -> assertFailureNames(context, "ceto.admin.maxReconciliationRows"));
     }
 
     @Test
@@ -66,8 +73,8 @@ class AdminPropertiesCapsValidationTest {
     @Test
     void anAbsentCapAbortsStartupBecauseAMissingNumberBindsToZero() {
         bare.withPropertyValues("ceto.admin.max-reconciliation-rows=100")
-                .run(context -> assertThat(context).hasFailed());
+                .run(context -> assertFailureNames(context, "ceto.admin.maxListedProducts"));
         bare.withPropertyValues("ceto.admin.max-listed-products=200")
-                .run(context -> assertThat(context).hasFailed());
+                .run(context -> assertFailureNames(context, "ceto.admin.maxReconciliationRows"));
     }
 }
