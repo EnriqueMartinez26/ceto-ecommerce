@@ -16,8 +16,9 @@ import org.springframework.validation.annotation.Validated;
  *
  * @param storefrontMaxProducts largest storefront list
  * @param trustedProxies        Tomcat {@code internal-proxies} value: the peers allowed to set the client address
- *                              through {@code X-Forwarded-For}. A CIDR list when it contains {@code /}, otherwise one
- *                              full-match regex (see {@link TrustedProxies}). Required, from {@code TRUSTED_PROXIES}
+ *                              through {@code X-Forwarded-For}. A comma-separated CIDR list whose every entry lies
+ *                              inside a private range (see {@link TrustedProxies}). Required, from
+ *                              {@code TRUSTED_PROXIES}
  * @param checkoutRateLimit     per-client limiter of {@code POST /api/checkout/orders}
  */
 @ConfigurationProperties("ceto.web")
@@ -50,8 +51,8 @@ public record WebProperties(
         }
     }
 
-    /** Rejects a value that parses as nothing or that would let a public address set the client address. */
-    @AssertTrue(message = "trusted-proxies must be a CIDR list or a regex that matches private addresses only")
+    /** Rejects a value that is not a CIDR list confined to the private ranges. */
+    @AssertTrue(message = "trusted-proxies must be a CIDR list whose every entry lies inside a private range")
     public boolean isTrustedProxiesSafe() {
         return TrustedProxies.isSafe(trustedProxies);
     }

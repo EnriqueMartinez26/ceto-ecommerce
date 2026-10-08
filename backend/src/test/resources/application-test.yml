@@ -2,9 +2,9 @@ ceto:
   scheduling:
     enabled: false
   web:
-    # Only the IPv4 loopback is a trusted proxy: tests set the client address per request with X-Forwarded-For, and a
-    # peer connecting from [::1] is an untrusted one (ClientIpHttpIT).
-    trusted-proxies: '127\.0\.0\.1'
+    # Only the IPv4 loopback address is a trusted proxy: tests set the client address per request with X-Forwarded-For,
+    # and a peer connecting from any other loopback address (127.0.0.2) is an untrusted one (ClientIpHttpIT).
+    trusted-proxies: 127.0.0.1/32
 
 spring:
   datasource:

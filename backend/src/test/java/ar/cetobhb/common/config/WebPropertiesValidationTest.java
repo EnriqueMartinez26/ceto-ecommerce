@@ -23,7 +23,7 @@ import org.springframework.context.annotation.Configuration;
 class WebPropertiesValidationTest {
 
     private static final String PROXIES = "ceto.web.trusted-proxies";
-    private static final String SAFE_REGEX = "10\\.0\\.0\\.\\d+";
+    private static final String SAFE_CIDR = "10.0.0.0/8";
 
     @Configuration
     @EnableConfigurationProperties(WebProperties.class)
@@ -34,7 +34,7 @@ class WebPropertiesValidationTest {
             .withInitializer(new ConfigDataApplicationContextInitializer())
             .withConfiguration(AutoConfigurations.of(ValidationAutoConfiguration.class))
             .withUserConfiguration(Config.class)
-            .withPropertyValues(PROXIES + "=" + SAFE_REGEX);
+            .withPropertyValues(PROXIES + "=" + SAFE_CIDR);
 
     private static String trace(Throwable failure) {
         java.io.StringWriter out = new java.io.StringWriter();
@@ -54,7 +54,7 @@ class WebPropertiesValidationTest {
             assertThat(p.checkoutRateLimit().overflowBurst()).isEqualTo(100);
             assertThat(p.checkoutRateLimit().overflowRefillPerHour()).isEqualTo(100);
             assertThat(p.checkoutRateLimit().overflowRefillInterval()).isEqualTo(java.time.Duration.ofSeconds(36));
-            assertThat(p.trustedProxies()).isEqualTo(SAFE_REGEX);
+            assertThat(p.trustedProxies()).isEqualTo(SAFE_CIDR);
         });
     }
 
@@ -72,9 +72,10 @@ class WebPropertiesValidationTest {
     }
 
     @ParameterizedTest(name = "trusted-proxies [{0}] fails startup")
-    @ValueSource(strings = {"", " ", "0.0.0.0/0", "::/0", "128.0.0.0/1", ".*", ".+", "\\d+\\.\\d+\\.\\d+\\.\\d+",
-        "10.0.0.0/8,0.0.0.0/0", "10.0.0.0/33", "not/a-cidr", "(unclosed", "127\\.0\\.0\\.1|.*"})
-    void startupFailsForAProxyValueThatTrustsPublicAddressesOrIsUnreadable(String value) {
+    @ValueSource(strings = {"", " ", "0.0.0.0/0", "::/0", "128.0.0.0/1", "172.0.0.0/8", "192.0.0.0/8", "2400::/12",
+        "::ffff:0:0/96", ".*", ".+", "\\d+\\.\\d+\\.\\d+\\.\\d+", "127\\.0\\.0\\.1", "10.0.0.0/8,0.0.0.0/0",
+        "10.0.0.0/8,", "10.0.0.0/33", "not/a-cidr", "(unclosed", "127\\.0\\.0\\.1|.*"})
+    void startupFailsForAProxyValueThatIsNotAPrivateCidrList(String value) {
         runner.withPropertyValues(PROXIES + "=" + value).run(context -> {
             assertThat(context).hasFailed();
             assertThat(trace(context.getStartupFailure())).contains("trustedproxies");
@@ -82,9 +83,8 @@ class WebPropertiesValidationTest {
     }
 
     @ParameterizedTest(name = "trusted-proxies [{0}] is accepted")
-    @ValueSource(strings = {"127\\.0\\.0\\.1", "10\\.0\\.\\d+\\.\\d+", "172\\.(1[6-9]|2\\d|3[01])\\..*",
-        "10.0.0.0/8", "172.16.0.0/12, 192.168.0.0/16", "fc00::/7", "127.0.0.1/32,::1/128"})
-    void startupAcceptsPrivateOnlyValues(String value) {
+    @ValueSource(strings = {"10.0.0.0/8", "172.16.0.0/12, 192.168.0.0/16", "fc00::/7", "127.0.0.1/32,::1/128"})
+    void startupAcceptsPrivateCidrLists(String value) {
         runner.withPropertyValues(PROXIES + "=" + value).run(context -> assertThat(context).hasNotFailed());
     }
 
