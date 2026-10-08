@@ -25,12 +25,14 @@ class AdminPropertiesCapsValidationTest {
     private final ApplicationContextRunner shipped = new ApplicationContextRunner()
             .withInitializer(new ConfigDataApplicationContextInitializer())
             .withConfiguration(AutoConfigurations.of(ValidationAutoConfiguration.class))
-            .withUserConfiguration(Config.class);
+            .withUserConfiguration(Config.class)
+            .withPropertyValues("ceto.admin.username=owner", "ceto.admin.password-hash=placeholder");
 
     /** Without application.yml: only the properties given here exist, so absence is controllable. */
     private final ApplicationContextRunner bare = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(ValidationAutoConfiguration.class))
-            .withUserConfiguration(Config.class);
+            .withUserConfiguration(Config.class)
+            .withPropertyValues(AdminPropertiesFixtures.bareValuesWithoutCaps());
 
     /** The startup abort must name the offending property, so an operator can find the bad setting. */
     private static void assertFailureNames(AssertableApplicationContext context, String property) {

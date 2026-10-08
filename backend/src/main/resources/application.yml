@@ -81,6 +81,22 @@ ceto:
       fixed-delay-ms: 60000
       max-batches-per-tick: 10
   admin:
+    # The one administrator account. REQUIRED, no default: unset stops the startup (the placeholders do not resolve),
+    # and a blank value or a hash that is not a {bcrypt} hash of cost 10..14 is rejected by AdminCredentials with a fixed
+    # message that never echoes the value. No real credential or hash is ever committed (NoCommittedHashTest); the hash
+    # is produced with the provisioning command and `$` is written `$$` in compose files.
+    username: ${ADMIN_USERNAME}
+    password-hash: ${ADMIN_PASSWORD_HASH}
+    # Idle time after which an admin session ends (AdminProperties: 5..1440).
+    session-idle-timeout-minutes: ${ADMIN_SESSION_IDLE_MINUTES:480}
+    # POST /api/admin/login: 5 attempts at once, then one more every 90 seconds (40 per hour). Bounds in AdminProperties.
+    login-rate-limit:
+      burst: 5
+      refill-interval-seconds: 90
+      max-tracked-clients: 10000
+      # When the table is full, every new client shares ONE overflow bucket.
+      overflow-burst: 20
+      overflow-refill-per-hour: 40
     # Largest admin product list and stock view (AdminProperties: 1..500).
     max-listed-products: 200
     # Largest reconciliation result (AdminProperties: 1..1000).

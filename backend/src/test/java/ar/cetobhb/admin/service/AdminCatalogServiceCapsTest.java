@@ -5,7 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import ar.cetobhb.admin.config.AdminProperties;
+import ar.cetobhb.admin.config.AdminPropertiesFixtures;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.service.InventoryService;
 import java.util.List;
@@ -19,7 +19,7 @@ class AdminCatalogServiceCapsTest {
         CatalogService catalog = mock(CatalogService.class);
         when(catalog.listAll(38)).thenReturn(List.of());
         AdminCatalogService admin = new AdminCatalogService(catalog, mock(InventoryService.class),
-                mock(AdminAuditService.class), new AdminProperties(37, 11));
+                mock(AdminAuditService.class), AdminPropertiesFixtures.withCaps(37, 11));
 
         assertThat(admin.list().rows()).isEmpty();
 

@@ -6,7 +6,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import ar.cetobhb.admin.config.AdminProperties;
+import ar.cetobhb.admin.config.AdminPropertiesFixtures;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.service.InventoryService;
 import java.util.List;
@@ -18,7 +18,7 @@ class AdminInventoryServiceCapsTest {
     private final CatalogService catalog = mock(CatalogService.class);
     private final InventoryService inventory = mock(InventoryService.class);
     private final AdminInventoryService admin = new AdminInventoryService(inventory, catalog,
-            mock(AdminAuditService.class), new AdminProperties(37, 11));
+            mock(AdminAuditService.class), AdminPropertiesFixtures.withCaps(37, 11));
 
     @Test
     void theStockViewAsksTheCatalogForTheConfiguredProductCapPlusOne() {
