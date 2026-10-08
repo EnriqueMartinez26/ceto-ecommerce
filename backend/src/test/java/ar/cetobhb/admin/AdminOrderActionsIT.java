@@ -27,6 +27,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -212,6 +213,32 @@ class AdminOrderActionsIT extends AbstractPostgresIT {
     }
 
     @Test
+    void illegalEdgesAtTheFacadeThrowAndLeaveAuditStockAndStatusUntouched() {
+        long dispatched = order(2);
+        admin.pay(dispatched);
+        admin.dispatch(dispatched);
+        long paid = order(1);
+        admin.pay(paid);
+        long pending = order(1);
+        int auditBefore = auditRows();
+        int onHandBefore = onHand();
+        int reservedBefore = reserved();
+
+        assertThatThrownBy(() -> admin.cancel(dispatched)).isInstanceOf(IllegalOrderTransitionException.class);
+        assertThatThrownBy(() -> admin.pay(dispatched)).isInstanceOf(IllegalOrderTransitionException.class);
+        assertThatThrownBy(() -> admin.deliver(paid)).isInstanceOf(IllegalOrderTransitionException.class);
+        assertThatThrownBy(() -> admin.dispatch(pending)).isInstanceOf(IllegalOrderTransitionException.class);
+        assertThatThrownBy(() -> admin.deliver(pending)).isInstanceOf(IllegalOrderTransitionException.class);
+
+        assertThat(status(dispatched)).isEqualTo("DESPACHADO");
+        assertThat(status(paid)).isEqualTo("PAGADO");
+        assertThat(status(pending)).isEqualTo("PAGO_PENDIENTE");
+        assertThat(auditRows()).isEqualTo(auditBefore);
+        assertThat(onHand()).isEqualTo(onHandBefore);
+        assertThat(reserved()).isEqualTo(reservedBefore);
+    }
+
+    @Test
     void payingTwiceIsAnIllegalTransitionAndDoesNotDecrementStockTwice() {
         long id = order(2);
         admin.pay(id);
@@ -235,16 +262,16 @@ class AdminOrderActionsIT extends AbstractPostgresIT {
     @Test
     void anAuditInsertThatFailsRollsTheTransitionAndTheStockBack() {
         long id = order(3);
-        jdbc.execute("CREATE FUNCTION fail_audit_for_test() RETURNS trigger AS $$ BEGIN"
-                + " RAISE EXCEPTION 'audit refused' USING ERRCODE = '23514'; END $$ LANGUAGE plpgsql");
-        jdbc.execute("CREATE TRIGGER fail_audit_for_test BEFORE INSERT ON admin_audit_log FOR EACH ROW"
-                + " EXECUTE FUNCTION fail_audit_for_test()");
         try {
-            assertThatThrownBy(() -> admin.pay(id)).isInstanceOf(RuntimeException.class);
-            assertThatThrownBy(() -> admin.cancel(id)).isInstanceOf(RuntimeException.class);
+            jdbc.execute("CREATE OR REPLACE FUNCTION fail_audit_for_test() RETURNS trigger AS $$ BEGIN"
+                    + " RAISE EXCEPTION 'audit refused' USING ERRCODE = '23514'; END $$ LANGUAGE plpgsql");
+            jdbc.execute("CREATE TRIGGER fail_audit_for_test BEFORE INSERT ON admin_audit_log FOR EACH ROW"
+                    + " EXECUTE FUNCTION fail_audit_for_test()");
+            assertThatThrownBy(() -> admin.pay(id)).isInstanceOf(DataIntegrityViolationException.class);
+            assertThatThrownBy(() -> admin.cancel(id)).isInstanceOf(DataIntegrityViolationException.class);
         } finally {
-            jdbc.execute("DROP TRIGGER fail_audit_for_test ON admin_audit_log");
-            jdbc.execute("DROP FUNCTION fail_audit_for_test()");
+            jdbc.execute("DROP TRIGGER IF EXISTS fail_audit_for_test ON admin_audit_log");
+            jdbc.execute("DROP FUNCTION IF EXISTS fail_audit_for_test()");
         }
 
         assertThat(status(id)).isEqualTo("PAGO_PENDIENTE");
@@ -258,15 +285,15 @@ class AdminOrderActionsIT extends AbstractPostgresIT {
     void aFaultAtCommitTimeAfterTheDomainChangeAndTheAuditPersistsNeitherOfThem() {
         long id = order(3);
         // A deferred constraint trigger fires at COMMIT, after the order update, the stock update and the audit insert.
-        jdbc.execute("CREATE FUNCTION fail_at_commit_for_test() RETURNS trigger AS $$ BEGIN"
-                + " RAISE EXCEPTION 'commit refused' USING ERRCODE = '23514'; END $$ LANGUAGE plpgsql");
-        jdbc.execute("CREATE CONSTRAINT TRIGGER fail_at_commit_for_test AFTER INSERT ON admin_audit_log"
-                + " DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_at_commit_for_test()");
         try {
-            assertThatThrownBy(() -> admin.pay(id)).isInstanceOf(RuntimeException.class);
+            jdbc.execute("CREATE OR REPLACE FUNCTION fail_at_commit_for_test() RETURNS trigger AS $$ BEGIN"
+                    + " RAISE EXCEPTION 'commit refused' USING ERRCODE = '23514'; END $$ LANGUAGE plpgsql");
+            jdbc.execute("CREATE CONSTRAINT TRIGGER fail_at_commit_for_test AFTER INSERT ON admin_audit_log"
+                    + " DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_at_commit_for_test()");
+            assertThatThrownBy(() -> admin.pay(id)).isInstanceOf(DataIntegrityViolationException.class);
         } finally {
-            jdbc.execute("DROP TRIGGER fail_at_commit_for_test ON admin_audit_log");
-            jdbc.execute("DROP FUNCTION fail_at_commit_for_test()");
+            jdbc.execute("DROP TRIGGER IF EXISTS fail_at_commit_for_test ON admin_audit_log");
+            jdbc.execute("DROP FUNCTION IF EXISTS fail_at_commit_for_test()");
         }
 
         assertThat(status(id)).isEqualTo("PAGO_PENDIENTE");
