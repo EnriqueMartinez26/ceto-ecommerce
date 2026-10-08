@@ -106,10 +106,19 @@ public class CatalogService {
                 product.toAdminView());
     }
 
-    /** Activates or deactivates a product; returns whether the state changed (a repeat is a no-op, not an error). */
+    /**
+     * Activates or deactivates a product; returns whether the state changed (a repeat is a no-op, not an error).
+     * Activating an inactive combo whose base product is missing or inactive is rejected with
+     * {@code INVALID_COMBO_LINK}, the same reason {@link #createCombo} uses for an unusable base.
+     */
     @Transactional
     public boolean setActive(long id, boolean active) {
         Product product = products.findById(id).orElseThrow(() -> new ProductNotFoundException(id));
+        if (active && !product.isActive() && product.isCombo()) {
+            products.findById(product.toSnapshot().baseProductId())
+                    .filter(Product::isActive)
+                    .orElseThrow(() -> new ValidationException(ReasonCode.INVALID_COMBO_LINK));
+        }
         return active ? product.activate(clock.instant()) : product.deactivate(clock.instant());
     }
 

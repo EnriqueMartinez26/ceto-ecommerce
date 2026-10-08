@@ -79,6 +79,10 @@ class CatalogServiceAdminIT extends AbstractPostgresIT {
         return jdbc.queryForObject("SELECT status FROM orders WHERE id = ?", String.class, orderId);
     }
 
+    private long version(long id) {
+        return jdbc.queryForObject("SELECT version FROM products WHERE id = ?", Long.class, id);
+    }
+
     private boolean listedInStorefront(long id) {
         return storefront.listProducts().stream().map(StorefrontProduct::product).anyMatch(p -> p.id() == id);
     }
@@ -103,6 +107,34 @@ class CatalogServiceAdminIT extends AbstractPostgresIT {
     @Test
     void findingAnUnknownProductIsNotFound() {
         assertThatThrownBy(() -> catalog.findAnyIncludingInactive(99_999L)).isInstanceOf(ProductNotFoundException.class);
+    }
+
+    @Test
+    void reactivatingAComboWhoseBaseIsInactiveIsRejectedAndNothingChanges() {
+        long base = catalog.createBase(product("Base", "100.00")).id();
+        long combo = catalog.createCombo(product("Combo", "270.00"), base, 3).id();
+        catalog.setActive(combo, false);
+        catalog.setActive(base, false);
+        long versionBefore = version(combo);
+
+        assertThatThrownBy(() -> catalog.setActive(combo, true))
+                .isInstanceOfSatisfying(ValidationException.class,
+                        e -> assertThat(e.reason()).isEqualTo(ReasonCode.INVALID_COMBO_LINK));
+
+        assertThat(jdbc.queryForObject("SELECT active FROM products WHERE id = ?", Boolean.class, combo)).isFalse();
+        assertThat(version(combo)).isEqualTo(versionBefore);
+        // Once the base is back, the combo can be reactivated.
+        assertThat(catalog.setActive(base, true)).isTrue();
+        assertThat(catalog.setActive(combo, true)).isTrue();
+    }
+
+    @Test
+    void anAlreadyActiveComboWithAnInactiveBaseIsAnIdempotentNoOp() {
+        long base = catalog.createBase(product("Base", "100.00")).id();
+        long combo = catalog.createCombo(product("Combo", "270.00"), base, 3).id();
+        catalog.setActive(base, false);
+
+        assertThat(catalog.setActive(combo, true)).isFalse();
     }
 
     @Test
