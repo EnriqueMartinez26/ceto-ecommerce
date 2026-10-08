@@ -42,3 +42,4 @@ reemplace y se marca la anterior como reemplazada.
 | D-20261007-21 | Se acepta el riesgo residual de quien rota teléfonos e IPs para retener stock 48 h; mitigación futura: tope global o Turnstile. | Mateo (delegado al asistente) | 2026-10-07 | Propuesta, pendiente de OK de la clienta |
 | D-20261007-22 | Los GET de la tienda no tienen límite por IP en este cambio. | Mateo (delegado al asistente) | 2026-10-07 | Vigente |
 | D-20261007-23 | Los errores de Tomcat fuera de Spring MVC usan `/error` de Boot sin stack trace ni mensaje. | Mateo (delegado al asistente) | 2026-10-07 | Vigente |
+| D-20261007-24 | Un pedido PAGO_PENDIENTE vencido que el job todavía no canceló sigue contando para el tope por teléfono: su reserva todavía bloquea stock. | Mateo (delegado al asistente) | 2026-10-07 | Vigente |

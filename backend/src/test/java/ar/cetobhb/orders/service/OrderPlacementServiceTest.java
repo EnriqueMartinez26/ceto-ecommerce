@@ -11,6 +11,7 @@ import ar.cetobhb.common.domain.PhoneNumberNormalizer;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.config.OrderProperties;
 import ar.cetobhb.orders.domain.Buyer;
+import ar.cetobhb.orders.domain.IdempotencyConflictException;
 import ar.cetobhb.orders.domain.NewOrder;
 import ar.cetobhb.orders.domain.NewOrderLine;
 import ar.cetobhb.orders.domain.NormalizedOrderRequest;
@@ -99,5 +100,35 @@ class OrderPlacementServiceTest {
 
         assertThat(replay.replayed()).isTrue();
         assertThat(replay.orderId()).isEqualTo(5L);
+    }
+
+    @Test
+    void aLostIdempotencyRaceWhoseWinnerHoldsAnotherRequestIsAConflict() {
+        // Deterministic stand-in for the thread-timing-dependent case: the winner committed the same key with a
+        // different payload (hence a different fingerprint), so the loser must get a conflict, not a replay.
+        CatalogService catalog = mock(CatalogService.class);
+        OrderRepository orders = mock(OrderRepository.class);
+        PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
+        when(txManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+        DataIntegrityViolationException lost = new DataIntegrityViolationException("duplicate key",
+                new ConstraintViolationException("duplicate key", new SQLException("dup", "23505"),
+                        "orders_idempotency_key_uk"));
+        NormalizedOrderRequest request = new OrderRequestNormalizer(new PhoneNumberNormalizer(),
+                new OrderLimits(10, 10)).normalize(COMMAND);
+        Instant now = Instant.parse("2026-10-07T12:00:00Z");
+        Order winner = Order.place(new NewOrder("CETO-000001", UUID.fromString(COMMAND.idempotencyKey()),
+                "0".repeat(64), request.name(), request.phoneE164(), request.address(),
+                request.zone(), now.plus(Duration.ofHours(24)),
+                List.of(new NewOrderLine(1L, "Soap", false, BigDecimal.TEN, 3, 1L, 1))), now);
+        ReflectionTestUtils.setField(winner, "id", 5L);
+        when(orders.findByIdempotencyKey(any())).thenReturn(Optional.empty()).thenReturn(Optional.empty())
+                .thenReturn(Optional.of(winner));
+        when(catalog.findForOrder(any())).thenThrow(lost);
+        OrderPlacementService service = new OrderPlacementService(
+                new OrderProperties(24, 10, 10, 3, new OrderProperties.Expiry(100, 60_000, 10)), catalog,
+                mock(InventoryService.class), orders, Clock.fixed(now, ZoneOffset.UTC), txManager);
+
+        assertThatThrownBy(() -> service.placeOrder(COMMAND))
+                .isInstanceOf(IdempotencyConflictException.class);
     }
 }

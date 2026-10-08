@@ -202,7 +202,8 @@ class CheckoutErrorsHttpIT extends AbstractHttpIT {
         assertThat(response.getHeader("Retry-After")).isNull();
         assertThat(orderCount()).isEqualTo(3L);
         assertThat(reserved()).isEqualTo(reservedBefore);
-        assertThat(output.getAll()).contains("TOO_MANY_PENDING_ORDERS").doesNotContain("5550000", "Maria");
+        // Logged at DEBUG (a client can trigger it at will): invisible at the test profile's INFO level, and no PII.
+        assertThat(output.getAll()).doesNotContain("TOO_MANY_PENDING_ORDERS", "5550000", "Maria");
     }
 
     @Test

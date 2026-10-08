@@ -23,6 +23,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -209,6 +210,20 @@ class OrderPendingCapIT extends AbstractPostgresIT {
         PlacedOrder fresh = place(PHONE);
 
         assertThat(fresh.replayed()).isFalse();
+    }
+
+    @Test
+    void anOrderPastItsReservationDeadlineThatTheJobHasNotExpiredYetStillCountsTowardTheCap() {
+        // D-20261007-24: its stock is still reserved, so its slot is still taken until the job cancels it.
+        fillTheCap(PHONE);
+        clock.set(MutableClock.START.plus(Duration.ofHours(49)));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM orders WHERE status = 'PAGO_PENDIENTE'"
+                + " AND reserved_until < ?", Integer.class, Timestamp.from(clock.instant()))).isEqualTo(CAP);
+
+        assertThatThrownBy(() -> place(PHONE)).isInstanceOf(TooManyPendingOrdersException.class);
+
+        assertThat(orderCount()).isEqualTo(CAP);
+        assertThat(reserved()).isEqualTo(CAP);
     }
 
     @Test
