@@ -196,7 +196,21 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   pedido con `findById` en vez de `FOR UPDATE` hizo fallar
   `AdminOrderDoublePayIT` en la iteración 0; bloquear las filas de stock en
   `release` en orden descendente hizo fallar `AdminLockOrderingIT` (deadlock
-  `40P01`).
+  `40P01`); esa prueba sostiene solo el orden de locks, porque sus pedidos no
+  están vencidos. Una acción de administración contra el job de vencimiento
+  sobre el MISMO pedido ya vencido deja un solo ganador, con fila de auditoría
+  solo si ganó la administración y el stock sin deriva, y el único fallo
+  tolerado es `55P03`, nunca `40P01` (`AdminVsExpiryRaceIT`). Con la fila
+  retenida por la acción, el job la saltea sin esperar (prueba determinista de
+  ese mismo archivo; evidencia por mutación: quitar `FOR UPDATE SKIP LOCKED` de
+  `lockExpiredBatch` la hizo fallar). La carrera sin sincronía no detecta esa
+  mutación por sí sola: `@Version` y la relectura del respaldo por pedido
+  curan la ventana. Una cancelación de administración mezclada con reintentos
+  de la misma clave de idempotencia deja los reintentos como `replayed=true` (o
+  503 `SERVICE_BUSY`), una sola fila `ORDER_CANCELLED` y el stock cuadrado
+  (`AdminCancelVsReplayIT`). Las acciones no loguean nombre, teléfono ni
+  dirección, ni en éxito, ni en transición ilegal, ni con el insert de
+  auditoría fallado (`AdminOrderActionsPiiLoggingIT`).
 
 ### Frontend (`frontend/`)
 
