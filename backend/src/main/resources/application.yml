@@ -80,6 +80,11 @@ ceto:
       batch-size: 100
       fixed-delay-ms: 60000
       max-batches-per-tick: 10
+  admin:
+    # Largest admin product list and stock view (AdminProperties: 1..500).
+    max-listed-products: 200
+    # Largest reconciliation result (AdminProperties: 1..1000).
+    max-reconciliation-rows: 100
   web:
     # Largest request body in bytes (BodySizeLimitFilter): 16 KiB is far above a 50-line order. WebProperties: 1024..262144.
     max-body-bytes: 16384
