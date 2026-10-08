@@ -783,7 +783,21 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   caracteres y clave errónea son el mismo `BadCredentialsException`, con un solo
   BCrypt en ambos casos. Ningún hash se versiona: los tests usan una clave
   aleatoria por JVM (`AdminTestCredentials`) y `NoCommittedHashTest` revisa
-  `backend/src` y los archivos de despliegue de la raíz.
+  todos los archivos de texto versionados (`git ls-files`), no una lista de
+  nombres, y detecta el hash con prefijo `{bcrypt}` y el hash suelto, con y sin
+  el escape `$$` de compose (con plantas en `.md`, `.sh` y compose; la aguja
+  anterior no veía la forma `$$`: mutación del 2026-10-08, 3 fallas).
+  El único `PasswordEncoder` del contexto es el `AdminPasswordEncoder` con la
+  guarda de 72 bytes; el BCrypt crudo vive en un contenedor que no es un
+  `PasswordEncoder` (`AdminBcrypt`), así que una inyección por tipo no puede
+  saltarse la guarda (`AdminPasswordEncoderBeanIT`). Spring Security imprime en
+  DEBUG el usuario tecleado (`Failed to find user '...'`): la categoría
+  `org.springframework.security.authentication.dao` está en `OFF` en
+  `application.yml` y `AdminAuthenticationLoggingIT` fija el nivel efectivo, un
+  control positivo con esa categoría en DEBUG y que un login fallido con un
+  usuario centinela no deja rastro aunque `org.springframework.security` esté en
+  DEBUG (sin la línea de `application.yml` fallan 2 de 3). El runbook del
+  operador está en `docs/operacion-admin.md`.
 - **Una sola cuenta: la de administración.** Contraseña con BCrypt o
   Argon2, login con rate limit y bloqueo temporal, sesión en cookie
   `HttpOnly` + `Secure` + `SameSite`. Nunca un token en `localStorage`.
