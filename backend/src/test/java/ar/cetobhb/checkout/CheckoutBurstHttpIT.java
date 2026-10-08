@@ -92,7 +92,7 @@ class CheckoutBurstHttpIT extends AbstractServerIT {
     }
 
     @Test
-    void manyConcurrentRequestsWithTheSameKeyCreateOneOrderAndReplayTheRest() {
+    void manyConcurrentRequestsWithTheSameKeyCreateOneOrderAndTheRestAreReplaysOr503() throws Exception {
         long b = base(10);
         String key = UUID.randomUUID().toString();
         String payload = body(b, 1, 0);
@@ -106,12 +106,18 @@ class CheckoutBurstHttpIT extends AbstractServerIT {
         assertThat(report.maxInFlight()).isGreaterThanOrEqualTo(N / 2);
         assertThat(report.outcomes()).allMatch(Outcome::succeeded);
         List<Reply> replies = report.outcomes().stream().map(Outcome::value).toList();
-        assertThat(replies).noneMatch(r -> r.status() >= 500);
+        // The per-phone lock never waits (D-20261008-01): a retry that meets the creator mid-transaction is a 503
+        // (SERVICE_BUSY, Retry-After: 1), one that arrives after the commit is a 200 replay. Nothing else.
+        assertThat(replies).allMatch(r -> r.status() == 201 || r.status() == 200 || r.status() == 503);
         assertThat(replies.stream().filter(r -> r.status() == 201)).hasSize(1);
-        assertThat(replies.stream().filter(r -> r.status() == 200)).hasSize(N - 1);
-        assertThat(replies.stream().map(r -> parse(r).get("orderNumber").asString()).distinct()).hasSize(1);
+        assertThat(replies.stream().filter(r -> r.status() == 503)).allMatch(r -> code(r).equals("SERVICE_BUSY"));
+        assertThat(replies.stream().filter(r -> r.status() != 503).map(r -> parse(r).get("orderNumber").asString())
+                .distinct()).hasSize(1);
         assertThat(replies.stream().filter(r -> r.status() == 200))
                 .allMatch(r -> parse(r).get("replayed").asBoolean());
+        // A retry after the burst is a replay of the same order.
+        Reply retry = post(key, payload);
+        assertThat(retry.status()).isEqualTo(200);
         assertThat(orderCount()).isEqualTo(1L);
         assertThat(reserved(b)).isEqualTo(1L);
         assertThat(StockReconciliation.stockDrift(jdbc)).isEmpty();

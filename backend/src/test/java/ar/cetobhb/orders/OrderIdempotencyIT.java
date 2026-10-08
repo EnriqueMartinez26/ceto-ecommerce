@@ -8,6 +8,7 @@ import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.domain.Buyer;
+import ar.cetobhb.orders.domain.CheckoutInProgressException;
 import ar.cetobhb.orders.domain.IdempotencyConflictException;
 import ar.cetobhb.orders.domain.OrderStatus;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
@@ -24,7 +25,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
-import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -208,11 +208,13 @@ class OrderIdempotencyIT extends AbstractPostgresIT {
         List<Outcome<PlacedOrder>> outcomes = report.outcomes();
         assertThat(report.maxInFlight()).isGreaterThan(1);
 
-        assertThat(outcomes).allMatch(Outcome::succeeded);
-        List<PlacedOrder> results = outcomes.stream().map(Outcome::value).toList();
+        // The per-phone lock never waits (D-20261008-01): a retry that meets the creator mid-transaction is rejected
+        // with CheckoutInProgressException (503 over HTTP), one that arrives after the commit is a replay.
+        assertThat(outcomes.stream().filter(o -> !o.succeeded()).map(Outcome::error))
+                .allMatch(e -> e instanceof CheckoutInProgressException);
+        List<PlacedOrder> results = outcomes.stream().filter(Outcome::succeeded).map(Outcome::value).toList();
         assertThat(results).extracting(PlacedOrder::orderId).containsOnly(results.get(0).orderId());
         assertThat(results.stream().filter(p -> !p.replayed())).hasSize(1);
-        assertThat(results.stream().filter(PlacedOrder::replayed)).hasSize(THREADS - 1);
         assertThat(results).extracting(PlacedOrder::status).containsOnly(OrderStatus.PAGO_PENDIENTE);
         assertThat(results).extracting(PlacedOrder::lines).containsOnly(results.get(0).lines());
         assertThat(results.get(0).lines()).extracting(PlacedOrder.PlacedLine::productId, PlacedOrder.PlacedLine::quantity)
@@ -243,6 +245,10 @@ class OrderIdempotencyIT extends AbstractPostgresIT {
         for (int i = 0; i < THREADS; i++) {
             boolean winnerPayload = (i % 2 == 0 ? 1 : 2) == winnerQuantity;
             Outcome<PlacedOrder> outcome = outcomes.get(i);
+            // A thread that met the creator mid-transaction is rejected without waiting (D-20261008-01).
+            if (!outcome.succeeded() && outcome.error() instanceof CheckoutInProgressException) {
+                continue;
+            }
             if (winnerPayload) {
                 assertThat(outcome.succeeded()).as("thread %d", i).isTrue();
             } else {
@@ -250,10 +256,8 @@ class OrderIdempotencyIT extends AbstractPostgresIT {
             }
         }
         assertThat(outcomes.stream().filter(Outcome::succeeded).map(o -> o.value().orderId()).distinct()).hasSize(1);
-        long winnerPayloadThreads = IntStream.range(0, THREADS)
-                .filter(i -> (i % 2 == 0 ? 1 : 2) == winnerQuantity).count();
         List<PlacedOrder> successes = outcomes.stream().filter(Outcome::succeeded).map(Outcome::value).toList();
-        assertThat(successes).hasSize((int) winnerPayloadThreads);
+        assertThat(successes).isNotEmpty();
         assertThat(successes.stream().filter(p -> !p.replayed())).as("exactly one creator").hasSize(1);
     }
 
@@ -269,8 +273,11 @@ class OrderIdempotencyIT extends AbstractPostgresIT {
         Report<PlacedOrder> report = BurstRunner.runMeasured(tasks);
 
         assertThat(report.maxInFlight()).isGreaterThan(1);
+        // Every thread fails: the ones that got the lock on the missing stock, the ones that met them in progress
+        // (D-20261008-01) with CheckoutInProgressException. At least one got the lock.
         assertThat(report.outcomes().stream().map(Outcome::error)).hasSize(THREADS)
-                .allMatch(e -> e instanceof InsufficientStockException);
+                .allMatch(e -> e instanceof InsufficientStockException || e instanceof CheckoutInProgressException)
+                .anyMatch(e -> e instanceof InsufficientStockException);
         assertThat(orderCount()).isZero();
         assertThat(reserved(b)).isZero();
         inventory.adjust(b, 5);
