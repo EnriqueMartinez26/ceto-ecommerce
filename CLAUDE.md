@@ -268,26 +268,56 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   mutación: imprimir los nombres en la vista lo hizo fallar).
 - **Catálogo de administración** (`AdminCatalogService`, solo servicio,
   todavía sin rutas): crear un producto base crea en la misma transacción su
-  fila de stock en 0 y la fila `PRODUCT_CREATED`, así que la tienda lo muestra
+  fila de stock en 0 (D-20261008-15) y la fila `PRODUCT_CREATED`, así que la
+  tienda lo muestra
   `SOLD_OUT` sin error y `AVAILABLE` tras reponer; la creación vive en la
   fachada y no en `CatalogService` porque `inventory` ya depende de `catalog`
   (`AdminCatalogCreateBaseIT`, con un trigger de prueba que hace fallar el
   insert del stock). Un combo no crea fila de stock, su disponible se deriva y
   `CatalogRules.requireComboUnits` acota las unidades de 2 a 100
-  (`AdminCatalogCreateComboIT`, `CatalogRulesTest`). La edición escribe una fila
+  (`AdminCatalogCreateComboIT`, `CatalogRulesTest`); la base y el N de un combo
+  son inmutables (D-20261008-14: la edición no recibe el vínculo) y su precio es
+  libre (D-20261008-31, propuesta pendiente de OK de la clienta). El nombre no
+  es único y no hay idempotencia en la creación (D-20261008-30). Crear un combo
+  y reactivar uno leen el producto base con `FOR SHARE`
+  (`ProductRepository.findByIdForShare`), de modo que una desactivación
+  concurrente de la base o termina antes (y el combo se rechaza con
+  `INVALID_COMBO_LINK`) o espera: `AdminComboBaseRaceIT` retiene la fila de la
+  base desactivándola y verifica con `pg_stat_activity`/`pg_locks`
+  (`LockProbe`, plazo de 5 s) que la creación y la reactivación esperan un
+  lock; al confirmar la retención fallan con `INVALID_COMBO_LINK`, sin combo
+  creado ni activado y sin fila de auditoría. Las filas de producto no se
+  lockean mientras se retiene un lock de pedido o de stock, así que el orden
+  pedido, luego stock por id no gana ninguna arista; varios combos sobre una
+  misma base comparten el lock sin bloquearse entre sí, y el `FOR KEY SHARE` de
+  la clave foránea solo no alcanza, porque una actualización que no toca la
+  clave no choca con él. Dos ediciones
+  desde la misma versión, o una edición contra una desactivación, también se
+  prueban con retención: el perdedor espera la fila, falla con
+  `OptimisticLockingFailureException` y quedan persistidos y auditados solo los
+  cambios del ganador (`AdminComboBaseRaceIT`). La edición escribe una fila
   por grupo de campos que cambió (`PRICE_CHANGED` con precio antes y después,
   `PRODUCT_UPDATED`); una edición sin cambios no escribe filas ni sube la
   versión, una versión vieja no cambia nada, y activar o desactivar escribe
   una fila solo si cambió el estado; desactivar no toca los pedidos pendientes,
   que siguen pagables y cancelables, y un pedido conserva su precio tras una
-  edición (`AdminCatalogUpdateIT`). Listar incluye inactivos y combos con su
-  tope (`AdminCatalogListIT`, `AdminCatalogServiceCapsTest`). Si falla el
+  edición (`AdminCatalogUpdateIT`, que también fija que cambiar solo el precio
+  tachado escribe `PRODUCT_UPDATED` y no `PRICE_CHANGED`, y que reactivar un
+  combo con la base inactiva se rechaza sin fila de auditoría). Listar incluye
+  inactivos y combos con su tope y no trunca en silencio: pide una fila de más
+  y devuelve `CappedList` con `truncated` (`AdminCatalogListIT`,
+  `AdminCatalogListTruncationIT` con tope 2 contra la consulta real,
+  `AdminCatalogServiceCapsTest`). Si falla el
   insert de auditoría vuelve atrás el cambio. Evidencia por mutación
   (2026-10-08): quitar la creación de la fila de stock hizo fallar tres tests
   de `AdminCatalogCreateBaseIT`; quitar las llamadas a `record` hizo fallar seis
   tests de las tres clases de creación y edición; auditar siempre el precio o
-  la activación, aunque no cambien, hizo fallar tres de `AdminCatalogUpdateIT`.
-  Los caminos de catálogo no loguean nombres de producto ni datos de la
+  la activación, aunque no cambien, hizo fallar tres de `AdminCatalogUpdateIT`;
+  leer la base sin lock hizo fallar las dos pruebas de retención de combo
+  (ninguna espera aparece en `pg_locks`); quitar `@Version` de `Product` hizo
+  fallar las tres carreras de edición; quitar el chequeo de reactivación hizo
+  fallar la prueba de reactivación; pedir solo `cap` filas hizo fallar la prueba
+  de truncamiento de la lista. Los caminos de catálogo no loguean nombres de producto ni datos de la
   compradora (`AdminCatalogPiiLoggingIT`; evidencia por mutación: imprimir el
   nombre al crear lo hizo fallar).
 
