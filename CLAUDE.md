@@ -117,7 +117,8 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   (permitido por tipo de handler, no por ruta), todos los `HandlerMapping` por
   clase (los de URL, welcome page y `RouterFunctionMapping` vacíos), sin
   `RouterFunction`, sin mapeos de recursos ni actuator, y todo otro camino es
-  el 404 estándar; no hay `CorsFilter`. La regla de capas ya no usa `allowEmptyShould` ni
+  el 404 estándar, salvo `/api/admin/*`, que ya no es el 404 estándar: lo
+  responde Security (401, 403 o 400, ver §5); no hay `CorsFilter`. La regla de capas ya no usa `allowEmptyShould` ni
   capas opcionales porque existen controllers (`StorefrontController`): si un
   renombre o movimiento deja una capa vacía, el build falla
   (`layeringRuleFailsWhenNoLayerHasAnyClassSoARenameCannotEmptyIt`) y los
@@ -708,9 +709,57 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   de ruta de la tienda) y `CheckoutPathLimitHttpIT` sin cambios. Evidencia por
   mutación (2026-10-08): mapear el filtro a `/*` hizo fallar 6 casos de
   `CheckoutPathLimitHttpIT`, 4 variantes de `PublicSurfaceUnchangedServerIT` y
-  el test del firewall y del mapeo de `SecurityFilterScopeIT`. Cualquier ruta
-  bajo `/api/admin/` responde 401 sin autenticar; todavía no hay login (la
-  cadena es el esqueleto del slice X1).
+  el test del firewall y del mapeo de `SecurityFilterScopeIT`.
+  Bajo `/api/admin/` ninguna petición sin autenticar recibe un 2xx ni un handler
+  (D-20261008-32): un GET responde 401, una mutación sin token CSRF responde 403
+  (el CSRF corre antes que la autenticación), las grafías de ruta que el firewall
+  rechaza responden 400 (`;`, `//`, `.` y `..`, barra o contrabarra codificadas) y
+  las variantes de mayúsculas, que no entran a Security, caen en el 404 de rutas
+  sin handler. Todavía no hay login, así que nadie puede autenticarse, y nunca
+  se abre una sesión de servidor. Guardas, sobre un
+  handler de prueba que vive solo en tests (`adminprobe.AdminProbeController`,
+  fuera del árbol escaneado, así que `EndpointInventoryIT` sigue exacto):
+  `AdminPathVariantsIT` y `AdminPathVariantsServerIT` piden 16 grafías de la ruta
+  con GET y POST sin credenciales, fijan el estado exacto de cada una y exigen
+  que la respuesta jamás lleve el cuerpo centinela, jamás sea 2xx y jamás fije
+  `JSESSIONID`; `AdminProbeAccessIT` prueba con `user()` que el handler es
+  alcanzable, para que esos rechazos no sean vacíos. `AdminAnonymousSessionIT` y
+  `AdminAnonymousSessionServerIT` fijan, para GET, POST, PUT, PATCH y DELETE, que
+  no hay `HttpSession` ni `JSESSIONID`: el token CSRF vive en la cookie
+  `XSRF-TOKEN` (`csrf.spa()` con `CookieCsrfTokenRepository`, `Secure`,
+  `SameSite=Strict`, sin `HttpOnly`), que `csrf.spa()` entrega en toda respuesta
+  de admin, la 401 incluida; con el repositorio por defecto, un POST anónimo
+  abría una sesión (RED registrado). `AdminChainMarkerIT` y
+  `AdminChainMarkerServerIT` marcan con un filtro de prueba, primero en la
+  cadena, las peticiones que entran a la cadena de admin: las públicas nunca
+  llevan la marca y las de admin siempre.
+  Defensa en profundidad: una segunda cadena sin `securityMatcher` y con
+  `anyRequest().denyAll()` (`AdminSecurityChainConfig.adminFallbackDenyChain`)
+  niega todo lo que la cadena de admin no cubra; solo ve `/api/admin/*` por el
+  mapeo del filtro, así que no toca rutas públicas (`AdminFallbackDenyChainIT`;
+  mutación 2026-10-08: con el matcher de la cadena de admin reducido a
+  `/api/admin/orders/**` el handler sigue sin alcanzarse, y sin la cadena de
+  respaldo el centinela aparece 59 veces en el log). El arranque falla con
+  `IllegalStateException` salvo que se reescriba exactamente un registro del
+  filtro (`SecurityFilterScopeFailFastTest`; mutación: con otro nombre de filtro
+  `SecurityFilterScopeIT` no levanta el contexto). Boot no crea usuario ni
+  contraseña generados porque hay un `UserDetailsService` que no conoce a nadie
+  (`NoGeneratedUserIT` en el contexto real y `NoGeneratedPasswordTest`, que
+  además tiene un control positivo de que Boot sí lo crea y lo loguea sin él).
+  El filtro de Security se registra para los cinco tipos de despacho (REQUEST,
+  ASYNC, ERROR, FORWARD, INCLUDE), fijado en
+  `SecurityFilterScopeIT.theSecurityFilterRegistrationDispatchesOnEveryDispatcherType`;
+  igual, ninguna clase hace `RequestDispatcher.forward` o `include`, ni como
+  llamada ni como referencia a método, y los `@Controller` son `@ResponseBody`
+  sin `ModelAndView` ni `View` (`ArchitectureTest.noForwardOrInclude`; ArchUnit
+  no lee literales, por eso un nombre de vista `forward:` se cierra por tipo, no
+  por texto). Todo handler de `..admin.controller..` mapea bajo `/api/admin/` y
+  ningún otro mapea esa ruta (`ArchitectureTest.adminHandlerPathsAreUnderTheAdminPrefix`,
+  con fixtures en `ArchitectureRulesTest`); hoy no hay controllers de admin, así
+  que la primera mitad no tiene handlers que mirar y las fixtures prueban que
+  muerde. Evidencia por mutación (2026-10-08): mapear un controller de la tienda
+  bajo `/api/admin/` o agregarle un `getRequestDispatcher(..).forward(..)` hizo
+  fallar ambas reglas.
 - **Una sola cuenta: la de administración.** Contraseña con BCrypt o
   Argon2, login con rate limit y bloqueo temporal, sesión en cookie
   `HttpOnly` + `Secure` + `SameSite`. Nunca un token en `localStorage`.

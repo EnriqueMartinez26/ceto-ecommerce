@@ -48,9 +48,12 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Endpoint inventory (REQ-HRD-03). Spring Security is deferred (D-20261007-15), so this allowlist is the compensating
- * control: the union of every MVC handler mapping must be exactly the three public API routes plus Boot's own error
- * endpoint, and nothing else (no actuator, documentation, static resources or welcome page) may answer.
+ * Endpoint inventory (REQ-HRD-03). Spring Security only sees {@code /api/admin/*} (D-20261008-05), so for the public
+ * API this allowlist is the control: the union of every MVC handler mapping must be exactly the three public API
+ * routes plus Boot's own error endpoint, and nothing else (no actuator, documentation, static resources or welcome
+ * page) may answer. The administration area is the one exception to "every other path is the standard 404": Security
+ * answers there (401, 403 or 400) and the test-only probe handler lives outside this context
+ * ({@code AdminPathVariantsIT}), so this inventory stays exact.
  *
  * <p>Boot's {@link BasicErrorController} maps {@code /error} for every HTTP method (verification S1a review S8). It is
  * allowlisted explicitly BY HANDLER TYPE and path, apart from the API routes, so a new controller can never hide
