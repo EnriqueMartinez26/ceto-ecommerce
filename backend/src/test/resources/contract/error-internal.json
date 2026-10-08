@@ -1,0 +1,7 @@
+{
+  "title": "Internal Server Error",
+  "status": 500,
+  "detail": "An unexpected error occurred.",
+  "instance": "/api/checkout/orders",
+  "code": "INTERNAL_ERROR"
+}

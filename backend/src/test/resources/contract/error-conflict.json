@@ -1,0 +1,7 @@
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "The request conflicts with the current state.",
+  "instance": "/api/checkout/orders",
+  "code": "CONFLICT"
+}

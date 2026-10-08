@@ -1,0 +1,7 @@
+{
+  "title": "Method Not Allowed",
+  "status": 405,
+  "detail": "The method is not allowed for this resource.",
+  "instance": "/api/checkout/orders",
+  "code": "METHOD_NOT_ALLOWED"
+}

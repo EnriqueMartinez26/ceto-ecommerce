@@ -446,6 +446,46 @@ Golden: `backend/src/test/resources/contract/error-service-busy.json`
 }
 ```
 
+Tres formas más, todas con la misma estructura: el 405 de un método no
+permitido (trae la cabecera `Allow: POST`), el 409 genérico `CONFLICT` y el 500
+`INTERNAL_ERROR`.
+
+Golden: `backend/src/test/resources/contract/error-method-not-allowed.json`
+
+```json
+{
+  "title": "Method Not Allowed",
+  "status": 405,
+  "detail": "The method is not allowed for this resource.",
+  "instance": "/api/checkout/orders",
+  "code": "METHOD_NOT_ALLOWED"
+}
+```
+
+Golden: `backend/src/test/resources/contract/error-conflict.json`
+
+```json
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "The request conflicts with the current state.",
+  "instance": "/api/checkout/orders",
+  "code": "CONFLICT"
+}
+```
+
+Golden: `backend/src/test/resources/contract/error-internal.json`
+
+```json
+{
+  "title": "Internal Server Error",
+  "status": 500,
+  "detail": "An unexpected error occurred.",
+  "instance": "/api/checkout/orders",
+  "code": "INTERNAL_ERROR"
+}
+```
+
 ### Valores de `reason`
 
 Solo acompaña a `VALIDATION_ERROR`. Si varias reglas fallan, se informa la
@@ -543,7 +583,7 @@ pruebas unitarias, integración con Postgres real y reglas de arquitectura).
 
 - Goldens: `backend/src/test/resources/contract/*.json`, comparados por
   `StorefrontHttpIT`, `CheckoutHttpIT`, `CheckoutErrorsHttpIT`, `RateLimitIT`,
-  `LockTimeoutIT`, `PoolExhaustionIT` y `BodySizeLimitHttpIT`.
+  `LockTimeoutIT`, `PoolExhaustionIT`, `BodySizeLimitHttpIT` y `PiiHttpPathIT`.
 - Este documento se verifica con `ApiDocConsistencyTest`: cada bloque marcado
   con `Golden:` es igual como JSON al archivo citado, todo golden está citado, todo
   `code` del catálogo de errores y todo `reason` del código figuran acá.

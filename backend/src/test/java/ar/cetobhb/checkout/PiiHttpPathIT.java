@@ -1,6 +1,7 @@
 package ar.cetobhb.checkout;
 
 import static ar.cetobhb.support.CatalogFixtures.product;
+import static ar.cetobhb.support.ContractAssertions.assertMatchesGolden;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -30,6 +31,10 @@ import org.springframework.mock.web.MockHttpServletResponse;
  * the row). The captured output is the WHOLE application output (MockMvc echo is off, so nothing here comes from the
  * test itself) and must never hold a sentinel; the responses never hold one either, because the contract returns no
  * buyer data. Error cases also assert the expected log line exists, so a silent logger cannot pass them vacuously.
+ *
+ * <p>Isolation: the probes (a CHECK constraint, a trigger and its function) are created on the SHARED {@code orders}
+ * table of the test database, so failsafe must stay non-parallel (the pom pins {@code forkCount=1}, and no JUnit
+ * parallel execution is configured). The constraint probe is dropped after and before every test.
  */
 @ExtendWith(OutputCaptureExtension.class)
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
@@ -145,6 +150,7 @@ class PiiHttpPathIT extends AbstractHttpIT {
 
         assertThat(response.getStatus()).isEqualTo(409);
         assertThat(bodyOf(response)).contains("\"code\":\"CONFLICT\"");
+        assertMatchesGolden(response, "error-conflict.json");
         assertNoSentinel(bodyOf(response), "409 response body");
         assertThat(output.getAll()).contains("CONFLICT", "constraint=test_pii_ck");
         assertNoSentinel(output.getAll(), "application output");
@@ -165,6 +171,7 @@ class PiiHttpPathIT extends AbstractHttpIT {
 
         assertThat(response.getStatus()).isEqualTo(500);
         assertThat(bodyOf(response)).contains("\"code\":\"INTERNAL_ERROR\"");
+        assertMatchesGolden(response, "error-internal.json");
         assertNoSentinel(bodyOf(response), "500 response body");
         // P0001 = the trigger's RAISE EXCEPTION, whose message carries the whole row: the failure is the intended one.
         assertThat(output.getAll()).contains("INTERNAL_ERROR", "sqlState=P0001");

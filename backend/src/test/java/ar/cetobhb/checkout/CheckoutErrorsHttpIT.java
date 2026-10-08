@@ -4,6 +4,7 @@ import static ar.cetobhb.support.CatalogFixtures.product;
 import static ar.cetobhb.support.ContractAssertions.assertMatchesGolden;
 import static ar.cetobhb.support.ContractAssertions.stripRequestId;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import ar.cetobhb.catalog.service.CatalogService;
@@ -149,6 +150,16 @@ class CheckoutErrorsHttpIT extends AbstractHttpIT {
 
         problem(response, 404, "NOT_FOUND");
         assertMatchesGolden(response, "error-not-found.json");
+    }
+
+    @Test
+    void aGetOnTheCheckoutRouteMatchesTheMethodNotAllowedGoldenFileAndNamesTheAllowedMethod() throws Exception {
+        MockHttpServletResponse response = send(get(PATH).accept(MediaType.APPLICATION_JSON));
+
+        problem(response, 405, "METHOD_NOT_ALLOWED");
+        assertMatchesGolden(response, "error-method-not-allowed.json");
+        assertThat(response.getHeader("Allow")).isEqualTo("POST");
+        assertThat(orderCount()).isZero();
     }
 
     @Test
@@ -344,6 +355,19 @@ class CheckoutErrorsHttpIT extends AbstractHttpIT {
         problem(response, 400, "VALIDATION_ERROR");
         assertThat(bodyOf(response).get("reason").asString()).isEqualTo("INVALID_LINE");
         assertThat(orderCount()).isZero();
+    }
+
+    @ParameterizedTest(name = "productId {0} -> INVALID_LINE")
+    @CsvSource({"0", "-1", "9007199254740992"})
+    void aProductIdOutsideTheSafeRangeIsAnInvalidLineAndPersistsNothing(String productId) throws Exception {
+        String body = BODY.replace("\"productId\":1", "\"productId\":" + productId);
+
+        MockHttpServletResponse response = send(checkout(freshKey(), body));
+
+        problem(response, 400, "VALIDATION_ERROR");
+        assertThat(bodyOf(response).get("reason").asString()).isEqualTo("INVALID_LINE");
+        assertThat(orderCount()).isZero();
+        assertThat(reserved()).isZero();
     }
 
     @Test
