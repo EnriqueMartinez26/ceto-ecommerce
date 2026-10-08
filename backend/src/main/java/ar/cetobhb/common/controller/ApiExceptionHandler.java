@@ -5,6 +5,7 @@ import ar.cetobhb.common.domain.DomainException;
 import ar.cetobhb.common.domain.RateLimitedException;
 import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
+import ar.cetobhb.common.web.BodyTooLargeException;
 import ar.cetobhb.common.web.SafeErrors;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
@@ -103,6 +104,9 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<Object> handleUnexpected(Exception ex, HttpServletRequest request) {
+        if (causedByBodyLimit(ex)) {
+            return respondLogging(ApiErrorCatalog.PAYLOAD_TOO_LARGE, ex, request, new HttpHeaders());
+        }
         return respondLogging(ApiErrorCatalog.INTERNAL, ex, request, new HttpHeaders());
     }
 
@@ -129,7 +133,25 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return respondLogging(error, ex, request, responseHeaders, extras);
     }
 
+    /** Upper bound on the cause chain walked, so a pathological or cyclic chain cannot loop. */
+    private static final int MAX_CAUSE_DEPTH = 16;
+
+    /** True when the request body limit stopped the read somewhere in the cause chain (Jackson wraps IO errors). */
+    private static boolean causedByBodyLimit(Throwable ex) {
+        Throwable cause = ex;
+        for (int depth = 0; cause != null && depth < MAX_CAUSE_DEPTH; depth++) {
+            if (cause instanceof BodyTooLargeException) {
+                return true;
+            }
+            cause = cause.getCause() == cause ? null : cause.getCause();
+        }
+        return false;
+    }
+
     private static ApiError classify(Exception ex, HttpStatusCode status) {
+        if (causedByBodyLimit(ex)) {
+            return ApiErrorCatalog.PAYLOAD_TOO_LARGE;
+        }
         if (ex instanceof AsyncRequestTimeoutException) {
             return ApiErrorCatalog.SERVICE_BUSY;
         }

@@ -138,7 +138,7 @@ class StorefrontServiceIT extends AbstractPostgresIT {
         baseWithStock("A", 1);
         baseWithStock("B", 1);
         baseWithStock("C", 1);
-        WebProperties twoProducts = new WebProperties(2, "127.0.0.1/32",
+        WebProperties twoProducts = new WebProperties(16_384, 2, "127.0.0.1/32",
                 new WebProperties.CheckoutRateLimit(10, 360, 10_000, 100, 100));
         StorefrontService capped = new StorefrontService(catalog, inventory, orderProperties, twoProducts);
 

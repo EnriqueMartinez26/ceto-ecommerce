@@ -20,7 +20,7 @@ import org.springframework.mock.env.MockEnvironment;
 /** The remote IP valve settings that Tomcat really uses are checked at startup, whatever overrode them. */
 class WebConfigTest {
 
-    private static final WebProperties WEB = new WebProperties(200, "10.0.0.0/8",
+    private static final WebProperties WEB = new WebProperties(16_384, 200, "10.0.0.0/8",
             new WebProperties.CheckoutRateLimit(10, 360, 10_000, 100, 100));
 
     private static final String PROXIES = "server.tomcat.remoteip.internal-proxies";

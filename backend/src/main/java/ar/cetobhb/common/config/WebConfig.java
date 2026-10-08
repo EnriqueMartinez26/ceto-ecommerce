@@ -1,7 +1,9 @@
 package ar.cetobhb.common.config;
 
 import ar.cetobhb.common.domain.TokenBucketLimiter;
+import ar.cetobhb.common.web.BodySizeLimitFilter;
 import ar.cetobhb.common.web.CheckoutRateLimitInterceptor;
+import ar.cetobhb.common.web.ProblemResponses;
 import ar.cetobhb.common.web.RequestIdFilter;
 import java.time.Clock;
 import java.time.Duration;
@@ -105,6 +107,19 @@ public class WebConfig implements WebMvcConfigurer {
         FilterRegistrationBean<RequestIdFilter> registration = new FilterRegistrationBean<>(new RequestIdFilter());
         registration.addUrlPatterns("/*");
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return registration;
+    }
+
+    /**
+     * Right after the request id (so the 413 carries it) and before the dispatcher, hence before the rate-limit
+     * interceptor: an oversized request is rejected without spending a token (it costs the server one header check).
+     */
+    @Bean
+    FilterRegistrationBean<BodySizeLimitFilter> bodySizeLimitFilter(ProblemResponses problems, WebProperties web) {
+        FilterRegistrationBean<BodySizeLimitFilter> registration =
+                new FilterRegistrationBean<>(new BodySizeLimitFilter(problems, web.maxBodyBytes()));
+        registration.addUrlPatterns("/*");
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 2);
         return registration;
     }
 

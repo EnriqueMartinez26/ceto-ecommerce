@@ -60,6 +60,8 @@ ceto:
       fixed-delay-ms: 60000
       max-batches-per-tick: 10
   web:
+    # Largest request body in bytes (BodySizeLimitFilter): 16 KiB is far above a 50-line order. WebProperties: 1024..262144.
+    max-body-bytes: 16384
     # Largest storefront list (WebProperties: 1..500).
     storefront-max-products: 200
     # Peers allowed to set the client address through X-Forwarded-For. Tomcat reads internal-proxies as a CIDR list when

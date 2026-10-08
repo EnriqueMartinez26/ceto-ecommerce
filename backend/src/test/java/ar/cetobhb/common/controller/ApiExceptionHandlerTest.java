@@ -15,6 +15,7 @@ import ar.cetobhb.catalog.domain.ProductNotFoundException;
 import ar.cetobhb.common.domain.DomainException;
 import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
+import ar.cetobhb.common.web.BodyTooLargeException;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
@@ -50,6 +51,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.mock.http.MockHttpInputMessage;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -326,6 +329,48 @@ class ApiExceptionHandlerTest {
         THROWN.set(new RuntimeException(SECRET));
 
         mvc.perform(get("/boom").requestAttr("requestId", "rid-1")).andExpect(jsonPath("$.requestId").value("rid-1"));
+    }
+
+    @Test
+    void anUnreadableBodyCausedByTheBodyLimitIs413NotMalformed() throws Exception {
+        THROWN.set(new HttpMessageNotReadableException("I/O error while reading input message",
+                new RuntimeException("wrapper", new BodyTooLargeException(16_384)),
+                new MockHttpInputMessage(new byte[0])));
+
+        ResultActions result = mvc.perform(get("/boom"));
+
+        result.andExpect(status().isContentTooLarge()).andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"))
+                .andExpect(jsonPath("$.detail").value("The request is too large."))
+                .andExpect(header().string("Cache-Control", "no-store"));
+        assertThat(body(result)).doesNotContain("16384");
+    }
+
+    @Test
+    void theBodyLimitFailureIs413EvenWhenItReachesTheAdviceUnwrapped() throws Exception {
+        THROWN.set(new BodyTooLargeException(16_384));
+
+        mvc.perform(get("/boom")).andExpect(status().isContentTooLarge())
+                .andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"));
+    }
+
+    @Test
+    void anUnreadableBodyWithoutTheLimitInItsCauseChainStaysMalformed() throws Exception {
+        THROWN.set(new HttpMessageNotReadableException("unreadable", new RuntimeException("a", new java.io.IOException("b")),
+                new MockHttpInputMessage(new byte[0])));
+
+        mvc.perform(get("/boom")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
+    }
+
+    @Test
+    void theBodyLimitIsFoundSeveralCausesDeep() throws Exception {
+        Throwable chain = new BodyTooLargeException(16_384);
+        for (int i = 0; i < 5; i++) {
+            chain = new RuntimeException("wrapper " + i, chain);
+        }
+        THROWN.set(new HttpMessageNotReadableException("unreadable", chain, new MockHttpInputMessage(new byte[0])));
+
+        mvc.perform(get("/boom")).andExpect(status().isContentTooLarge());
     }
 
     private static String body(ResultActions result) throws Exception {

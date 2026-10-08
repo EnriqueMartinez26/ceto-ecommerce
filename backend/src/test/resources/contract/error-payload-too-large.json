@@ -1,0 +1,7 @@
+{
+  "title": "Content Too Large",
+  "status": 413,
+  "detail": "The request is too large.",
+  "instance": "/api/checkout/orders",
+  "code": "PAYLOAD_TOO_LARGE"
+}

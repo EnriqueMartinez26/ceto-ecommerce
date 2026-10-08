@@ -14,6 +14,7 @@ import org.springframework.validation.annotation.Validated;
  * Web settings, fail-closed like {@code OrderProperties}: every number has a minimum AND a maximum, and a missing or
  * unsafe value stops the startup. Defaults live in application.yml, except {@code trustedProxies}, which has none.
  *
+ * @param maxBodyBytes         largest accepted request body (checked on the declared length and while streaming)
  * @param storefrontMaxProducts largest storefront list
  * @param trustedProxies        Tomcat {@code internal-proxies} value: the peers allowed to set the client address
  *                              through {@code X-Forwarded-For}. A comma-separated CIDR list whose every entry lies
@@ -24,6 +25,7 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties("ceto.web")
 @Validated
 public record WebProperties(
+        @Min(1024) @Max(262_144) int maxBodyBytes,
         @Min(1) @Max(500) int storefrontMaxProducts,
         @NotBlank String trustedProxies,
         @NotNull @Valid CheckoutRateLimit checkoutRateLimit) {

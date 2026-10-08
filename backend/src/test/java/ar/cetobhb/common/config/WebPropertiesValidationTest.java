@@ -47,6 +47,7 @@ class WebPropertiesValidationTest {
         runner.run(context -> {
             assertThat(context).hasNotFailed();
             WebProperties p = context.getBean(WebProperties.class);
+            assertThat(p.maxBodyBytes()).isEqualTo(16_384);
             assertThat(p.storefrontMaxProducts()).isEqualTo(200);
             assertThat(p.checkoutRateLimit().burst()).isEqualTo(10);
             assertThat(p.checkoutRateLimit().refillIntervalSeconds()).isEqualTo(360);
@@ -90,6 +91,8 @@ class WebPropertiesValidationTest {
 
     static Stream<Arguments> outOfRangeValues() {
         return Stream.of(
+                Arguments.of("ceto.web.max-body-bytes", "1023"),
+                Arguments.of("ceto.web.max-body-bytes", "262145"),
                 Arguments.of("ceto.web.storefront-max-products", "0"),
                 Arguments.of("ceto.web.storefront-max-products", "501"),
                 Arguments.of("ceto.web.checkout-rate-limit.burst", "0"),
@@ -115,6 +118,8 @@ class WebPropertiesValidationTest {
 
     static Stream<Arguments> boundaryValues() {
         return Stream.of(
+                Arguments.of("ceto.web.max-body-bytes", "1024"),
+                Arguments.of("ceto.web.max-body-bytes", "262144"),
                 Arguments.of("ceto.web.storefront-max-products", "1"),
                 Arguments.of("ceto.web.storefront-max-products", "500"),
                 Arguments.of("ceto.web.checkout-rate-limit.burst", "1"),
