@@ -78,7 +78,7 @@ Resumen de las últimas mediciones; el detalle de cada una está más abajo.
 
 | Qué | Resultado | Cuándo |
 |---|---|---|
-| `./mvnw clean verify` | 986 pruebas unitarias + 473 de integración, 0 fallas | 2026-10-08, cierre de S6 |
+| `./mvnw clean verify` | 992 pruebas unitarias + 477 de integración, 0 fallas | 2026-10-08, pulido final de S6 |
 | PIT `services` | 158 mutantes (`orders.service` 104, `inventory.service` 29, `catalog.service` 25), 158 muertos, 0 sobrevivientes, 0 sin cobertura | 2026-10-08, rama `feat/http-s5c1-lock-and-pool` |
 | PIT `domain` | 360 mutantes, 359 muertos; el sobreviviente es el equivalente aceptado de `PhoneNumberNormalizer` | 2026-10-08, rama `feat/http-s4b1b-client-ip-key` |
 
