@@ -4,7 +4,9 @@ import ar.cetobhb.catalog.domain.ProductSnapshot;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.common.domain.PhoneNumberNormalizer;
 import ar.cetobhb.common.persistence.ConstraintViolations;
+import ar.cetobhb.catalog.domain.ProductNotAvailableException;
 import ar.cetobhb.inventory.domain.BaseUnitDemand;
+import ar.cetobhb.inventory.domain.StockNotConfiguredException;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.config.OrderProperties;
 import ar.cetobhb.orders.domain.IdempotencyConflictException;
@@ -24,6 +26,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -45,6 +50,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class OrderPlacementService {
 
+    private static final Logger LOG = LoggerFactory.getLogger(OrderPlacementService.class);
     private static final String IDEMPOTENCY_KEY_CONSTRAINT = "orders_idempotency_key_uk";
 
     private final OrderRequestNormalizer normalizer;
@@ -165,8 +171,22 @@ public class OrderPlacementService {
                 fingerprint, request.name(), request.phoneE164(), request.address(), request.zone(),
                 now.plus(reservationTime), lines);
         Order order = orders.saveAndFlush(Order.place(data, now));
-        inventory.reserve(demand);
+        reserve(demand, productIds);
         return placed(order, false);
+    }
+
+    /**
+     * A base without a stock row is an operator data problem (REQ-ERR-04): log it once (class and base product id,
+     * never buyer data) and tell the buyer the REQUESTED products are unavailable. The exception's own id is the
+     * combo's base id, which the buyer never asked for.
+     */
+    private void reserve(BaseUnitDemand demand, List<Long> requestedIds) {
+        try {
+            inventory.reserve(demand);
+        } catch (StockNotConfiguredException e) {
+            LOG.error("{} baseProductId={}", e.getClass().getSimpleName(), e.productId());
+            throw new ProductNotAvailableException(Set.copyOf(requestedIds));
+        }
     }
 
     /** Built inside the transaction that loaded the order: the lines are lazy and read from the snapshot rows. */
