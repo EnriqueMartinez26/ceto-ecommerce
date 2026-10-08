@@ -213,10 +213,14 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    iteración 0 con `40P01 deadlock detected` de Postgres; con el orden
    ascendente restaurado el test pasa. Al crear un pedido, ANTES de la fila
    del pedido, se toma el advisory lock transaccional del teléfono de la
-   compradora (`OrderRepository.lockBuyerPhone`, `pg_advisory_xact_lock`) para
-   serializar el tope de pedidos pendientes por teléfono (regla 10). Orden
-   completo: advisory(teléfono), fila del pedido, filas de stock ascendentes;
-   solo la colocación toma ese lock, así que no cierra ciclos.
+   compradora (`OrderRepository.tryLockBuyerPhone`, `pg_try_advisory_xact_lock`)
+   para serializar el tope de pedidos pendientes por teléfono (regla 10). El
+   lock NO espera (D-20261008-01): si otro checkout del mismo teléfono lo tiene,
+   se lanza `CheckoutInProgressException` (503 `SERVICE_BUSY` con
+   `Retry-After: 1`), así ningún pedido retiene una conexión del pool esperando.
+   Orden completo: advisory(teléfono), fila del pedido, filas de stock
+   ascendentes; solo la colocación toma ese lock y nunca espera por él, así que
+   no cierra ciclos.
 4. **Ciclo de la reserva**: crear el pedido suma a `reserved`; pasar a
    pagado descuenta en firme (`on_hand −= n`, `reserved −= n`); cancelar o
    vencer libera (`reserved −= n`). Una reserva sin pago vence sola a las
@@ -350,11 +354,13 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     creado es 200, nunca 429, aunque la compradora esté en el tope), conteo,
     alta. Pagado, cancelado y vencido liberan el cupo. Pruebas:
     `OrderPendingCapIT` (reglas secuenciales y el lock) y `OrderPendingCapBurstIT`
-    (10 claves distintas del mismo teléfono: exactamente 3 pedidos; evidencia por
-    mutación del 2026-10-07: sin la llamada a `lockBuyerPhone` fallaron las 10
-    iteraciones de `distinctKeysOfOnePhoneInABurstYieldExactlyTheCap`; sin la
-    segunda búsqueda falló `oneKeyRetriedInABurstBelowTheCapCreatesOneOrderAndNeverRejects`
-    5 de 5). Por HTTP: golden `contract/error-too-many-pending.json` y el
+    (10 claves distintas del mismo teléfono: nunca más de 3 pedidos y el resto
+    429 o 503, sin ningún otro fallo; evidencia por mutación: sin el lock
+    —`tryLockBuyerPhone` siempre `true`— fallaron las 10 iteraciones de
+    `distinctKeysOfOnePhoneInABurstNeverExceedTheCapAndTheRestAre429Or503`; sin la
+    segunda búsqueda falla, de forma determinista,
+    `OrderPlacementServiceTest.aRetryCommittedBetweenTheFirstLookupAndTheLockIsReplayedNotCounted`).
+    Un teléfono ocupado responde 503 al instante (`OrderPendingCapIT`, `LockTimeoutIT`). Por HTTP: golden `contract/error-too-many-pending.json` y el
     reintento en el tope sigue siendo 200 (`CheckoutErrorsHttpIT`). Un
     `PAGO_PENDIENTE` vencido que el job todavía no canceló sigue contando
     (D-20261007-24, `OrderPendingCapIT`). El 429 se registra en DEBUG. Los ITs

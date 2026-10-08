@@ -8,6 +8,7 @@ import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
+import ar.cetobhb.orders.domain.CheckoutInProgressException;
 import ar.cetobhb.orders.domain.IdempotencyConflictException;
 import ar.cetobhb.orders.domain.IllegalOrderTransitionException;
 import ar.cetobhb.orders.domain.OrderNotFoundException;
@@ -62,6 +63,11 @@ final class ApiErrorCatalog {
                     "Too many requests. Try again later.", Level.DEBUG)),
             Map.entry(TooManyPendingOrdersException.class, new ApiError(HttpStatus.TOO_MANY_REQUESTS,
                     "TOO_MANY_PENDING_ORDERS", "Too many pending orders for this phone.", Level.DEBUG)),
+            // A second checkout of the same phone while one is running (D-20261008-01): a plain busy answer. A client
+            // can trigger it at will, so DEBUG only. Same status, code and detail as SERVICE_BUSY; ApiExceptionHandler
+            // adds Retry-After: 1.
+            Map.entry(CheckoutInProgressException.class, new ApiError(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_BUSY",
+                    "The service is busy. Try again shortly.", Level.DEBUG)),
             // No public endpoint reaches these three yet; explicit rows keep a future endpoint from returning 500.
             Map.entry(IllegalOrderTransitionException.class, CONFLICT),
             Map.entry(StockAlreadyConfiguredException.class, CONFLICT),

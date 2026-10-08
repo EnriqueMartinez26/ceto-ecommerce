@@ -7,6 +7,7 @@ import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.common.web.BodyTooLargeException;
 import ar.cetobhb.common.web.SafeErrors;
+import ar.cetobhb.orders.domain.CheckoutInProgressException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import java.util.ArrayList;
@@ -62,6 +63,8 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(ApiExceptionHandler.class);
     private static final String RETRY_AFTER_SECONDS = "5";
+    /** The per-phone lock holder finishes in well under a second: a short retry is enough (D-20261008-01). */
+    private static final String CHECKOUT_IN_PROGRESS_RETRY_AFTER_SECONDS = "1";
 
     @ExceptionHandler(DomainException.class)
     ResponseEntity<Object> handleDomain(DomainException ex, HttpServletRequest request) {
@@ -83,6 +86,8 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         HttpHeaders headers = new HttpHeaders();
         if (ex instanceof RateLimitedException limited) {
             headers.set(HttpHeaders.RETRY_AFTER, String.valueOf(limited.retryAfterSeconds()));
+        } else if (ex instanceof CheckoutInProgressException) {
+            headers.set(HttpHeaders.RETRY_AFTER, CHECKOUT_IN_PROGRESS_RETRY_AFTER_SECONDS);
         }
         return respond(error, request, headers, extras);
     }

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ar.cetobhb.catalog.service.CatalogService;
@@ -11,6 +13,7 @@ import ar.cetobhb.common.domain.PhoneNumberNormalizer;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.config.OrderProperties;
 import ar.cetobhb.orders.domain.Buyer;
+import ar.cetobhb.orders.domain.CheckoutInProgressException;
 import ar.cetobhb.orders.domain.IdempotencyConflictException;
 import ar.cetobhb.orders.domain.NewOrder;
 import ar.cetobhb.orders.domain.NewOrderLine;
@@ -56,6 +59,7 @@ class OrderPlacementServiceTest {
                         "orders_idempotency_key_uk"));
         // The unique constraint fired, yet the lookup of the winner finds nothing: rows are never deleted, so this
         // cannot happen unless the invariant is broken.
+        when(orders.tryLockBuyerPhone(any())).thenReturn(true);
         when(orders.findByIdempotencyKey(any())).thenReturn(Optional.empty());
         when(catalog.findForOrder(any())).thenThrow(lost);
         OrderPlacementService service = new OrderPlacementService(
@@ -89,6 +93,7 @@ class OrderPlacementServiceTest {
                 List.of(new NewOrderLine(1L, "Soap", false, BigDecimal.TEN, 1, 1L, 1))), now);
         ReflectionTestUtils.setField(winner, "id", 5L);
         // The lookup before the lock and the one under the lock miss, the one after the lost race finds the winner.
+        when(orders.tryLockBuyerPhone(any())).thenReturn(true);
         when(orders.findByIdempotencyKey(any())).thenReturn(Optional.empty()).thenReturn(Optional.empty())
                 .thenReturn(Optional.of(winner));
         when(catalog.findForOrder(any())).thenThrow(lost);
@@ -121,6 +126,7 @@ class OrderPlacementServiceTest {
                 request.zone(), now.plus(Duration.ofHours(24)),
                 List.of(new NewOrderLine(1L, "Soap", false, BigDecimal.TEN, 3, 1L, 1))), now);
         ReflectionTestUtils.setField(winner, "id", 5L);
+        when(orders.tryLockBuyerPhone(any())).thenReturn(true);
         when(orders.findByIdempotencyKey(any())).thenReturn(Optional.empty()).thenReturn(Optional.empty())
                 .thenReturn(Optional.of(winner));
         when(catalog.findForOrder(any())).thenThrow(lost);
@@ -130,5 +136,57 @@ class OrderPlacementServiceTest {
 
         assertThatThrownBy(() -> service.placeOrder(COMMAND))
                 .isInstanceOf(IdempotencyConflictException.class);
+    }
+
+    @Test
+    void aRetryCommittedBetweenTheFirstLookupAndTheLockIsReplayedNotCounted() {
+        // Deterministic stand-in for a timing-dependent race: the first lookup misses, the winner commits, this
+        // transaction then gets the lock. The lookup under the lock must find the order and replay it; counting first
+        // would meet the order itself at the cap and answer 429.
+        CatalogService catalog = mock(CatalogService.class);
+        OrderRepository orders = mock(OrderRepository.class);
+        PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
+        when(txManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+        NormalizedOrderRequest request = new OrderRequestNormalizer(new PhoneNumberNormalizer(),
+                new OrderLimits(10, 10)).normalize(COMMAND);
+        Instant now = Instant.parse("2026-10-08T12:00:00Z");
+        Order winner = Order.place(new NewOrder("CETO-000001", UUID.fromString(COMMAND.idempotencyKey()),
+                OrderRequestFingerprint.of(request), request.name(), request.phoneE164(), request.address(),
+                request.zone(), now.plus(Duration.ofHours(24)),
+                List.of(new NewOrderLine(1L, "Soap", false, BigDecimal.TEN, 1, 1L, 1))), now);
+        ReflectionTestUtils.setField(winner, "id", 5L);
+        when(orders.findByIdempotencyKey(any())).thenReturn(Optional.empty()).thenReturn(Optional.of(winner));
+        when(orders.tryLockBuyerPhone(any())).thenReturn(true);
+        when(orders.countByBuyerPhoneE164AndStatus(any(), any())).thenReturn(3L);
+        OrderPlacementService service = new OrderPlacementService(
+                new OrderProperties(24, 10, 10, 3, new OrderProperties.Expiry(100, 60_000, 10)), catalog,
+                mock(InventoryService.class), orders, Clock.fixed(now, ZoneOffset.UTC), txManager);
+
+        PlacedOrder replay = service.placeOrder(COMMAND);
+
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.orderId()).isEqualTo(5L);
+        verify(orders, never()).countByBuyerPhoneE164AndStatus(any(), any());
+    }
+
+    @Test
+    void aBusyPhoneLockFailsFastBeforeTheCountTheCatalogOrAnyWrite() {
+        // The per-phone lock never waits (D-20261008-01): a busy phone is a 503 that holds no pooled connection.
+        CatalogService catalog = mock(CatalogService.class);
+        OrderRepository orders = mock(OrderRepository.class);
+        PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
+        when(txManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+        when(orders.findByIdempotencyKey(any())).thenReturn(Optional.empty());
+        when(orders.tryLockBuyerPhone(any())).thenReturn(false);
+        OrderPlacementService service = new OrderPlacementService(
+                new OrderProperties(24, 10, 10, 3, new OrderProperties.Expiry(100, 60_000, 10)), catalog,
+                mock(InventoryService.class), orders,
+                Clock.fixed(Instant.parse("2026-10-08T12:00:00Z"), ZoneOffset.UTC), txManager);
+
+        assertThatThrownBy(() -> service.placeOrder(COMMAND)).isInstanceOf(CheckoutInProgressException.class);
+
+        verify(orders, never()).countByBuyerPhoneE164AndStatus(any(), any());
+        verify(orders, never()).saveAndFlush(any());
+        verify(catalog, never()).findForOrder(any());
     }
 }

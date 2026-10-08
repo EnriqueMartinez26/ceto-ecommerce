@@ -37,8 +37,9 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 /**
  * Postgres {@code lock_timeout} bounds every lock wait of the application (carry-forward S5c, REQ-HRD resource
- * exhaustion): a request parked behind a row or advisory lock gives up after 5 s with {@code 503 SERVICE_BUSY} and
- * {@code Retry-After}, leaves nothing behind and never turns into a 500 (verification U-7, U-10, U-12). The lock
+ * exhaustion): a request parked behind a row lock gives up after 5 s with {@code 503 SERVICE_BUSY} and
+ * {@code Retry-After}, leaves nothing behind and never turns into a 500 (verification U-7, U-10, U-12). The per-phone
+ * advisory lock does not wait at all (D-20261008-01): its holder gets an immediate 503 with {@code Retry-After: 1}. The lock
  * holder is a plain pooled connection; a watchdog releases it after 20 s so a missing timeout shows up as a failed
  * assertion and not as a hung build.
  */
@@ -137,16 +138,25 @@ class LockTimeoutIT extends AbstractHttpIT {
         return jdbc.queryForObject("SELECT coalesce(sum(reserved), 0) FROM inventory_stock", Long.class);
     }
 
-    /** The wait is the configured timeout: not instant, not unbounded. */
+    /**
+     * The wait is the configured timeout: not instant, not unbounded. The upper bound is loose on purpose (a slow CI
+     * machine must not fail the build); what it rules out is an unbounded wait.
+     */
     private static void assertWaitedAboutTheLockTimeout(long startedNanos) {
         Duration waited = Duration.ofNanos(System.nanoTime() - startedNanos);
         assertThat(waited).isGreaterThanOrEqualTo(LOCK_TIMEOUT.minusMillis(500))
-                .isLessThan(LOCK_TIMEOUT.plusSeconds(4));
+                .isLessThan(Duration.ofSeconds(15));
     }
 
     @Test
     void everyApplicationConnectionRunsWithAFiveSecondLockTimeout() {
         assertThat(jdbc.queryForObject("SHOW lock_timeout", String.class)).isEqualTo("5s");
+    }
+
+    @Test
+    void everyApplicationConnectionRunsWithAnIdleInTransactionBackstop() {
+        // D-20261008-01: a transaction that holds locks but stopped talking is killed after 30 s.
+        assertThat(jdbc.queryForObject("SHOW idle_in_transaction_session_timeout", String.class)).isEqualTo("30s");
     }
 
     @Test
@@ -169,7 +179,7 @@ class LockTimeoutIT extends AbstractHttpIT {
     }
 
     @Test
-    void aPlacementParkedBehindThePhoneAdvisoryLockIsAnsweredWith503AfterTheLockTimeout() throws Exception {
+    void aPlacementOfAPhoneWhoseAdvisoryLockIsHeldIsAnsweredAtOnceWith503AndRetryAfterOne() throws Exception {
         String phone = freshBuyer().phone();
         try (LockHolder holder = holdPhone(phone)) {
             long started = System.nanoTime();
@@ -177,16 +187,19 @@ class LockTimeoutIT extends AbstractHttpIT {
             MockHttpServletResponse response = checkout(phone);
 
             assertThat(response.getStatus()).isEqualTo(503);
-            assertThat(response.getHeader("Retry-After")).isEqualTo("5");
+            assertThat(response.getHeader("Retry-After")).isEqualTo("1");
+            assertThat(response.getContentType()).startsWith("application/problem+json");
             assertMatchesGolden(response, "error-service-busy.json");
-            assertWaitedAboutTheLockTimeout(started);
+            // It did not wait for the lock (D-20261008-01): far below the 5 s lock_timeout, no pooled connection pinned.
+            assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(LOCK_TIMEOUT.minusSeconds(1));
 
             long otherStarted = System.nanoTime();
             assertThat(checkout(freshBuyer().phone()).getStatus()).as("another phone is not blocked").isEqualTo(201);
-            assertThat(Duration.ofNanos(System.nanoTime() - otherStarted)).isLessThan(Duration.ofSeconds(3));
+            assertThat(Duration.ofNanos(System.nanoTime() - otherStarted)).isLessThan(Duration.ofSeconds(10));
         }
         assertThat(orderCount()).isEqualTo(1L);
         assertThat(reserved()).isEqualTo(2L);
+        assertThat(checkout(phone).getStatus()).as("the same phone recovers once the lock is gone").isEqualTo(201);
     }
 
     /**

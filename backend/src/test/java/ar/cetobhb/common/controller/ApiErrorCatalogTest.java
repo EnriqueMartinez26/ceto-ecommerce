@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import ar.cetobhb.CetoBackendApplication;
 import ar.cetobhb.common.domain.DomainException;
 import ar.cetobhb.common.domain.RateLimitedException;
+import ar.cetobhb.orders.domain.CheckoutInProgressException;
 import ar.cetobhb.orders.domain.TooManyPendingOrdersException;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaModifier;
@@ -60,6 +61,17 @@ class ApiErrorCatalogTest {
         // A client can trigger this 429 at will: anything above DEBUG would let abuse flood the production log.
         assertThat(ApiErrorCatalog.domainErrors().get(TooManyPendingOrdersException.class).logLevel())
                 .isEqualTo(Level.DEBUG);
+    }
+
+    @Test
+    void aCheckoutInProgressIsABusyServiceLoggedAtDebugBecauseAClientCanTriggerItAtWill() {
+        ApiError row = ApiErrorCatalog.domainErrors().get(CheckoutInProgressException.class);
+
+        assertThat(row.status().value()).isEqualTo(503);
+        assertThat(row.code()).isEqualTo("SERVICE_BUSY");
+        assertThat(row.detail()).isEqualTo(ApiErrorCatalog.SERVICE_BUSY.detail());
+        assertThat(row.logLevel()).isEqualTo(Level.DEBUG);
+        assertThat(new CheckoutInProgressException()).hasMessage("CHECKOUT_IN_PROGRESS");
     }
 
     @Test

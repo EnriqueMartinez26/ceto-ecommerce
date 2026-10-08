@@ -9,6 +9,7 @@ import ar.cetobhb.inventory.domain.BaseUnitDemand;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.config.OrderProperties;
+import ar.cetobhb.orders.domain.CheckoutInProgressException;
 import ar.cetobhb.orders.domain.IdempotencyConflictException;
 import ar.cetobhb.orders.domain.NewOrder;
 import ar.cetobhb.orders.domain.NewOrderLine;
@@ -149,7 +150,9 @@ public class OrderPlacementService {
      *
      * <p>Precondition: call it BEFORE touching orders or stock in the transaction. It takes the per-phone advisory
      * lock first, so any earlier order or stock lock in the same transaction inverts the lock order
-     * (advisory(phone) -> order row -> stock rows) and can deadlock against {@link #placeOrder}.
+     * (advisory(phone) -> order row -> stock rows): a concurrent {@link #placeOrder} of that phone may then wait for
+     * rows this transaction holds, until the {@code lock_timeout} (the advisory lock itself never waits, so it cannot
+     * close a deadlock cycle). A phone whose lock another checkout holds gets {@link CheckoutInProgressException}.
      *
      * <p>Contract differences from {@link #placeOrder}: it does NO idempotency lookup and no replay, so a duplicate
      * key surfaces as a {@link DataIntegrityViolationException} (constraint {@code orders_idempotency_key_uk}) in the
@@ -165,20 +168,32 @@ public class OrderPlacementService {
             throw new IllegalStateException("placeInCurrentTransaction cannot run in a read-only transaction");
         }
         NormalizedOrderRequest request = normalizer.normalize(command);
-        orders.lockBuyerPhone(request.phoneE164());
+        requirePhoneLock(request);
         requirePendingCapacity(request);
         return place(request, OrderRequestFingerprint.of(request));
     }
 
     /**
-     * Create path of {@link #placeOrder} (REQ-ABU-01): the per-phone advisory lock FIRST, then the idempotency lookup
+     * Takes the per-phone lock WITHOUT waiting (D-20261008-01): if another checkout of the same phone holds it, this
+     * one is rejected with {@link CheckoutInProgressException} (503, {@code Retry-After: 1}). A waiting lock would pin
+     * one pooled connection per concurrent request of the phone.
+     */
+    private void requirePhoneLock(NormalizedOrderRequest request) {
+        if (!orders.tryLockBuyerPhone(request.phoneE164())) {
+            throw new CheckoutInProgressException();
+        }
+    }
+
+    /**
+     * Create path of {@link #placeOrder} (REQ-ABU-01): the per-phone advisory lock FIRST (try-lock, never waits:
+     * {@link CheckoutInProgressException} when another checkout of the phone holds it), then the idempotency lookup
      * AGAIN, then the cap. Taking the lock before counting serializes the count-and-insert of one phone. The re-check
-     * under the lock keeps a retry of an order that was committed while this transaction waited for the lock a 200
+     * under the lock keeps a retry of an order that was committed between the first lookup and the lock a 200
      * replay: counted first it would meet its own order and be rejected. A replay found here writes nothing, reserves
      * nothing and consumes no order number.
      */
     private PlacedOrder placeUnderPhoneLock(NormalizedOrderRequest request, String fingerprint) {
-        orders.lockBuyerPhone(request.phoneE164());
+        requirePhoneLock(request);
         PlacedOrder replay = replayOrNull(request, fingerprint);
         if (replay != null) {
             return replay;

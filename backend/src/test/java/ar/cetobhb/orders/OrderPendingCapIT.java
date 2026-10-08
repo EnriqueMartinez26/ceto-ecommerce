@@ -8,6 +8,7 @@ import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.domain.Buyer;
 import ar.cetobhb.orders.domain.CancelReason;
+import ar.cetobhb.orders.domain.CheckoutInProgressException;
 import ar.cetobhb.orders.domain.IdempotencyConflictException;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
 import ar.cetobhb.orders.domain.ShippingZone;
@@ -28,6 +29,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -251,11 +256,11 @@ class OrderPendingCapIT extends AbstractPostgresIT {
     // ---- the lock itself ----
 
     @Test
-    void lockBuyerPhoneHoldsTheTransactionScopedAdvisoryLockOfThatPhoneOnly() throws SQLException {
+    void tryLockBuyerPhoneHoldsTheTransactionScopedAdvisoryLockOfThatPhoneOnly() throws SQLException {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
         tx.executeWithoutResult(status -> {
-            orders.lockBuyerPhone(PHONE);
+            assertThat(orders.tryLockBuyerPhone(PHONE)).as("free phone").isTrue();
             assertThat(tryLockFromAnotherSession(PHONE)).as("same phone, other session").isFalse();
             assertThat(tryLockFromAnotherSession("+5493515550001")).as("other phone").isTrue();
         });
@@ -278,9 +283,53 @@ class OrderPendingCapIT extends AbstractPostgresIT {
         }
     }
 
+    // ---- the lock never waits (D-20261008-01) ----
+
+    /** Runs {@code action} on another thread while this one holds the phone lock in an open transaction. */
+    private Throwable failureWhilePhoneIsLocked(Runnable action) {
+        TransactionTemplate holder = new TransactionTemplate(transactionManager);
+        return holder.execute(status -> {
+            assertThat(orders.tryLockBuyerPhone(PHONE)).isTrue();
+            long started = System.nanoTime();
+            try {
+                CompletableFuture.runAsync(action).get(15, TimeUnit.SECONDS);
+                throw new AssertionError("the placement succeeded while the phone lock was held");
+            } catch (ExecutionException e) {
+                // Well under the 5 s lock_timeout: the placement gave up at once, it did not wait for the lock.
+                assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(3));
+                return e.getCause();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            } catch (TimeoutException e) {
+                throw new AssertionError("the placement waited for the phone lock", e);
+            }
+        });
+    }
+
     @Test
-    void lockBuyerPhoneRequiresAnActiveTransaction() {
-        assertThatThrownBy(() -> orders.lockBuyerPhone(PHONE))
+    void aPlacementOfAPhoneWhoseLockIsHeldFailsFastWithoutWaitingAndWritesNothing() {
+        Throwable failure = failureWhilePhoneIsLocked(() -> place(PHONE));
+
+        assertThat(failure).isInstanceOf(CheckoutInProgressException.class);
+        assertThat(orderCount()).isZero();
+        assertThat(reserved()).isZero();
+        assertThat(place(PHONE).replayed()).as("not sticky: works once the lock is free").isFalse();
+    }
+
+    @Test
+    void placeInCurrentTransactionOfAPhoneWhoseLockIsHeldFailsFastToo() {
+        Throwable failure = failureWhilePhoneIsLocked(() -> new TransactionTemplate(transactionManager)
+                .executeWithoutResult(
+                        status -> placement.placeInCurrentTransaction(command(UUID.randomUUID(), PHONE, 1))));
+
+        assertThat(failure).isInstanceOf(CheckoutInProgressException.class);
+        assertThat(orderCount()).isZero();
+    }
+
+    @Test
+    void tryLockBuyerPhoneRequiresAnActiveTransaction() {
+        assertThatThrownBy(() -> orders.tryLockBuyerPhone(PHONE))
                 .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
     }
 }

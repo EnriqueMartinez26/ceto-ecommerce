@@ -47,10 +47,12 @@ spring:
       connection-timeout: 3000
       # Every connection of the pool, including the one Flyway borrows at startup (it uses this same DataSource), waits
       # at most 5 s for any lock (rows, advisory locks: verification U-7, U-12) and then fails with SQLState 55P03,
-      # which becomes 503 SERVICE_BUSY. Without it a phone sending N parallel checkouts parks N-1 pooled connections
-      # in pg_advisory_xact_lock for as long as the first transaction lives. Migrations take no long-held locks on a
-      # quiet database; a migration blocked for 5 s should fail the deploy, not hang it.
-      connection-init-sql: "SET lock_timeout = '5s'"
+      # which becomes 503 SERVICE_BUSY. The per-phone checkout lock does not wait at all (pg_try_advisory_xact_lock: a
+      # second checkout of the same phone gets 503 at once, D-20261008-01), so waiters never pin pooled connections.
+      # Migrations take no long-held locks on a quiet database; a migration blocked for 5 s should fail the deploy, not
+      # hang it. idle_in_transaction_session_timeout is the backstop for a transaction that holds locks (the phone lock
+      # lives until commit) but stopped talking to the database: Postgres ends that session after 30 s.
+      connection-init-sql: "SET lock_timeout = '5s'; SET idle_in_transaction_session_timeout = '30s'"
   # The API serves no static files; unknown paths end in the standard 404 problem body.
   web:
     resources:

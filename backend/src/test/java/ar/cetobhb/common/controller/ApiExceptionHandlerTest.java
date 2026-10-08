@@ -19,6 +19,7 @@ import ar.cetobhb.common.web.BodyTooLargeException;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
+import ar.cetobhb.orders.domain.CheckoutInProgressException;
 import ar.cetobhb.orders.domain.IdempotencyConflictException;
 import ar.cetobhb.orders.domain.IllegalOrderTransitionException;
 import ar.cetobhb.orders.domain.OrderNotFoundException;
@@ -202,6 +203,19 @@ class ApiExceptionHandlerTest {
                 .andExpect(header().string("Retry-After", "5"))
                 .andExpect(jsonPath("$.code").value("SERVICE_BUSY"));
         assertThat(body(result)).doesNotContain("+54");
+    }
+
+    @Test
+    void aCheckoutInProgressIsServiceBusyAndAsksForARetryInOneSecond() throws Exception {
+        THROWN.set(new CheckoutInProgressException());
+
+        ResultActions result = mvc.perform(get("/boom"));
+
+        result.andExpect(status().isServiceUnavailable())
+                .andExpect(header().string("Retry-After", "1"))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.code").value("SERVICE_BUSY"))
+                .andExpect(jsonPath("$.detail").value("The service is busy. Try again shortly."));
     }
 
     @Test
