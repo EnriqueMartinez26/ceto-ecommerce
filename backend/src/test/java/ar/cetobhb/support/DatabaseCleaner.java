@@ -9,6 +9,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
  */
 public final class DatabaseCleaner {
 
+    private static final String AUDIT_TABLE = "admin_audit_log";
+    private static final String AUDIT_TRIGGER = "admin_audit_log_append_only";
+
     private DatabaseCleaner() {
     }
 
@@ -18,7 +21,21 @@ public final class DatabaseCleaner {
                         + "WHERE schemaname = 'public' AND tablename <> 'flyway_schema_history'",
                 String.class);
         if (!tables.isEmpty()) {
-            jdbc.execute("TRUNCATE TABLE " + String.join(", ", tables) + " RESTART IDENTITY CASCADE");
+            // The append-only audit table raises on TRUNCATE by design; the cleaner (test code only) lifts that
+            // guard for its own statement and always puts it back.
+            boolean audit = tables.contains(AUDIT_TABLE) && jdbc.queryForObject(
+                    "SELECT count(*) FROM pg_trigger WHERE tgname = ? AND NOT tgisinternal",
+                    Integer.class, AUDIT_TRIGGER) > 0;
+            if (audit) {
+                jdbc.execute("ALTER TABLE " + AUDIT_TABLE + " DISABLE TRIGGER " + AUDIT_TRIGGER);
+            }
+            try {
+                jdbc.execute("TRUNCATE TABLE " + String.join(", ", tables) + " RESTART IDENTITY CASCADE");
+            } finally {
+                if (audit) {
+                    jdbc.execute("ALTER TABLE " + AUDIT_TABLE + " ENABLE TRIGGER " + AUDIT_TRIGGER);
+                }
+            }
         }
         // Identity and owned sequences are already restarted above; only standalone ones (order_number_seq) remain.
         List<String> sequences = jdbc.queryForList(
