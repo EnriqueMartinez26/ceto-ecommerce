@@ -5,6 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import ar.cetobhb.support.AbstractServerIT;
 import java.util.function.IntFunction;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.ApplicationContext;
+import org.springframework.web.filter.ForwardedHeaderFilter;
 
 /**
  * Client address resolution on a real server (REQ-ABU-03, verification U-6): Tomcat's remote IP valve trusts only
@@ -17,6 +21,20 @@ class ClientIpHttpIT extends AbstractServerIT {
     private static final int BURST = 10;
     private static final String LOOPBACK = "127.0.0.1";
     private static final String UNTRUSTED_PEER = "127.0.0.2";
+
+    @Autowired
+    private ApplicationContext context;
+
+    /**
+     * The native strategy must not be accompanied by Spring's ForwardedHeaderFilter (the "framework" strategy), which
+     * would believe X-Forwarded-Host and friends from any caller.
+     */
+    @Test
+    void noForwardedHeaderFilterIsRegistered() {
+        assertThat(context.getBeansOfType(ForwardedHeaderFilter.class)).isEmpty();
+        assertThat(context.getBeansOfType(FilterRegistrationBean.class).values())
+                .noneMatch(registration -> registration.getFilter() instanceof ForwardedHeaderFilter);
+    }
 
     private int attempt(String host, String forwardedFor) throws Exception {
         return postFrom(host, forwardedFor, "key-" + System.nanoTime(), "{").status();
