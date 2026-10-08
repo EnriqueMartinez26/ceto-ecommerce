@@ -20,6 +20,7 @@ import org.springframework.validation.annotation.Validated;
  * @param username                   the one administrator account, from {@code ADMIN_USERNAME}
  * @param passwordHash               its {@code {bcrypt}} hash, from {@code ADMIN_PASSWORD_HASH}
  * @param sessionIdleTimeoutMinutes  idle time after which an admin session ends
+ * @param sessionAbsoluteTimeoutMinutes  longest life of an admin session from its login, however active (60..1440)
  * @param loginRateLimit             per-client limiter of the login endpoint
  * @param maxListedProducts          largest admin product list and stock view
  * @param maxReconciliationRows      largest reconciliation result
@@ -30,6 +31,7 @@ public record AdminProperties(
         String username,
         String passwordHash,
         @Min(5) @Max(1440) int sessionIdleTimeoutMinutes,
+        @Min(60) @Max(1440) int sessionAbsoluteTimeoutMinutes,
         @NotNull @Valid LoginRateLimit loginRateLimit,
         @Min(1) @Max(500) int maxListedProducts,
         @Min(1) @Max(1000) int maxReconciliationRows) {
@@ -60,7 +62,8 @@ public record AdminProperties(
     @Override
     public String toString() {
         return "AdminProperties[username=<redacted>, passwordHash=<redacted>, sessionIdleTimeoutMinutes="
-                + sessionIdleTimeoutMinutes + ", loginRateLimit=" + loginRateLimit + ", maxListedProducts="
+                + sessionIdleTimeoutMinutes + ", sessionAbsoluteTimeoutMinutes=" + sessionAbsoluteTimeoutMinutes
+                + ", loginRateLimit=" + loginRateLimit + ", maxListedProducts="
                 + maxListedProducts + ", maxReconciliationRows=" + maxReconciliationRows + "]";
     }
 }

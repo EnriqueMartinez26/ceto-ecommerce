@@ -66,6 +66,10 @@ spring:
       # hang it. idle_in_transaction_session_timeout is the backstop for a transaction that holds locks (the phone lock
       # lives until commit) but stopped talking to the database: Postgres ends that session after 30 s.
       connection-init-sql: "SET lock_timeout = '5s'; SET idle_in_transaction_session_timeout = '30s'"
+  servlet:
+    multipart:
+      # No route reads a multipart body: the container is not configured to parse one (and the login guard answers 415).
+      enabled: false
   # The API serves no static files; unknown paths end in the standard 404 problem body.
   web:
     resources:
@@ -102,6 +106,8 @@ ceto:
     password-hash: ${ADMIN_PASSWORD_HASH}
     # Idle time after which an admin session ends (AdminProperties: 5..1440).
     session-idle-timeout-minutes: ${ADMIN_SESSION_IDLE_MINUTES:480}
+    # Longest life of a session from its login, however active it is (AdminProperties: 60..1440; 12 h by default).
+    session-absolute-timeout-minutes: ${ADMIN_SESSION_ABSOLUTE_MINUTES:720}
     # POST /api/admin/login: 5 attempts at once, then one more every 90 seconds (40 per hour). Bounds in AdminProperties.
     login-rate-limit:
       burst: 5

@@ -43,7 +43,7 @@ class AdminAuthenticationTest {
     @BeforeEach
     void wire() {
         AdminAuthenticationConfig config = new AdminAuthenticationConfig();
-        AdminCredentials credentials = config.adminCredentials(new AdminProperties(USER, HASH, 480,
+        AdminCredentials credentials = config.adminCredentials(new AdminProperties(USER, HASH, 480, 720,
                 new AdminProperties.LoginRateLimit(5, 90, 10_000, 20, 40), 200, 100));
         bcrypt = spy(config.adminBcryptEncoder(credentials).encoder());
         users = (AdminUserDetailsService) config.adminUserDetailsService(credentials);

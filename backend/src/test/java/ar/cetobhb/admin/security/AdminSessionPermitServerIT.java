@@ -29,7 +29,7 @@ class AdminSessionPermitServerIT extends AbstractAdminServerIT {
 
         assertThat(reply.status()).isEqualTo(200);
         assertThat(reply.body()).isEqualTo("{\"authenticated\":false}");
-        assertThat(reply.setCookie("XSRF-TOKEN")).contains("Secure").contains("SameSite=Strict")
+        assertThat(reply.setCookie("__Host-XSRF-TOKEN")).contains("Secure").contains("SameSite=Strict")
                 .doesNotContain("HttpOnly");
         assertThat(reply.setCookie("JSESSIONID")).isNull();
         assertThat(client.cookie("JSESSIONID")).isNull();

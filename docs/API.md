@@ -280,28 +280,55 @@ Una clave nueva crea un pedido nuevo.
 Rutas de la única cuenta de administración. Spring Security solo ve `/api/admin/*`
 (D-20261008-05): las rutas públicas de arriba no cambian. Toda ruta de
 administración responde 401 `UNAUTHENTICATED` a quien no inició sesión, salvo
-las dos de abajo que arman la sesión. El login limitado por IP llega en un
+`GET /api/admin/session` (la única ruta anónima que atiende un controller) y las
+rutas de Security que abren y cierran la sesión (login y logout, ver la tabla de
+abajo), que tienen su propio contrato. Un `GET /api/admin/login` anónimo no es
+una página de login: responde el 401 `UNAUTHENTICATED` de siempre y no llega a
+ningún handler. El login limitado por IP llega en un
 cambio posterior: **no publicar el backend con el login antes de ese cambio**.
 
-Flujo: `GET /api/admin/session` entrega la cookie `XSRF-TOKEN`; el cliente la
+Flujo: `GET /api/admin/session` entrega la cookie `__Host-XSRF-TOKEN`; el cliente la
 repite en la cabecera `X-XSRF-TOKEN` de cada `POST`; `POST /api/admin/login` abre
-la sesión y su respuesta 204 ya trae un `XSRF-TOKEN` nuevo (Security rota el
+la sesión y su respuesta 204 ya trae un `__Host-XSRF-TOKEN` nuevo (Security rota el
 token al autenticar; el anterior deja de ser el de la cookie). Al cerrar sesión
-la cookie `XSRF-TOKEN` se vence: antes del próximo login se vuelve a llamar a
+la cookie `__Host-XSRF-TOKEN` se vence: antes del próximo login se vuelve a llamar a
 `GET /api/admin/session` para tener un token.
+
+La cookie del token es `__Host-XSRF-TOKEN` (`Secure`, `Path=/`, sin `Domain`: el
+navegador solo acepta el prefijo `__Host-` con esas tres condiciones) y la cabecera
+sigue siendo `X-XSRF-TOKEN`. El token **no está atado a la sesión** (doble envío
+sin estado: basta que la cabecera coincida con la cookie), así que la rotación al
+autenticar solo cambia la cookie; el token anterior no queda invalidado en el servidor.
 
 | Ruta | Éxito | Errores |
 |---|---|---|
-| `GET /api/admin/session` | 200 `{"authenticated": bool}`, sin usuario ni datos personales. Fija `XSRF-TOKEN` (`Secure`, `SameSite=Strict`, legible por el navegador, sin `HttpOnly`). Es la **única** ruta anónima y solo con `GET`: `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, otra capitalización, barra final o `%73ession` dan 401. | |
+| `GET /api/admin/session` | 200 `{"authenticated": bool}`, sin usuario ni datos personales. Siempre responde `{authenticated}`, nunca 401: con la cookie de una sesión desplazada por un login nuevo o vencida por el tope absoluto es 200 `{"authenticated":false}` y entrega igual el `__Host-XSRF-TOKEN`. Fija `__Host-XSRF-TOKEN` (`Secure`, `Path=/`, `SameSite=Strict`, legible por el navegador, sin `HttpOnly`). Es la **única** ruta anónima y solo con `GET`: `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, otra capitalización, barra final o `%73ession` dan 401. | |
 | `POST /api/admin/login` | 204 sin cuerpo y cookie `JSESSIONID` (`HttpOnly`, `Secure`, `SameSite=Strict`) nueva: el id anterior se descarta. Cuerpo `application/x-www-form-urlencoded` con `username` y `password`, de hasta 128 caracteres cada uno (la contraseña, además, hasta 72 bytes UTF-8). Cabecera `X-XSRF-TOKEN` obligatoria. | 401 `INVALID_CREDENTIALS` (el mismo cuerpo para usuario inexistente y contraseña incorrecta), 403 `FORBIDDEN` sin token o con uno inválido, 413 `PAYLOAD_TOO_LARGE` si el cuerpo supera `max-body-bytes`. |
 | `POST /api/admin/logout` | 204 sin cuerpo; termina la sesión del servidor y vence la cookie `JSESSIONID`. Sin sesión también es 204. Cabecera `X-XSRF-TOKEN` obligatoria. | 403 `FORBIDDEN` sin token o con uno inválido. |
 
 Política de la sesión: la cookie `JSESSIONID` es `HttpOnly`, `Secure` y `SameSite=Strict` (la
 aplicación no arranca con otra configuración). Solo hay **una sesión de administración**
 a la vez: un login nuevo termina la anterior, y la anterior recibe 401 `UNAUTHENTICATED` en su
-próxima petición (cuerpo problem+json, como cualquier 401). La sesión termina también por
-inactividad (`ADMIN_SESSION_IDLE_MINUTES`, 480 por defecto) y, en ambos casos, la cookie vieja
-no vuelve a servir. Un login correcto siempre cambia el id de la sesión.
+próxima petición (cuerpo problem+json, como cualquier 401), salvo que esa petición sea el bootstrap, el
+login o el logout: esas tres siguen como anónimas. La sesión termina también por inactividad
+(`ADMIN_SESSION_IDLE_MINUTES`, 480 por defecto) y por un **tope absoluto** desde el login
+(`ADMIN_SESSION_ABSOLUTE_MINUTES`, de 60 a 1440, 720 por defecto: una sesión usada sin parar
+también termina a las 12 horas y recibe el mismo 401). En todos los casos la cookie vieja
+no vuelve a servir. Un login correcto siempre cambia el id de la sesión. La cookie no admite `Domain` ni otro nombre que `JSESSIONID` (la aplicación no arranca).
+
+Contrato de `POST /api/admin/login`: los datos viajan **solo en el cuerpo**,
+`application/x-www-form-urlencoded` (se acepta cualquier parámetro `charset`),
+con **un único** `username` y **un único** `password`. Un filtro de la cadena de
+administración lo comprueba antes del CSRF y antes de cualquier trabajo de
+BCrypt, y no abre sesión en ningún caso de rechazo:
+
+- con query string (aunque sea un `?` vacío): 400 `MALFORMED_REQUEST`;
+- con otro `Content-Type` (JSON, `multipart/form-data`, ninguno): 415
+  `UNSUPPORTED_MEDIA_TYPE`;
+- con `username` o `password` repetido, ausente o con una codificación
+  porcentual inválida en el cuerpo: 400 `MALFORMED_REQUEST`.
+
+El cuerpo de estos errores es fijo y no repite ningún valor de la petición.
 
 Golden: `backend/src/test/resources/contract/admin-session-anonymous.json`
 
@@ -361,7 +388,7 @@ contra `X-Request-Id`.
 | Status | `code` | Cuándo | Campos extra | Reintentar |
 |---|---|---|---|---|
 | 400 | `VALIDATION_ERROR` | Un campo no cumple una regla, la clave de idempotencia falta o está mal, o el `id` de la ruta es inválido. | `reason` (ver abajo) | No: corregir el dato. |
-| 400 | `MALFORMED_REQUEST` | El cuerpo no se puede leer: JSON inválido, campo desconocido o repetido, tipo equivocado, anidado de más de 8 niveles o texto demasiado largo. En `/api/admin/*` también cuando el firewall de Security rechaza la ortografía de la ruta (`;`, `//`, `/./`, `/../`). | | No. |
+| 400 | `MALFORMED_REQUEST` | El cuerpo no se puede leer: JSON inválido, campo desconocido o repetido, tipo equivocado, anidado de más de 8 niveles o texto demasiado largo. En `/api/admin/*` también cuando el firewall de Security rechaza la ortografía de la ruta (`;`, `//`, `/./`, `/../`) y cuando el login trae query string o un `username`/`password` repetido o ausente. | | No. |
 | 400 | `BAD_REQUEST` | Otro error de cliente que Spring detecta antes de la lógica y no tiene código propio. | | No. |
 | 401 | `UNAUTHENTICATED` | Solo en `/api/admin/*`: no hay sesión de administración. Nunca dice por qué ni nombra al usuario. | | Sí, después de iniciar sesión. |
 | 401 | `INVALID_CREDENTIALS` | Solo en `POST /api/admin/login`: usuario inexistente, contraseña incorrecta o un campo de más de 128 caracteres. Es siempre el mismo cuerpo: no dice cuál fue el motivo ni nombra al usuario. | | Sí, con otros datos. |
@@ -374,7 +401,7 @@ contra `X-Request-Id`.
 | 409 | `IDEMPOTENCY_CONFLICT` | La clave ya se usó con otro contenido. No nombra ningún pedido. | | No: usar una clave nueva si es otro pedido. |
 | 409 | `CONFLICT` | Una restricción de la base o un conflicto de versión que la lógica no previó. | | Una vez, con la misma clave. |
 | 413 | `PAYLOAD_TOO_LARGE` | El cuerpo supera `ceto.web.max-body-bytes` (16 KB por defecto). | | No. |
-| 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` distinto de `application/json`. | | No. |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` distinto de `application/json` (en `POST /api/admin/login`, distinto de `application/x-www-form-urlencoded`). | | No. |
 | 429 | `RATE_LIMITED` | La IP agotó sus intentos de checkout. | `Retry-After` | Sí, después de esa espera. |
 | 429 | `TOO_MANY_PENDING_ORDERS` | El teléfono ya tiene el máximo de pedidos `PAGO_PENDIENTE`. | | No: pagar o esperar que venzan. |
 | 500 | `INTERNAL_ERROR` | Falla inesperada. Se registra con el `requestId`. | | Una vez, con la misma clave. |
@@ -554,8 +581,8 @@ Los produce Spring Security, no el controller, y tienen la misma forma, con una
 diferencia en `instance`. En el 401 y el 403 es la ruta pedida, como en el resto
 de los errores, pero si la ruta pasa de 256 caracteres vale `/api/admin` (el
 cuerpo no crece con la petición). En el 400 `MALFORMED_REQUEST` del firewall
-(una ruta con `;`, `//`, `/./` o `/../`) **no hay `instance`**: la ruta es
-justamente lo que se rechazó y no se repite. Estos tres goldens no incluyen
+(una ruta con `;`, `//`, `/./` o `/../`, o un login con query string o campos
+repetidos) **no hay `instance`**: lo rechazado no se repite. Estos cuatro goldens no incluyen
 `instance` (cambia en cada ruta) ni `requestId`; los tests los comparan aparte
 (`ContractAssertions.assertMatchesGoldenForPath`).
 
@@ -589,6 +616,17 @@ Golden: `backend/src/test/resources/contract/admin-error-rejected-request.json`
   "status": 400,
   "detail": "The request could not be read.",
   "code": "MALFORMED_REQUEST"
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-error-unsupported-media-type.json`
+
+```json
+{
+  "title": "Unsupported Media Type",
+  "status": 415,
+  "detail": "The content type is not supported.",
+  "code": "UNSUPPORTED_MEDIA_TYPE"
 }
 ```
 

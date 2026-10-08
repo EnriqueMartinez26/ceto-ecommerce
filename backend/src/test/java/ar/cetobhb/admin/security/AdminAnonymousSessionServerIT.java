@@ -14,7 +14,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  *
  * <p>Recorded from the real run: {@code csrf.spa()} renders the token cookie on every admin response, so an anonymous
  * read (401) and an anonymous mutation (refused by CSRF
- * with 403) each receive exactly one {@code XSRF-TOKEN} cookie (the SPA handler loads the deferred token on every
+ * with 403) each receive exactly one {@code __Host-XSRF-TOKEN} cookie (the SPA handler loads the deferred token on every
  * request), Secure, SameSite=Strict, Path=/ and readable by scripts (no HttpOnly), which is how the SPA
  * echoes it back. A server session cookie is never set.
  */
@@ -44,7 +44,7 @@ class AdminAnonymousSessionServerIT extends AbstractAdminProbeServerIT {
         if (c.xsrfCookie()) {
             assertThat(cookies).hasSize(1);
             String cookie = cookies.get(0);
-            assertThat(cookie).startsWith("XSRF-TOKEN=").contains("Secure").contains("SameSite=Strict")
+            assertThat(cookie).startsWith("__Host-XSRF-TOKEN=").contains("Secure").contains("SameSite=Strict")
                     .contains("Path=/").doesNotContain("HttpOnly");
         } else {
             assertThat(cookies).isEmpty();

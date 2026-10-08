@@ -3,6 +3,8 @@ package ar.cetobhb.admin.security;
 import ar.cetobhb.admin.config.AdminProperties;
 import ar.cetobhb.common.web.ProblemResponses;
 import ar.cetobhb.common.web.SecurityProblem;
+import java.time.Clock;
+import java.time.Duration;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,6 +22,8 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.header.HeaderWriterFilter;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
 
 /**
@@ -51,6 +55,12 @@ class AdminSecurityChainConfig {
     static final String LOGOUT_PATH = "/api/admin/logout";
 
     /**
+     * The CSRF cookie. The {@code __Host-} prefix makes the browser accept it only when it is Secure, has Path=/ and no
+     * Domain, so a sibling subdomain cannot plant a token. The header the SPA echoes stays X-XSRF-TOKEN.
+     */
+    static final String CSRF_COOKIE_NAME = "__Host-XSRF-TOKEN";
+
+    /**
      * Publishes the session events of the container to Spring, which is how the registry learns that a session was
      * invalidated or timed out. Boot does not register it. Without it a destroyed session would stay in the registry
      * (REQ-AUTH-04), so it is pinned by tests that read the registry after a logout and an expiry.
@@ -73,12 +83,13 @@ class AdminSecurityChainConfig {
     @Order(ADMIN_CHAIN_ORDER)
     SecurityFilterChain adminSecurityFilterChain(HttpSecurity http, ProblemResponses problems,
             @Qualifier("adminAuthenticationManager") AuthenticationManager authenticationManager,
-            SessionRegistry adminSessionRegistry, AdminProperties admin) throws Exception {
+            SessionRegistry adminSessionRegistry, AdminProperties admin, Clock clock) throws Exception {
         // The default repository keeps the token in the HTTP session, which would open a server session (and set a
         // JSESSIONID) for every anonymous POST. The cookie repository keeps the token on the client and the server
         // stateless until someone logs in. The cookie is readable by the SPA (that is how it echoes it back), Secure
         // and SameSite=Strict.
         CookieCsrfTokenRepository csrfTokens = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        csrfTokens.setCookieName(CSRF_COOKIE_NAME);
         csrfTokens.setCookieCustomizer(cookie -> cookie.secure(true).sameSite("Strict").path("/"));
         return http
                 .securityMatcher("/api/admin/**")
@@ -87,11 +98,19 @@ class AdminSecurityChainConfig {
                         .requestMatchers(new SessionBootstrapRequest()).permitAll()
                         .anyRequest().authenticated())
                 .csrf(csrf -> csrf.spa().csrfTokenRepository(csrfTokens))
+                // A session older than ceto.admin.session-absolute-timeout-minutes ends however active it is.
+                .addFilterAfter(new AbsoluteSessionTimeoutFilter(clock,
+                        Duration.ofMinutes(admin.sessionAbsoluteTimeoutMinutes()), problems), HeaderWriterFilter.class)
+                // A session that a newer login superseded is dropped silently for the requests that open or close a
+                // session (the bootstrap must still answer, and deliver the XSRF cookie); any other request keeps the 401.
+                .addFilterAfter(new SupersededSessionFilter(adminSessionRegistry), HeaderWriterFilter.class)
+                // The login request is shaped (no query string, urlencoded, one value per field) before CSRF reads it.
+                .addFilterBefore(new LoginRequestGuardFilter(LOGIN_PATH, problems), CsrfFilter.class)
                 // The login is a form post (UsernamePasswordAuthenticationFilter reads two parameters): 204 on success,
                 // the one neutral 401 on every failure. The manager refuses over-long fields before anything is hashed.
                 .authenticationManager(new LoginFieldCapAuthenticationManager(authenticationManager))
                 .formLogin(login -> login.loginPage(LOGIN_PATH).loginProcessingUrl(LOGIN_PATH)
-                        .successHandler(new AdminLoginSuccessHandler(admin.sessionIdleTimeoutMinutes()))
+                        .successHandler(new AdminLoginSuccessHandler(admin.sessionIdleTimeoutMinutes(), clock))
                         .failureHandler(invalidCredentials(problems)))
                 // POST only (CSRF is on), ends the session, expires the cookie and answers 204.
                 .logout(logout -> logout.logoutUrl(LOGOUT_PATH)

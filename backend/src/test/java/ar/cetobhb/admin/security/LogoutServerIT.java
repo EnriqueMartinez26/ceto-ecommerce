@@ -82,7 +82,7 @@ class LogoutServerIT extends AbstractAdminServerIT {
 
         assertThat(logout.status()).isEqualTo(204);
         assertThat(logout.setCookies()).as("the logout expires the token cookie")
-                .anyMatch(line -> line.startsWith("XSRF-TOKEN=;"));
+                .anyMatch(line -> line.startsWith("__Host-XSRF-TOKEN=;"));
         assertThat(client.xsrf()).as("the token cookie does not survive the logout").isNotEqualTo(before);
         client.bootstrap();
         assertThat(client.xsrf()).isNotBlank().isNotEqualTo(before);

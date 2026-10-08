@@ -32,7 +32,7 @@ public final class AdminClient {
     private static final AtomicInteger NEXT = new AtomicInteger();
 
     public static final String SESSION_COOKIE = "JSESSIONID";
-    public static final String CSRF_COOKIE = "XSRF-TOKEN";
+    public static final String CSRF_COOKIE = "__Host-XSRF-TOKEN";
     public static final String PROBE_PATH = "/api/admin/zzz-unmapped-probe";
 
     /** One exchange: status, body, every {@code Set-Cookie} line and the headers (names lower-cased). */

@@ -129,7 +129,7 @@ class AdminLoginServerIT extends AbstractAdminServerIT {
         assertThat(login.status()).isEqualTo(204);
         // Observed (2026-10-08): Security replaces the token on authentication and the 204 itself carries the new
         // cookie, so the client does not need another bootstrap call before its first POST.
-        String rotated = login.setCookie("XSRF-TOKEN");
+        String rotated = login.setCookie("__Host-XSRF-TOKEN");
         assertThat(rotated).as("the login response sets a new token cookie").isNotNull().contains("Secure")
                 .contains("SameSite=Strict").doesNotContain("HttpOnly");
         assertThat(client.xsrf()).isNotBlank().isNotEqualTo(before);
@@ -225,7 +225,7 @@ class AdminLoginServerIT extends AbstractAdminServerIT {
                 .getBytes(StandardCharsets.US_ASCII);
         StringBuilder request = new StringBuilder("POST " + LOGIN + " HTTP/1.1\r\nHost: 127.0.0.1:" + port
                 + "\r\nContent-Type: application/x-www-form-urlencoded\r\nTransfer-Encoding: chunked\r\n"
-                + "Connection: close\r\nCookie: XSRF-TOKEN=" + client.xsrf() + "\r\n");
+                + "Connection: close\r\nCookie: __Host-XSRF-TOKEN=" + client.xsrf() + "\r\n");
         if (withToken) {
             request.append("X-XSRF-TOKEN: ").append(client.xsrf()).append("\r\n");
         }

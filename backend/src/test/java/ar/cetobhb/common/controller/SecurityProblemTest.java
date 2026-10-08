@@ -15,7 +15,17 @@ class SecurityProblemTest {
     void theEnumHasExactlyTheRowsOfTheLoginSlice() {
         // LOGIN_RATE_LIMITED arrives with the limiter slice.
         assertThat(SecurityProblem.values()).containsExactly(SecurityProblem.UNAUTHENTICATED,
-                SecurityProblem.INVALID_CREDENTIALS, SecurityProblem.FORBIDDEN, SecurityProblem.REJECTED_REQUEST);
+                SecurityProblem.INVALID_CREDENTIALS, SecurityProblem.FORBIDDEN, SecurityProblem.REJECTED_REQUEST,
+                SecurityProblem.UNSUPPORTED_MEDIA_TYPE);
+    }
+
+    @Test
+    void anUnsupportedMediaTypeIsTheSameRowAsTheAdvicesOne() {
+        ApiError advice = ApiErrorCatalog.UNSUPPORTED_MEDIA_TYPE;
+
+        assertThat(SecurityProblem.UNSUPPORTED_MEDIA_TYPE.status()).isEqualTo(advice.status());
+        assertThat(SecurityProblem.UNSUPPORTED_MEDIA_TYPE.code()).isEqualTo(advice.code());
+        assertThat(SecurityProblem.UNSUPPORTED_MEDIA_TYPE.detail()).isEqualTo(advice.detail());
     }
 
     @Test

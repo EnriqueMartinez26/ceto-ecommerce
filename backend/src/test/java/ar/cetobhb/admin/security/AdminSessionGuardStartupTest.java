@@ -11,6 +11,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 /**
  * The real {@code SpringApplication} with the real application.yml: the shipped settings start, and a weaker cookie
@@ -81,6 +82,65 @@ class AdminSessionGuardStartupTest {
         assertThat(messagesOf(catchThrowable(
                 () -> run(Map.of("server.servlet.session.tracking-modes", "cookie,url")).close())))
                 .contains("tracking-modes must be cookie");
+    }
+
+    private static ConfigurableApplicationContext runLazily(Map<String, Object> variables, String... arguments) {
+        return start(true, variables, arguments);
+    }
+
+    private static ConfigurableApplicationContext start(boolean lazy, Map<String, Object> variables,
+            String... arguments) {
+        SpringApplicationBuilder builder = new SpringApplicationBuilder(App.class).web(WebApplicationType.NONE)
+                .bannerMode(Banner.Mode.OFF).lazyInitialization(lazy);
+        if (!variables.isEmpty()) {
+            // Added before the refresh: the configuration property sources are already attached and see it.
+            builder.initializers(context -> context.getEnvironment().getPropertySources().addFirst(
+                    new SystemEnvironmentPropertySource("test-systemEnvironment", variables)));
+        }
+        return builder.run(arguments);
+    }
+
+    @Test
+    void aCamelCaseCommandLineSpellingOfAWeakerValueStopsTheStartup() {
+        assertThat(messagesOf(catchThrowable(
+                () -> run(Map.of("server.servlet.session.cookie.sameSite", "none")).close())))
+                .contains("same-site must be strict");
+        assertThat(messagesOf(catchThrowable(
+                () -> run(Map.of("server.servlet.session.cookie.httpOnly", "false")).close())))
+                .contains("http-only must be true");
+    }
+
+    @Test
+    void anEnvironmentVariableStyleSecureFalseStopsTheStartup() {
+        Throwable failure = catchThrowable(
+                () -> start(false, Map.of("SERVER_SERVLET_SESSION_COOKIE_SECURE", "false")).close());
+
+        assertThat(messagesOf(failure)).contains("server.servlet.session.cookie.secure must be true");
+    }
+
+    @Test
+    void lazyInitializationDoesNotSwitchTheGuardOff() {
+        Throwable failure = catchThrowable(
+                () -> runLazily(Map.of(), "--server.servlet.session.cookie.secure=false").close());
+
+        assertThat(messagesOf(failure)).contains("server.servlet.session.cookie.secure must be true");
+    }
+
+    @Test
+    void withLazyInitializationOnTheShippedConfigurationStillCreatesTheGuardAtStartup() {
+        try (ConfigurableApplicationContext context = runLazily(Map.of())) {
+            assertThat(context.getBeanFactory().getSingletonNames()).anyMatch(name -> name.endsWith("AdminSessionGuard"));
+        }
+    }
+
+    @Test
+    void aCookieDomainOrAnotherCookieNameStopsTheStartup() {
+        assertThat(messagesOf(catchThrowable(
+                () -> run(Map.of("server.servlet.session.cookie.domain", "example.com")).close())))
+                .contains("server.servlet.session.cookie.domain must be unset");
+        assertThat(messagesOf(catchThrowable(
+                () -> run(Map.of("server.servlet.session.cookie.name", "SESSION")).close())))
+                .contains("server.servlet.session.cookie.name must be JSESSIONID");
     }
 
     private static String messagesOf(Throwable failure) {

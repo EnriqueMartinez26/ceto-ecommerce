@@ -732,7 +732,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   alcanzable, para que esos rechazos no sean vacíos. `AdminAnonymousSessionIT` y
   `AdminAnonymousSessionServerIT` fijan, para GET, POST, PUT, PATCH y DELETE, que
   no hay `HttpSession` ni `JSESSIONID`: el token CSRF vive en la cookie
-  `XSRF-TOKEN` (`csrf.spa()` con `CookieCsrfTokenRepository`, `Secure`,
+  `__Host-XSRF-TOKEN` (`csrf.spa()` con `CookieCsrfTokenRepository`, `Secure`,
   `SameSite=Strict`, sin `HttpOnly`), que `csrf.spa()` entrega en toda respuesta
   de admin, la 401 incluida; con el repositorio por defecto, un POST anónimo
   abría una sesión (RED registrado). `AdminChainMarkerIT` y
@@ -781,8 +781,19 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   más largo; `LoginFieldCapAuthenticationManagerTest` y los casos de 129 y 1000 caracteres de
   `AdminLoginServerIT` con el contador de BCrypt sin cambios; mutación 2026-10-08: sin el tope
   fallan 7 tests unitarios y los 2 del usuario largo, la clave larga la frena además la guarda de
-  72 bytes del encoder). Seguridad rota el token CSRF al autenticar: el 204 trae un
-  `XSRF-TOKEN` nuevo (`AdminLoginServerIT.theLoginResponseRotatesTheXsrfCookieAndTheNewTokenWorksForTheNextMutation`).
+  72 bytes del encoder). La forma de la petición la fija `LoginRequestGuardFilter`, en la cadena
+  de administración antes de `CsrfFilter` y solo para el procesamiento del login: query string
+  (incluso un `?` vacío) es 400 `MALFORMED_REQUEST`, otro `Content-Type` que
+  `application/x-www-form-urlencoded` (con cualquier `charset`) es 415 `UNSUPPORTED_MEDIA_TYPE`
+  (`SecurityProblem`, golden `admin-error-unsupported-media-type.json`), y un `username` o
+  `password` repetido, ausente o con codificación porcentual inválida es 400; ninguno ejecuta
+  BCrypt ni abre sesión, y el log no recibe ni el usuario ni un fragmento de la clave
+  (`AdminLoginRequestGuardServerIT`, servidor real, con JSON, multipart y `%zz`; mutaciones
+  2026-10-08: sin el chequeo de query fallan 2 casos, sin el de `Content-Type` 9, y registrar la
+  query o el cuerpo crudo hace fallar los 2 tests de salida). `spring.servlet.multipart.enabled` es
+  `false` (ninguna ruta lee multipart; `MultipartDisabledServerIT`). Un `GET /api/admin/login`
+  anónimo es el 401 `UNAUTHENTICATED` y no llega a un handler. Seguridad rota el token CSRF al autenticar: el 204 trae un
+  `__Host-XSRF-TOKEN` nuevo (`AdminLoginServerIT.theLoginResponseRotatesTheXsrfCookieAndTheNewTokenWorksForTheNextMutation`).
   `GET /api/admin/session` devuelve `{"authenticated":bool}` y es la única ruta anónima: el permiso
   de la cadena es `SessionBootstrapRequest` (método GET y ruta tal como se escribió, no un patrón),
   el mismo que usa `AdminAccessGuardInterceptor`, así que `%73ession`, otra capitalización, barra
@@ -796,7 +807,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   (`LogoutServerIT`, que además prueba que la cookie vieja da 401 con el golden y que el servidor
   ya no tiene la sesión; mutación 2026-10-08: con `invalidateHttpSession(false)` falla el test del
   cierre, y sin `deleteCookies` falla la expiración de la cookie). El logout vence también la cookie
-  `XSRF-TOKEN`: hay que llamar otra vez a `GET /api/admin/session`. Fijación de sesión: el login
+  `__Host-XSRF-TOKEN`: hay que llamar otra vez a `GET /api/admin/session`. Fijación de sesión: el login
   cambia el id (`changeSessionId`, que también es el valor por defecto de Spring Security; la
   configuración lo fija explícitamente). `SessionFixationServerIT` crea una sesión real en el
   Tomcat embebido antes del login, la entrega al navegador y comprueba que el id nuevo es otro, que
@@ -835,7 +846,26 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `AdminSessionFlowServerIT` (bootstrap, id previo, login 204 con id nuevo y banderas, token
   rotado, llamada con cookie y cabecera, 403 sin cabecera, logout y 401 con la cookie vieja).
   `AdminLoginPiiServerIT` cubre además una sesión desplazada y una expirada: ni la salida ni los
-  cuerpos contienen ids de sesión ni tokens.
+  cuerpos contienen ids de sesión ni tokens. *Revisión del lote 7*: la guarda lee la configuración
+  efectiva con el `Binder` de Boot, es `@Lazy(false)` (con `spring.main.lazy-initialization=true`
+  sigue corriendo: `AdminSessionGuardStartupTest`, mutación sin `@Lazy(false)` hizo fallar 2) y exige
+  además `cookie.domain` sin definir o vacío y `cookie.name` sin definir o `JSESSIONID`, el nombre
+  literal que vence el logout (D-20261008-42; con un argumento camelCase o una variable de entorno la
+  guarda ya veía el valor antes del cambio: `SpringApplication` real, sin hueco de enlace relajado).
+  *Tope absoluto* (D-20261008-39): `AbsoluteSessionTimeoutFilter`, después del `HeaderWriterFilter`
+  (contexto ya cargado), invalida la sesión y responde el 401 cuando pasó
+  `ceto.admin.session-absolute-timeout-minutes` (60 a 1440, 720 por defecto, límite estricto) desde
+  el instante que `AdminLoginSuccessHandler` guarda del `Clock` inyectado; una sesión autenticada
+  sin instante recibe el de su primera petición. Se prueba moviendo el reloj, sin esperar
+  (`AbsoluteSessionTimeoutFilterTest`, `AdminSessionLifetimeServerIT`; sin el filtro fallan 5 casos).
+  *Sesión vencida o desplazada*: el bootstrap, el login y el logout (`SessionLifecycleRequest`)
+  siguen como anónimos con la cookie de una sesión muerta, y `GET /api/admin/session` responde 200
+  `{"authenticated":false}` con la cookie CSRF, no 401 (`SupersededSessionFilter`: el filtro de
+  concurrencia de Security habría respondido 401 y vencido la cookie CSRF; sin ese filtro fallan 2
+  casos). *Cookie CSRF*: `__Host-XSRF-TOKEN` (`Secure`, `Path=/`, sin `Domain`, D-20261008-41),
+  cabecera `X-XSRF-TOKEN`; el token no está atado a la sesión y la rotación solo cambia la cookie
+  (`AdminCsrfCookieServerIT`). *Límite conocido* (D-20261008-40): `maximumSessions(1)` no es atómico;
+  dos logins correctos simultáneos pueden sobrevivir ambos hasta el siguiente login.
 - **Comando de aprovisionamiento del hash** (`AdminPasswordHashCommand`, X5.4, AUTH-14). Lee la
   contraseña sin eco desde la terminal (dos veces) o, con la entrada redirigida, la primera línea
   de la entrada estándar; **nunca** como argumento (cualquier argumento es código de salida 2 sin

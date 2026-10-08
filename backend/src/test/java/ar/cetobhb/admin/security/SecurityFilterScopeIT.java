@@ -95,7 +95,7 @@ class SecurityFilterScopeIT extends AbstractHttpIT {
         MockHttpServletResponse response = result.getResponse();
         assertThat(reachedTheChain(result)).isTrue();
         assertThat(response.getStatus()).isEqualTo(401);
-        // csrf.spa() renders the XSRF-TOKEN cookie on every admin response; a server session cookie never appears.
-        assertThat(response.getHeaders("Set-Cookie")).allMatch(cookie -> cookie.startsWith("XSRF-TOKEN="));
+        // csrf.spa() renders the __Host-XSRF-TOKEN cookie on every admin response; a server session cookie never appears.
+        assertThat(response.getHeaders("Set-Cookie")).allMatch(cookie -> cookie.startsWith("__Host-XSRF-TOKEN="));
     }
 }

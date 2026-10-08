@@ -130,8 +130,10 @@ JVM aparte: códigos de salida y qué va a cada flujo).
 
 | Tema | Valor |
 |---|---|
-| Cookie | `JSESSIONID`, `HttpOnly`, `Secure`, `SameSite=Strict`. La aplicación **no arranca** si `server.servlet.session.cookie.secure`, `http-only`, `same-site` (`strict`) o `tracking-modes` (`cookie`) tienen otro valor, en cualquier perfil (`AdminSessionGuard`). `Secure` exige que el navegador llegue por HTTPS (Caddy). |
-| Una sola sesión | Un login nuevo cierra la sesión anterior, que recibe 401 en su próxima petición. |
+| Cookie | `JSESSIONID`, `HttpOnly`, `Secure`, `SameSite=Strict`. La aplicación **no arranca** si `server.servlet.session.cookie.secure`, `http-only`, `same-site` (`strict`) o `tracking-modes` (`cookie`) tienen otro valor, en cualquier perfil, tampoco si `cookie.domain` está definido ni si `cookie.name` no es `JSESSIONID`, y la guarda corre aun con `spring.main.lazy-initialization=true` (`AdminSessionGuard`, D-20261008-42). `Secure` exige que el navegador llegue por HTTPS (Caddy). |
+| Una sola sesión | Un login nuevo cierra la sesión anterior, que recibe 401 en su próxima petición. El control no es atómico: dos logins correctos simultáneos pueden sobrevivir ambos hasta el siguiente login (límite aceptado, D-20261008-40). |
 | Inactividad | `ADMIN_SESSION_IDLE_MINUTES` (480 por defecto; de 5 a 1440). Pasado ese tiempo sin peticiones, la sesión termina y la siguiente petición es 401. |
+| Tope absoluto | `ADMIN_SESSION_ABSOLUTE_MINUTES` (720 por defecto, es decir 12 horas; de 60 a 1440). Desde el login, una sesión termina pasado ese tiempo aunque se use sin parar, y la siguiente petición es 401 (D-20261008-39). Un valor fuera de rango detiene el arranque. Es un valor técnico y se puede ajustar. |
+| Cookie CSRF | `__Host-XSRF-TOKEN` (`Secure`, `Path=/`, sin `Domain`); la cabecera es `X-XSRF-TOKEN` (D-20261008-41). |
 | Memoria | Las sesiones están en memoria: un reinicio o un despliegue las cierra (aceptado). |
 

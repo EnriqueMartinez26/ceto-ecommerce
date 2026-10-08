@@ -59,6 +59,7 @@ class NoGeneratedPasswordTest {
                 .withPropertyValues("ceto.admin.username=" + AdminTestCredentials.username(),
                         "ceto.admin.password-hash=" + AdminTestCredentials.passwordHash(),
                         "ceto.admin.session-idle-timeout-minutes=480",
+                        "ceto.admin.session-absolute-timeout-minutes=720",
                         "ceto.admin.max-listed-products=200", "ceto.admin.max-reconciliation-rows=100",
                         "ceto.admin.login-rate-limit.burst=5",
                         "ceto.admin.login-rate-limit.refill-interval-seconds=90",
