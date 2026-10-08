@@ -12,5 +12,5 @@ import java.util.List;
  * diverge. There is no price, total or status member: unknown properties are rejected (CLAUDE.md rule 7).
  */
 record PlaceOrderRequest(@Valid BuyerRequest buyer,
-        @Size(max = 50, message = "TOO_MANY_LINES") List<@Valid LineRequest> lines) {
+        @Valid @Size(max = 50, message = "TOO_MANY_LINES") List<LineRequest> lines) {
 }

@@ -4,7 +4,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 import ar.cetobhb.support.AbstractHttpIT;
+import jakarta.validation.Valid;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.lang.reflect.GenericArrayType;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.lang.reflect.WildcardType;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Optional;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -15,7 +27,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.autoconfigure.error.BasicErrorController;
 import org.springframework.context.ApplicationContext;
+import org.springframework.core.MethodParameter;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 import org.springframework.web.method.HandlerMethod;
@@ -130,6 +145,160 @@ class EndpointInventoryIT extends AbstractHttpIT {
         // Same-origin (D-20261007-14): a CORS grant needs one of these beans (or @CrossOrigin, banned by ArchUnit).
         assertThat(context.getBeanNamesForType(CorsFilter.class)).isEmpty();
         assertThat(context.getBeanNamesForType(UrlBasedCorsConfigurationSource.class)).isEmpty();
+    }
+
+    private static final String APP_PACKAGE = "ar.cetobhb.";
+    private static final String BV = "jakarta.validation.constraints.";
+    private static final String HV_RANGE = "org.hibernate.validator.constraints.Range";
+    private static final Set<String> LOWER_BOUNDS = Set.of(BV + "Min", BV + "DecimalMin", BV + "Positive",
+            BV + "PositiveOrZero", HV_RANGE);
+    private static final Set<String> UPPER_BOUNDS = Set.of(BV + "Max", BV + "DecimalMax", BV + "Negative",
+            BV + "NegativeOrZero", HV_RANGE);
+    private static final Set<String> LENGTH_BOUNDS = Set.of(BV + "Size", "org.hibernate.validator.constraints.Length");
+
+    /**
+     * The Spring-side mirror of the ArchUnit rule REQUEST_INPUTS_ARE_BOUNDED (REQ-HRD-05): it starts from the handler
+     * methods Spring really registered, so interface-declared mappings and type-level {@code @RequestMapping} without a
+     * stereotype are covered too. Every numeric parameter needs a minimum and a maximum, every string, collection,
+     * map or array a {@code @Size(max)}, every body (and every application-type model object) {@code @Valid}, and
+     * the same holds for each component of those types, walked through nested types and collections. Known gap:
+     * the elements of a collection ({@code List<@Size(max = 10) String>}) are not checked; today no collection of
+     * simple values is accepted from a client.
+     */
+    @Test
+    void everyHandlerParameterAndBodyComponentIsBoundedAndValidated() {
+        List<String> problems = new ArrayList<>();
+        int checked = 0;
+        for (RequestMappingHandlerMapping mapping : context.getBeansOfType(RequestMappingHandlerMapping.class).values()) {
+            for (HandlerMethod handler : mapping.getHandlerMethods().values()) {
+                for (MethodParameter declared : handler.getMethodParameters()) {
+                    MethodParameter parameter = declared.nestedIfOptional();
+                    String where = handler.getShortLogMessage() + " parameter " + declared.getParameterIndex();
+                    Class<?> type = parameter.getNestedParameterType();
+                    Annotation[] annotations = declared.getParameterAnnotations();
+                    boolean body = declared.hasParameterAnnotation(RequestBody.class);
+                    if (body) {
+                        requireValid(annotations, where + " (body)", problems);
+                    }
+                    if (isInput(type)) {
+                        unbounded(type, annotations, where, problems);
+                        checked++;
+                    } else if (isApplicationType(type)) {
+                        if (!body) {
+                            requireValid(annotations, where + " (model object)", problems);
+                        }
+                        checked++;
+                    }
+                    if (body || isApplicationType(type)) {
+                        walk(parameter.getNestedGenericParameterType(), where, new HashSet<>(), problems);
+                    }
+                }
+            }
+        }
+
+        assertThat(checked).as("inputs inspected").isGreaterThanOrEqualTo(3);
+        assertThat(problems).isEmpty();
+    }
+
+    private static void walk(Type type, String path, Set<Class<?>> seen, List<String> problems) {
+        for (Class<?> dto : applicationTypes(type)) {
+            if (!seen.add(dto)) {
+                continue;
+            }
+            for (Field field : dto.getDeclaredFields()) {
+                if (Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) {
+                    continue;
+                }
+                String where = path + " -> " + dto.getSimpleName() + "." + field.getName();
+                Class<?> raw = field.getType();
+                if (Optional.class.isAssignableFrom(raw)) {
+                    raw = applicationOrSimple(field.getGenericType());
+                }
+                if (isInput(raw)) {
+                    unbounded(raw, field.getAnnotations(), where, problems);
+                }
+                if (!applicationTypes(field.getGenericType()).isEmpty()) {
+                    requireValid(field.getAnnotations(), where, problems);
+                    walk(field.getGenericType(), where, seen, problems);
+                }
+            }
+        }
+    }
+
+    private static Class<?> applicationOrSimple(Type optional) {
+        return optional instanceof ParameterizedType p && p.getActualTypeArguments()[0] instanceof Class<?> c
+                ? c : Object.class;
+    }
+
+    /** Application classes (not enums) that a type is made of, looking inside generics, wildcards and arrays. */
+    private static Set<Class<?>> applicationTypes(Type type) {
+        Set<Class<?>> found = new HashSet<>();
+        collect(type, found);
+        found.removeIf(c -> !isApplicationType(c));
+        return found;
+    }
+
+    private static void collect(Type type, Set<Class<?>> out) {
+        if (type instanceof Class<?> c) {
+            out.add(c.isArray() ? c.getComponentType() : c);
+        } else if (type instanceof ParameterizedType p) {
+            collect(p.getRawType(), out);
+            Arrays.stream(p.getActualTypeArguments()).forEach(argument -> collect(argument, out));
+        } else if (type instanceof WildcardType w) {
+            Arrays.stream(w.getUpperBounds()).forEach(bound -> collect(bound, out));
+        } else if (type instanceof GenericArrayType a) {
+            collect(a.getGenericComponentType(), out);
+        }
+    }
+
+    private static boolean isApplicationType(Class<?> type) {
+        return type.getName().startsWith(APP_PACKAGE) && !type.isEnum() && !type.isInterface();
+    }
+
+    private static boolean isInput(Class<?> type) {
+        return type.isArray() || CharSequence.class.isAssignableFrom(type) || Collection.class.isAssignableFrom(type)
+                || Map.class.isAssignableFrom(type) || isNumeric(type);
+    }
+
+    private static boolean isNumeric(Class<?> type) {
+        return type.isPrimitive() && type != boolean.class && type != char.class
+                || Number.class.isAssignableFrom(type);
+    }
+
+    private static void requireValid(Annotation[] annotations, String where, List<String> problems) {
+        boolean valid = Arrays.stream(annotations)
+                .anyMatch(a -> a.annotationType() == Valid.class || a.annotationType() == Validated.class);
+        if (!valid) {
+            problems.add(where + " lacks @Valid");
+        }
+    }
+
+    private static void unbounded(Class<?> type, Annotation[] annotations, String where, List<String> problems) {
+        if (isNumeric(type)) {
+            boolean lower = Arrays.stream(annotations).anyMatch(a -> LOWER_BOUNDS.contains(name(a)));
+            boolean upper = Arrays.stream(annotations).anyMatch(a -> UPPER_BOUNDS.contains(name(a)));
+            if (!lower || !upper) {
+                problems.add(where + " is numeric and lacks " + (lower ? "a maximum" : upper ? "a minimum"
+                        : "a minimum and a maximum"));
+            }
+            return;
+        }
+        boolean sized = Arrays.stream(annotations).anyMatch(a -> LENGTH_BOUNDS.contains(name(a)) && maxOf(a) < Integer.MAX_VALUE);
+        if (!sized) {
+            problems.add(where + " is a string, collection or array and lacks @Size(max = ...)");
+        }
+    }
+
+    private static String name(Annotation annotation) {
+        return annotation.annotationType().getName();
+    }
+
+    private static int maxOf(Annotation annotation) {
+        try {
+            return (int) annotation.annotationType().getMethod("max").invoke(annotation);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @ParameterizedTest
