@@ -1,6 +1,7 @@
 package ar.cetobhb.architecture;
 
 import static com.tngtech.archunit.core.domain.JavaAccess.Predicates.target;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.assignableTo;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.belongToAnyOf;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.type;
@@ -15,7 +16,9 @@ import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 
 import ar.cetobhb.common.config.ClockConfig;
 import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.AccessTarget;
 import com.tngtech.archunit.core.domain.Dependency;
+import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaAnnotation;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaField;
@@ -32,6 +35,7 @@ import com.tngtech.archunit.lang.CompositeArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import jakarta.persistence.Entity;
+import jakarta.servlet.RequestDispatcher;
 import java.time.Clock;
 import java.time.ZoneId;
 import java.util.Calendar;
@@ -58,6 +62,9 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.View;
 
 /** Rule definitions shared by the real-code check and the fixture-based "rule bites" proof. */
 final class ArchitectureRules {
@@ -286,6 +293,141 @@ final class ArchitectureRules {
             .should().dependOnClassesThat().resideInAnyPackage(
                     "org.springframework.web.servlet.function..", "org.springframework.web.reactive.function.server..")
             .as("no functional endpoints: no RouterFunction, HandlerFunction or ServerResponse");
+
+    private static final String ADMIN_CONTROLLERS = "..admin.controller..";
+    private static final String ADMIN_PREFIX = "/api/admin";
+
+    /**
+     * Review fix batch 5, item 2. The Security servlet filter answers to {@code /api/admin/*} only
+     * ({@code SecurityFilterScopeConfig}), so a handler's path decides whether it is protected:
+     * <ul>
+     * <li>every mapping of a handler in {@code ..admin.controller..}, type-level and method-level paths combined, starts
+     * with {@code /api/admin/}; a typo ({@code /api/admins/x}, {@code /admin/x}, a mistyped class-level prefix) would
+     * leave an admin handler outside the filter, reachable by anyone;</li>
+     * <li>no handler anywhere else maps {@code /api/admin} or below it (compared case-insensitively): an admin path in a
+     * public controller would be an unreviewed admin route.</li>
+     * </ul>
+     * It is one rule over EVERY request handler of the application, so it is not empty today (storefront and checkout
+     * exist) and needs no {@code allowEmptyShould}; until the first admin controller exists the first half simply has no
+     * handler to inspect, and the fixtures ({@code adminprefix}, {@code clean.admin}) prove that both halves bite.
+     */
+    static final ArchRule ADMIN_HANDLER_PATHS_ARE_UNDER_THE_ADMIN_PREFIX = methods()
+            .that().areMetaAnnotatedWith(RequestMapping.class)
+            .should(new ArchCondition<JavaMethod>("map a handler in ..admin.controller.. only under " + ADMIN_PREFIX
+                    + "/ and no handler elsewhere under " + ADMIN_PREFIX) {
+                @Override
+                public void check(JavaMethod handler, ConditionEvents events) {
+                    boolean adminController = resideInAPackage(ADMIN_CONTROLLERS).test(handler.getOwner());
+                    for (String path : fullPaths(handler)) {
+                        String lower = path.toLowerCase(Locale.ROOT);
+                        boolean underAdmin = path.startsWith(ADMIN_PREFIX + "/");
+                        boolean claimsAdmin = lower.equals(ADMIN_PREFIX) || lower.startsWith(ADMIN_PREFIX + "/");
+                        if (adminController && !underAdmin) {
+                            events.add(SimpleConditionEvent.violated(handler, handler.getFullName() + " maps '" + path
+                                    + "' but handlers in ..admin.controller.. must map under " + ADMIN_PREFIX + "/ in "
+                                    + handler.getSourceCodeLocation()));
+                        } else if (!adminController && claimsAdmin) {
+                            events.add(SimpleConditionEvent.violated(handler, handler.getFullName() + " maps '" + path
+                                    + "' but only handlers in ..admin.controller.. may map under " + ADMIN_PREFIX
+                                    + " in " + handler.getSourceCodeLocation()));
+                        }
+                    }
+                }
+            });
+
+    /** Every full path a handler answers to: each type-level path combined with each method-level path. */
+    private static List<String> fullPaths(JavaMethod handler) {
+        List<String> typePaths = List.of("");
+        for (JavaClass type : classAndSuperclasses(handler.getOwner())) {
+            List<String> found = type.tryGetAnnotationOfType(RequestMapping.class.getName())
+                    .map(annotation -> pathsOf(annotation)).orElse(List.of());
+            if (!found.isEmpty()) {
+                typePaths = found;
+                break;
+            }
+        }
+        List<String> methodPaths = List.of("");
+        for (JavaAnnotation<JavaMethod> annotation : handler.getAnnotations()) {
+            if (annotation.getRawType().isEquivalentTo(RequestMapping.class)
+                    || annotation.getRawType().isMetaAnnotatedWith(RequestMapping.class)) {
+                List<String> found = pathsOf(annotation);
+                if (!found.isEmpty()) {
+                    methodPaths = found;
+                }
+            }
+        }
+        List<String> full = new java.util.ArrayList<>();
+        for (String typePath : typePaths) {
+            for (String methodPath : methodPaths) {
+                full.add(join(typePath, methodPath));
+            }
+        }
+        return full;
+    }
+
+    private static List<JavaClass> classAndSuperclasses(JavaClass type) {
+        List<JavaClass> chain = new java.util.ArrayList<>();
+        chain.add(type);
+        chain.addAll(type.getAllRawSuperclasses());
+        return chain;
+    }
+
+    /** The {@code value} and {@code path} attributes of a mapping annotation, as declared in the source. */
+    private static List<String> pathsOf(JavaAnnotation<?> annotation) {
+        List<String> paths = new java.util.ArrayList<>();
+        for (String attribute : List.of("value", "path")) {
+            annotation.tryGetExplicitlyDeclaredProperty(attribute).ifPresent(value -> {
+                if (value instanceof Object[] array) {
+                    for (Object element : array) {
+                        paths.add(String.valueOf(element));
+                    }
+                } else {
+                    paths.add(String.valueOf(value));
+                }
+            });
+        }
+        return paths;
+    }
+
+    /** Spring's combination of a type-level and a method-level pattern, without the pattern syntax. */
+    private static String join(String typePath, String methodPath) {
+        String type = typePath.isEmpty() || typePath.startsWith("/") ? typePath : "/" + typePath;
+        String method = methodPath.isEmpty() || methodPath.startsWith("/") ? methodPath : "/" + methodPath;
+        if (type.endsWith("/")) {
+            type = type.substring(0, type.length() - 1);
+        }
+        String joined = type + method;
+        return joined.isEmpty() ? "/" : joined;
+    }
+
+    /** An access to {@code forward} or {@code include} of any {@code RequestDispatcher}: a call OR a method reference. */
+    private static final DescribedPredicate<JavaAccess<?>> FORWARDS_OR_INCLUDES = JavaAccess.Predicates
+            .target(AccessTarget.Predicates.declaredIn(assignableTo(RequestDispatcher.class))
+                    .and(DescribedPredicate.describe("named forward or include", (AccessTarget target) ->
+                            target.getName().equals("forward") || target.getName().equals("include"))));
+
+    /**
+     * Review fix batch 5, item 8. The Security filter is registered for every dispatcher type, but the guarantee
+     * "an admin handler is reached only through the chain" is simplest to keep when nothing forwards or includes
+     * internally at all.
+     * <ul>
+     * <li>No class accesses {@code RequestDispatcher.forward}/{@code include}. {@code accessTargetWhere} (not
+     * {@code callMethodWhere}) so a method reference such as {@code dispatcher::forward} is caught too.</li>
+     * <li>A {@code forward:} or {@code include:} VIEW NAME cannot be seen by ArchUnit (string constants are not
+     * modelled), so the way to return a view name is closed instead: every {@code @Controller} must be
+     * {@code @ResponseBody} (a {@code @RestController}: a returned String is a body, never a view name) and no class
+     * uses {@code ModelAndView}, {@code View} or the {@code servlet.view} package.</li>
+     * </ul>
+     * Not allowEmptyShould: the controllers exist, so a rename or move that empties the third part must fail.
+     */
+    static final ArchRule NO_FORWARD_OR_INCLUDE = CompositeArchRule
+            .of(noClasses().should().accessTargetWhere(FORWARDS_OR_INCLUDES))
+            .and(noClasses().should().dependOnClassesThat().haveFullyQualifiedName(ModelAndView.class.getName())
+                    .orShould().dependOnClassesThat().haveFullyQualifiedName(View.class.getName())
+                    .orShould().dependOnClassesThat().resideInAPackage("org.springframework.web.servlet.view.."))
+            .and(classes().that().areMetaAnnotatedWith(Controller.class).should().beMetaAnnotatedWith(ResponseBody.class))
+            .as("no RequestDispatcher.forward/include (call or method reference), no view names: controllers are"
+                    + " @ResponseBody and nothing uses ModelAndView or View");
 
     private static final Set<String> NUMERIC_TYPES = Set.of("byte", "short", "int", "long", "float", "double",
             "java.lang.Byte", "java.lang.Short", "java.lang.Integer", "java.lang.Long", "java.lang.Float",

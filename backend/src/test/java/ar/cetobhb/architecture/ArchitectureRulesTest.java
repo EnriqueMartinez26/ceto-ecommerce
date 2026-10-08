@@ -280,6 +280,59 @@ class ArchitectureRulesTest {
                 .hasMessageContaining("org.springframework.web.servlet.function.ServerResponse");
     }
 
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "BadAdminPrefixController.plural(|/api/admins/x|must map under /api/admin/",
+            "BadAdminPrefixController.missingApiSegment(|/admin/x|must map under /api/admin/",
+            "BadAdminPrefixController.noPathAtAll(|/|must map under /api/admin/",
+            "TypoAdminTypeController.typoAtTypeLevel(|/api/admn/orders|must map under /api/admin/",
+            "StrayAdminPathController.adminPathInAPublicPackage(|/api/admin/leak|may map under /api/admin",
+            "StrayAdminPathController$OtherCase.adminPathByCase(|/API/Admin/leak-by-case"
+                    + "|may map under /api/admin"})
+    void adminPrefixRuleFailsOnEveryMisplacedPath(String where, String path, String reason) {
+        List<String> lines = violations(ArchitectureRules.ADMIN_HANDLER_PATHS_ARE_UNDER_THE_ADMIN_PREFIX,
+                "adminprefix");
+
+        assertViolation(lines, where, "maps '" + path + "'");
+        assertViolation(lines, where, reason);
+    }
+
+    @Test
+    void adminPrefixRuleIgnoresCompliantHandlers() {
+        List<String> lines = violations(ArchitectureRules.ADMIN_HANDLER_PATHS_ARE_UNDER_THE_ADMIN_PREFIX,
+                "adminprefix");
+
+        assertThat(lines).noneMatch(line -> line.contains(".fine(") || line.contains(".publicPath("));
+    }
+
+    @Test
+    void adminPrefixRuleAcceptsAnAdminControllerWithTypeAndMethodPathsUnderThePrefix() {
+        assertThatCode(() -> ArchitectureRules.ADMIN_HANDLER_PATHS_ARE_UNDER_THE_ADMIN_PREFIX
+                .check(fixtures("clean.admin"))).doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "ForwardingController.forwardCall(|jakarta.servlet.RequestDispatcher.forward(",
+            "ForwardingController.includeCall(|jakarta.servlet.RequestDispatcher.include(",
+            "MethodReferenceForwarder.forwardReference(|jakarta.servlet.RequestDispatcher.forward(",
+            "MethodReferenceForwarder.includeReference(|jakarta.servlet.RequestDispatcher.include("})
+    void forwardRuleFailsOnCallsAndMethodReferencesToTheDispatcher(String where, String target) {
+        assertViolation(violations(ArchitectureRules.NO_FORWARD_OR_INCLUDE, "forwarding"), where, target);
+    }
+
+    @Test
+    void forwardRuleFailsOnAPlainControllerWhoseStringsAreViewNames() {
+        assertViolation(violations(ArchitectureRules.NO_FORWARD_OR_INCLUDE, "forwarding"), "ForwardingController",
+                "is not meta-annotated with @ResponseBody");
+    }
+
+    @Test
+    void forwardRuleFailsOnModelAndViewEvenInARestController() {
+        assertViolation(violations(ArchitectureRules.NO_FORWARD_OR_INCLUDE, "forwarding"), "ViewNameController",
+                "org.springframework.web.servlet.ModelAndView");
+    }
+
     @Test
     void compliantCodeSatisfiesEveryRule() {
         JavaClasses clean = fixtures("clean");
@@ -295,7 +348,9 @@ class ArchitectureRulesTest {
                 ArchitectureRules.SERVICES_AND_DOMAIN_ARE_WEB_FREE,
                 ArchitectureRules.NO_CROSS_ORIGIN,
                 ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED,
-                ArchitectureRules.NO_FUNCTIONAL_ENDPOINTS);
+                ArchitectureRules.NO_FUNCTIONAL_ENDPOINTS,
+                ArchitectureRules.ADMIN_HANDLER_PATHS_ARE_UNDER_THE_ADMIN_PREFIX,
+                ArchitectureRules.NO_FORWARD_OR_INCLUDE);
         for (ArchRule rule : rules) {
             assertThatCode(() -> rule.check(clean)).doesNotThrowAnyException();
         }

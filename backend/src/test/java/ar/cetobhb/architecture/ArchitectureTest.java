@@ -44,6 +44,13 @@ class ArchitectureTest {
     static final ArchRule noFunctionalEndpoints = ArchitectureRules.NO_FUNCTIONAL_ENDPOINTS;
 
     @ArchTest
+    static final ArchRule adminHandlerPathsAreUnderTheAdminPrefix =
+            ArchitectureRules.ADMIN_HANDLER_PATHS_ARE_UNDER_THE_ADMIN_PREFIX;
+
+    @ArchTest
+    static final ArchRule noForwardOrInclude = ArchitectureRules.NO_FORWARD_OR_INCLUDE;
+
+    @ArchTest
     static final ArchRule repositoryOnlyFromOwnFeatureService =
             ArchitectureRules.REPOSITORY_ONLY_FROM_OWN_FEATURE_SERVICE;
 }
