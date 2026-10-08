@@ -118,6 +118,39 @@ class AuditEntryTest {
     }
 
     @Test
+    void theCanonicalConstructorRejectsAFreeTextReason() {
+        assertThatThrownBy(() -> new AuditEntry(AuditAction.STOCK_ADJUSTED, AuditEntityType.PRODUCT, 7L,
+                "call Maria on 351-555", BigDecimal.ONE, BigDecimal.TEN))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AuditEntry(AuditAction.ORDER_CANCELLED, AuditEntityType.ORDER, 7L,
+                "customer asked", null, null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AuditEntry(AuditAction.ORDER_PAID, AuditEntityType.ORDER, 7L,
+                "CANCELLED_BY_ADMIN", null, null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AuditEntry(AuditAction.STOCK_ADJUSTED, AuditEntityType.PRODUCT, 7L,
+                null, BigDecimal.ONE, BigDecimal.TEN)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void theCanonicalConstructorRejectsAWrongActionEntityPairing() {
+        assertThatThrownBy(() -> new AuditEntry(AuditAction.ORDER_PAID, AuditEntityType.PRODUCT, 7L, null, null,
+                null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AuditEntry(AuditAction.PRODUCT_CREATED, AuditEntityType.ORDER, 7L, null, null,
+                null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void theCanonicalConstructorRejectsAWrongNumericShapeOrId() {
+        assertThatThrownBy(() -> new AuditEntry(AuditAction.PRICE_CHANGED, AuditEntityType.PRODUCT, 7L, null,
+                BigDecimal.ONE, null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AuditEntry(AuditAction.PRICE_CHANGED, AuditEntityType.PRODUCT, 7L, null,
+                null, null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AuditEntry(AuditAction.ORDER_PAID, AuditEntityType.ORDER, 7L, null,
+                BigDecimal.ONE, BigDecimal.TEN)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AuditEntry(AuditAction.ORDER_PAID, AuditEntityType.ORDER, 0L, null, null,
+                null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void theEntryHasNoRoomForNamesPhonesAddressesOrFreeText() {
         List<String> components = Arrays.stream(AuditEntry.class.getRecordComponents())
                 .map(RecordComponent::getName).toList();

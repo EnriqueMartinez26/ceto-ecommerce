@@ -5,8 +5,8 @@ import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * Test helper for "no personal data in the audit table": looks for a sentinel in EVERY text-like column of
- * {@code admin_audit_log}, found through the catalog instead of a hard-coded column list, so a column added later is
+ * Test helper for "no personal data in the audit table": looks for a sentinel in EVERY column of
+ * {@code admin_audit_log} (each cast to text), found through the catalog instead of a hard-coded column list, so a column added later is
  * scanned too.
  */
 public final class AuditLogScan {
@@ -32,7 +32,10 @@ public final class AuditLogScan {
         return hits;
     }
 
-    /** Number of text-like columns the scan covers (a guard against a scan that silently covers nothing). */
+    /**
+     * Number of columns the scan covers: ALL columns of the table, not only text-like ones, since each is compared
+     * through {@code ::text}. Exists as a guard against a scan that silently covers nothing.
+     */
     public static int scannedColumns(JdbcTemplate jdbc) {
         return jdbc.queryForObject("SELECT count(*) FROM information_schema.columns "
                 + "WHERE table_schema = 'public' AND table_name = ?", Integer.class, TABLE);
