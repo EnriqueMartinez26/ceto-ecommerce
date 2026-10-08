@@ -257,6 +257,24 @@ class ArchitectureRulesTest {
         assertViolation(violations(ArchitectureRules.SERVICES_AND_DOMAIN_ARE_WEB_FREE, "webfree"), where, type);
     }
 
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "SecurityAwareService|org.springframework.security.core.context.SecurityContextHolder",
+            "SecurityAwareService|org.springframework.security.core.Authentication",
+            "SecurityAwareService|org.springframework.security.core.context.SecurityContext",
+            "SecurityAwareDomain|org.springframework.security.core.userdetails.UserDetails"})
+    void webFreeRuleFailsWhenAServiceOrDomainTypeUsesSpringSecurity(String where, String type) {
+        assertViolation(violations(ArchitectureRules.SERVICES_AND_DOMAIN_ARE_WEB_FREE, "webfree"), where, type);
+    }
+
+    @Test
+    void webFreeRuleSeesASecurityContextReadAsAMethodReference() {
+        List<String> lines = violations(ArchitectureRules.SERVICES_AND_DOMAIN_ARE_WEB_FREE, "webfree");
+
+        assertThat(lines).anyMatch(line -> line.contains("SecurityAwareService.contextSource")
+                && line.contains("SecurityContextHolder"));
+    }
+
     @Test
     void webFreeRuleOnlyAppliesToFeatureLayerPackagesNotToServicePackagesUnderWeb() {
         assertThatCode(() -> ArchitectureRules.SERVICES_AND_DOMAIN_ARE_WEB_FREE.check(fixtures("webexempt")))

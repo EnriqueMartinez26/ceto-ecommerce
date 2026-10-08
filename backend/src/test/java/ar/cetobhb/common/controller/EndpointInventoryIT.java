@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 
 import ar.cetobhb.support.AbstractHttpIT;
+import ar.cetobhb.support.ContractAssertions;
+import ar.cetobhb.support.EndpointInventory;
 import jakarta.validation.Valid;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
@@ -50,7 +52,8 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Endpoint inventory (REQ-HRD-03). Spring Security only sees {@code /api/admin/*} (D-20261008-05), so for the public
  * API this allowlist is the control: the union of every MVC handler mapping must be exactly the three public API
- * routes plus Boot's own error endpoint, and nothing else (no actuator, documentation, static resources or welcome
+ * routes plus the administration routes of {@link EndpointInventory#ADMIN_ROUTES} (none until the first admin
+ * controller) plus the error endpoint of Boot, and nothing else (no actuator, documentation, static resources or welcome
  * page) may answer. The administration area is the one exception to "every other path is the standard 404": Security
  * answers there (401, 403 or 400) and the test-only probe handler lives outside this context
  * ({@code AdminPathVariantsIT}), so this inventory stays exact.
@@ -60,9 +63,6 @@ import tools.jackson.databind.json.JsonMapper;
  * behind it; what it renders is pinned by {@code BootErrorEndpointIT} (no trace, message or exception).
  */
 class EndpointInventoryIT extends AbstractHttpIT {
-
-    private static final Set<String> API_ROUTES = Set.of(
-            "GET /api/store/products", "GET /api/store/products/{id}", "POST /api/checkout/orders");
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
@@ -95,12 +95,56 @@ class EndpointInventoryIT extends AbstractHttpIT {
     }
 
     @Test
-    void theApiRoutesAreExactlyTheThreePublicOnes() {
+    void theApiRoutesAreExactlyThePublicOnesPlusTheAdministrationOnes() {
         Set<String> routes = new TreeSet<>();
         mappings().stream().filter(m -> m.handler() != BasicErrorController.class)
                 .forEach(m -> routes.add(m.route()));
+        Set<String> allowed = new TreeSet<>(EndpointInventory.PUBLIC_ROUTES);
+        allowed.addAll(EndpointInventory.ADMIN_ROUTES);
 
-        assertThat(routes).containsExactlyInAnyOrderElementsOf(API_ROUTES);
+        assertThat(EndpointInventory.PUBLIC_ROUTES).hasSize(3);
+        assertThat(routes).containsExactlyInAnyOrderElementsOf(allowed);
+        assertThat(EndpointInventory.unexpected(context)).isEmpty();
+    }
+
+    @Test
+    void everyAdministrationRouteLiesUnderTheAdminPrefixAndNothingElseDoes() {
+        assertThat(EndpointInventory.ADMIN_ROUTES).allSatisfy(route ->
+                assertThat(route.substring(route.indexOf(' ') + 1)).startsWith(EndpointInventory.ADMIN_PREFIX));
+        assertThat(EndpointInventory.mvcRoutes(context)).filteredOn(m -> m.pattern().startsWith(
+                EndpointInventory.ADMIN_PREFIX)).extracting(EndpointInventory.Mapped::route)
+                .containsExactlyInAnyOrderElementsOf(EndpointInventory.ADMIN_ROUTES);
+    }
+
+    /** AUTH-14: there is no way to change or reset the password through the API; the hash is reprovisioned by hand. */
+    @Test
+    void noRouteResetsOrChangesAPassword() {
+        assertThat(EndpointInventory.mvcRoutes(context)).extracting(m -> m.pattern().toLowerCase(java.util.Locale.ROOT))
+                .noneMatch(path -> path.contains("reset") || path.contains("password") || path.contains("forgot")
+                        || path.contains("recover"));
+    }
+
+    /**
+     * Generated from the handler mappings, not hand-listed: every mapped route outside the public set, called
+     * anonymously with a valid CSRF token where the method needs one, is the 401 golden. As routes are added to
+     * {@code ADMIN_ROUTES} they are covered without touching this test; {@code EndpointInventoryDriftIT} proves the
+     * loop is not vacuous.
+     */
+    @Test
+    void everyMappedNonPublicRouteIs401UnauthenticatedForAnAnonymousClient() throws Exception {
+        List<EndpointInventory.Mapped> routes = EndpointInventory.nonPublicRoutes(context);
+
+        assertThat(routes).extracting(EndpointInventory.Mapped::route)
+                .containsExactlyInAnyOrderElementsOf(EndpointInventory.ADMIN_ROUTES);
+        for (EndpointInventory.Mapped route : routes) {
+            for (var call : EndpointInventory.anonymousCalls(route)) {
+                MockHttpServletResponse response = send(call);
+
+                assertThat(response.getStatus()).as(route.route()).isEqualTo(401);
+                ContractAssertions.assertMatchesGoldenForPath(response, "admin-error-unauthenticated.json",
+                        EndpointInventory.concretePath(route));
+            }
+        }
     }
 
     @Test
@@ -321,15 +365,15 @@ class EndpointInventoryIT extends AbstractHttpIT {
     }
 
     /**
-     * Nothing is mapped under {@code /api/admin/} yet, and the Security filter stops every request there before the
-     * handler lookup: an unmapped admin path is a bare 401 for an anonymous client, not the 404 of the public side
-     * (slice X1; the generated per-route inventory arrives with the chain, slice X3).
+     * The Security filter stops every request under {@code /api/admin/} before the handler lookup: an unmapped admin
+     * path is the 401 problem for an anonymous client, not the 404 of the public side (REQ-HRD-08 allows it).
      */
     @Test
-    void anUnmappedAdminPathIsStoppedByTheSecurityFilterWith401() throws Exception {
+    void anUnmappedAdminPathIsStoppedByTheSecurityFilterWithThe401Problem() throws Exception {
         MockHttpServletResponse response = send(get("/api/admin/x"));
 
         assertThat(response.getStatus()).isEqualTo(401);
+        ContractAssertions.assertMatchesGoldenForPath(response, "admin-error-unauthenticated.json", "/api/admin/x");
     }
 
     /** A direct request is not an error dispatch: /error answers the standard 404, whatever the method or Accept. */

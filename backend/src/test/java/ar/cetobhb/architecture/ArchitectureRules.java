@@ -233,7 +233,8 @@ final class ArchitectureRules {
             .as("a feature's ..repository.. is accessed only by the same feature's ..service..");
 
     /**
-     * INBOUND web: what a request handler touches. Outbound clients ({@code org.springframework.web.client},
+     * INBOUND web: what a request handler touches, including the security context (who is logged in is decided by the
+     * filter chain and the controller, never inside a service). Outbound clients ({@code org.springframework.web.client},
      * {@code org.springframework.http.client}, {@code HttpHeaders}, {@code MediaType}) stay allowed so a future payment
      * or mail adapter is not blocked by a rule about the inbound side.
      */
@@ -241,7 +242,8 @@ final class ArchitectureRules {
             "jakarta.servlet..", "org.springframework.web.bind..", "org.springframework.web.context.request..",
             "org.springframework.web.servlet..", "org.springframework.web.multipart..",
             "org.springframework.web.server..", "org.springframework.web.filter..", "org.springframework.web.method..",
-            "org.springframework.http.server..", "org.springframework.boot.web..", "org.springframework.boot.webmvc.."};
+            "org.springframework.http.server..", "org.springframework.boot.web..", "org.springframework.boot.webmvc..",
+            "org.springframework.security.."};
 
     /**
      * Controllers and advice live in {@code ..controller..} packages (AD-H1), so the HTTP surface is found in one kind
@@ -264,7 +266,7 @@ final class ArchitectureRules {
             .should().dependOnClassesThat().resideInAnyPackage(INBOUND_WEB_PACKAGES)
             .orShould().dependOnClassesThat(belongToAnyOf(ResponseEntity.class, RequestEntity.class, HttpStatus.class,
                     ProblemDetail.class))
-            .as("..service.. and ..domain.. classes must not depend on the servlet API or on inbound Spring web/http"
+            .as("..service.. and ..domain.. classes must not depend on the servlet API, Spring Security or inbound Spring web/http"
                     + " types");
 
     /**
