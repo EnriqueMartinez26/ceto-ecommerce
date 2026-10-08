@@ -64,6 +64,28 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Optional<Order> findByIdempotencyKey(UUID idempotencyKey);
 
     /**
+     * The admin detail header of one order as a projection: no lock, no managed entity (so a later lock query in the
+     * same transaction reads the database, not a stale copy). In a transaction that already changed the order, the
+     * automatic flush before the query makes the new state visible.
+     */
+    @Query("""
+            select new ar.cetobhb.orders.repository.OrderDetailRow(o.id, o.orderNumber, o.status, o.cancelReason,
+                   o.buyerName, o.buyerPhoneE164, o.shippingAddress, o.shippingZone, o.total, o.createdAt,
+                   o.updatedAt, o.paidAt, o.dispatchedAt, o.deliveredAt, o.cancelledAt, o.reservedUntil)
+              from Order o
+             where o.id = :id""")
+    Optional<OrderDetailRow> findDetailRow(@Param("id") long id);
+
+    /** The snapshot lines of one order in line order, as a projection. */
+    @Query("""
+            select new ar.cetobhb.orders.repository.OrderLineRow(i.lineNo, i.productId, i.productName, i.combo,
+                   i.unitPrice, i.quantity, i.baseUnitsPerUnit, i.baseUnitsTotal, i.lineTotal)
+              from OrderItem i
+             where i.order.id = :id
+             order by i.lineNo""")
+    List<OrderLineRow> findLineRows(@Param("id") long id);
+
+    /**
      * One keyset page of the admin list, newest first (id descending), as a constructor projection: no managed
      * {@code Order} and no address column is read, and no lock is taken. Ask for {@code size + 1} rows
      * ({@code PageRequest.ofSize}) to know whether another page exists.
