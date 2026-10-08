@@ -103,7 +103,10 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `WEB_TYPES_ONLY_IN_CONTROLLER_PACKAGES` (controllers y advice solo en
   `..controller..`), `SERVICES_AND_DOMAIN_ARE_WEB_FREE` (sin web ENTRANTE en
   `..service..`/`..domain..` de una funcionalidad: servlet, `web.bind`,
-  `web.servlet`, `boot.web`/`boot.webmvc`, `ResponseEntity`/`HttpStatus`/
+  `web.servlet`, `boot.web`/`boot.webmvc`, `org.springframework.security` (quién está
+  autenticado lo decide la cadena de filtros y el controller, no un service; fixtures
+  `SecurityAwareService` y `SecurityAwareDomain`, con llamada y con referencia a
+  método), `ResponseEntity`/`HttpStatus`/
   `ProblemDetail`/`RequestEntity`; los clientes salientes como `RestClient` se
   permiten y un paquete `service` bajo `..web..` no cuenta), `NO_CROSS_ORIGIN`
   (ni `@CrossOrigin`, ni `CorsFilter`/`CorsRegistry`/`CorsRegistration`/tipos
@@ -113,7 +116,9 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   springdoc, D-20261007-18) y `ApiDocConsistencyTest` hace fallar el build si un
   ejemplo deja de ser idéntico a su golden, si un golden no está citado o si un
   `code` o `reason` del código no figura en el documento. `EndpointInventoryIT` fija el
-  inventario: las 3 rutas públicas más `ANY /error` de `BasicErrorController`
+  inventario: las 3 rutas públicas, las de administración (`EndpointInventory.ADMIN_ROUTES`,
+  hoy ninguna; cada una se llama sin sesión y debe dar el golden 401, generado
+  desde los mapeos) más `ANY /error` de `BasicErrorController`
   (permitido por tipo de handler, no por ruta), todos los `HandlerMapping` por
   clase (los de URL, welcome page y `RouterFunctionMapping` vacíos), sin
   `RouterFunction`, sin mapeos de recursos ni actuator, y todo otro camino es
@@ -808,6 +813,20 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `SecurityFirewallVariantsIT`. M9 (cache de peticiones activada): fallan
   `AdminAnonymousSessionIT`, porque el 401 anónimo abre
   una sesión.
+- **Defensa en profundidad sobre los handlers de admin.**
+  `AdminAccessGuardInterceptor` (interceptor MVC sobre `/api/admin/**`, con la
+  misma resolución de rutas que los handlers) responde 401 `UNAUTHENTICATED` si
+  la petición no tiene principal, salvo `GET /api/admin/session`. Esa excepción
+  solo vale con GET (`AdminAccessGuardInterceptorTest`, MockMvc independiente sin
+  Security) y `AdminAccessGuardIT` arma un MockMvc sin ningún filtro desde el
+  contexto real: una petición anónima al handler de prueba nunca lo alcanza;
+  mutación 2026-10-08: sin registrar el interceptor el handler responde 200 con
+  el centinela. `EndpointInventoryDriftIT` (contexto con el handler de prueba como
+  una ruta de admin que nadie listó) prueba que el inventario la reporta y que la
+  llamada anónima generada a cada ruta mapeada no pública da el golden 401;
+  `EndpointInventoryIT` repite eso sobre el contexto real, exige que toda ruta de
+  `/api/admin/` esté en `ADMIN_ROUTES` y que no exista ninguna ruta de
+  restablecimiento o cambio de contraseña.
 - **Una sola cuenta: la de administración.** Contraseña con BCrypt o
   Argon2, login con rate limit y bloqueo temporal, sesión en cookie
   `HttpOnly` + `Secure` + `SameSite`. Nunca un token en `localStorage`.
