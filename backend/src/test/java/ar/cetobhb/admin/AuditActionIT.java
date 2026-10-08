@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import ar.cetobhb.admin.domain.AuditAction;
 import ar.cetobhb.admin.domain.AuditEntry;
 import ar.cetobhb.admin.domain.StockAdjustmentReason;
+import ar.cetobhb.orders.domain.CancelReason;
 import ar.cetobhb.support.AbstractPostgresIT;
 import java.math.BigDecimal;
 import java.util.EnumSet;
@@ -56,7 +57,8 @@ class AuditActionIT extends AbstractPostgresIT {
 
     @Test
     void theReasonEnumsEqualTheCheckSet() {
-        Set<String> expected = new TreeSet<>(Set.of("STOCK_ADJUSTED", "ORDER_CANCELLED", "CANCELLED_BY_ADMIN"));
+        Set<String> expected = new TreeSet<>(Set.of("STOCK_ADJUSTED", "ORDER_CANCELLED",
+                CancelReason.CANCELLED_BY_ADMIN.name()));
         EnumSet.allOf(StockAdjustmentReason.class).forEach(r -> expected.add(r.name()));
 
         assertThat(literalsOf("admin_audit_log_reason_ck")).isEqualTo(expected);
@@ -67,7 +69,7 @@ class AuditActionIT extends AbstractPostgresIT {
         Set<String> types = new TreeSet<>();
         EnumSet.allOf(AuditAction.class).forEach(a -> types.add(a.entityType().name()));
 
-        assertThat(literalsOf("admin_audit_log_entity_ck")).containsAll(types);
+        assertThat(literalsOf("admin_audit_log_entity_ck")).isEqualTo(types);
     }
 
     @Test
