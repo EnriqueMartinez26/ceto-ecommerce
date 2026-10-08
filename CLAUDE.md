@@ -351,7 +351,14 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     `RATE_LIMITED` con `Retry-After` (`RateLimitIT`, golden `contract/error-rate-limited.json`),
     en DEBUG y sin la IP. La clave sale solo de `getRemoteAddr()`; detrás del proxy de confianza
     (`TRUSTED_PROXIES`, solo CIDR privados, `RemoteIpValve`) es el cliente real y la cabecera de
-    un par no confiable (127.0.0.2) se ignora (`ClientIpHttpIT`, puerto aleatorio). Las variantes
+    un par no confiable (127.0.0.2) se ignora (`ClientIpHttpIT`, puerto aleatorio). En macOS
+    127.0.0.2 no existe por defecto: antes de correr `ClientIpHttpIT` hay que
+    crearlo con `sudo ifconfig lo0 alias 127.0.0.2 up` (en Linux y Windows responde
+    sin más). La aplicación rechaza `TRUSTED_PROXIES` en forma de regex y confiar
+    en `127.0.0.0/8` o `169.254.0.0/16` abre todo el host o todo el enlace local,
+    no solo al proxy; el arranque además exige `host-header`, `port-header` y
+    `protocol-header-https-value` vacíos y `protocol-header` sin definir o
+    `X-Forwarded-Proto` (`WebConfig`). Las variantes
     de ruta se fijan en `CheckoutPathLimitHttpIT`: con `;x=1` cuenta y con barra final, otra
     capitalización o `//` da 404 sin leer el cuerpo. Los GET de la tienda no se limitan.
 
