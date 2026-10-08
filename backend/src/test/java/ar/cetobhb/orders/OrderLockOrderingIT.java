@@ -38,6 +38,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * {@code InventoryService.release} to lock the stock rows in DESCENDING product id (instead of ascending) made
  * {@code placementsPaymentsCancellationsAndExpiryOnSharedBaseProductsNeverDeadlock} fail at iteration 0 with
  * Postgres {@code 40P01 deadlock detected}. With the ascending order restored the test is green.
+ *
+ * <p>The big burst also runs concurrent {@code InventoryService.adjustBy} calls (INV-A1). Mutation evidence
+ * (2026-10-08): making {@code adjustBy} also lock the stock row of {@code productId - 1} AFTER its own (a descending
+ * second lock) made the burst fail with {@code 40P01}; without the mutation it is green.
  */
 class OrderLockOrderingIT extends AbstractPostgresIT {
 
@@ -166,6 +170,12 @@ class OrderLockOrderingIT extends AbstractPostgresIT {
             for (long[] cart : new long[][] {{x, y}, {y, x}, {z, x}, {y, z}, {x, y, z}, {z, y, x}}) {
                 tasks.add(() -> "placed:" + order(cart));
             }
+            // INV-A1: the admin delta adjustment (AINV-05) takes a single stock row lock and nothing else, so it adds no
+            // lock-order edge. One per product, in the middle of the others: a version that held a second row (or
+            // locked in another sequence) would deadlock with the ascending lockers and fail the iteration.
+            tasks.add(() -> "adjusted:" + inventory.adjustBy(z, 1).productId());
+            tasks.add(() -> "adjusted:" + inventory.adjustBy(y, -1).productId());
+            tasks.add(() -> "adjusted:" + inventory.adjustBy(x, 1).productId());
 
             Report<String> report = BurstRunner.runMeasured(tasks);
 

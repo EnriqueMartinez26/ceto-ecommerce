@@ -211,6 +211,38 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   (`AdminCancelVsReplayIT`). Las acciones no loguean nombre, teléfono ni
   dirección, ni en éxito, ni en transición ilegal, ni con el insert de
   auditoría fallado (`AdminOrderActionsPiiLoggingIT`).
+- **Stock de administración** (`AdminInventoryService`, solo servicio, todavía
+  sin rutas): `adjust(productId, delta, reason)` llama a
+  `InventoryService.adjustBy`, escribe una fila `STOCK_ADJUSTED` con el stock
+  antes y después y el motivo del conjunto cerrado (sin nota), todo en una
+  transacción; un delta en 0 o fuera de ±10000, un descuento por debajo de
+  `reserved`, un combo, un producto sin fila de stock o un id desconocido no
+  escriben nada, y si falla el insert de auditoría vuelve atrás el stock
+  (`AdminInventoryServiceAdjustIT`). La vista de stock
+  (`AdminInventoryService.stockView`, tope `ceto.admin.max-listed-products`, 1 a
+  500) y la conciliación (`reconciliation`, tope
+  `ceto.admin.max-reconciliation-rows`, 1 a 1000) son lecturas sin locks ni
+  filas gestionadas: combo derivado del producto base, base sin fila listada
+  como no configurada y sin cifras (`AdminStockViewIT`, `AdminReconciliationIT`,
+  `AdminInventoryServiceCapsTest`; los topes y sus valores por defecto,
+  `AdminPropertiesCapsValidationTest`). El ajuste toma solo el lock de la fila
+  de stock, así que no agrega aristas al orden de locks: lo prueba con
+  retención determinista `StockAdjustBurstIT` (una compra espera mientras un
+  ajuste retiene la fila y un ajuste espera a una fila retenida y recién
+  después verifica contra el `reserved` confirmado; una fila retenida más de
+  `lock_timeout` da `55P03` sin cambios ni auditoría) y, con ráfagas, el
+  estado final de ajustes contra compras de las últimas unidades (los
+  contadores finales son exactamente los de las operaciones que tuvieron éxito
+  y nunca se tolera `40P01`) y `OrderLockOrderingIT` con `adjustBy` mezclado.
+  Evidencia por mutación (2026-10-08): leer la fila con `findById` en vez de
+  `FOR UPDATE` hizo fallar las dos pruebas de retención y la ráfaga; quitar el
+  chequeo de Java de `adjustBy` hizo fallar la prueba de retención y la ráfaga
+  (llega la violación del CHECK en vez de `InsufficientStockException`); hacer
+  que `adjustBy` tome además la fila `productId - 1` hizo fallar
+  `OrderLockOrderingIT` con `40P01`; quitar `record` hizo fallar tres tests de
+  `AdminInventoryServiceAdjustIT`. Los caminos de stock no loguean nombres de
+  producto ni datos de la compradora (`AdminStockPiiLoggingIT`; evidencia por
+  mutación: imprimir los nombres en la vista lo hizo fallar).
 
 ### Frontend (`frontend/`)
 
