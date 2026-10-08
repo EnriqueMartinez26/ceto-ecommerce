@@ -63,7 +63,7 @@ class StockNotConfiguredPlacementIT extends AbstractPostgresIT {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM orders", Long.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT reserved FROM inventory_stock WHERE product_id = ?", Long.class,
                 healthy)).isZero();
-        assertThat(output.getAll()).contains("ERROR", "StockNotConfiguredException", "baseProductId=" + unconfigured);
+        assertThat(output.getAll()).contains("ERROR", "StockNotConfiguredException", "baseProductIds=[" + unconfigured + "]");
     }
 
     @Test
@@ -75,7 +75,7 @@ class StockNotConfiguredPlacementIT extends AbstractPostgresIT {
                 .isInstanceOfSatisfying(ProductNotAvailableException.class,
                         e -> assertThat(e.productIds()).isEqualTo(Set.of(combo)));
 
-        assertThat(output.getAll()).contains("StockNotConfiguredException", "baseProductId=" + base);
+        assertThat(output.getAll()).contains("StockNotConfiguredException", "baseProductIds=[" + base + "]");
     }
 
     @Test
@@ -90,6 +90,24 @@ class StockNotConfiguredPlacementIT extends AbstractPostgresIT {
                         e -> assertThat(e.productIds()).isEqualTo(Set.of(base, combo)));
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM orders", Long.class)).isZero();
+    }
+
+    @Test
+    void everyAffectedRequestedIdAcrossAllUnconfiguredBasesIsReportedAndLoggedOnce(CapturedOutput output) {
+        long healthy = catalog.createBase(product("Healthy", "10.00")).id();
+        inventory.createStock(healthy, 5);
+        long baseA = catalog.createBase(product("Base A without stock", "10.00")).id();
+        long baseB = catalog.createBase(product("Base B without stock", "10.00")).id();
+        long comboB = catalog.createCombo(product("Pack B", "27.00"), baseB, 3).id();
+
+        assertThatThrownBy(() -> placement.placeOrder(order(healthy, baseA, comboB)))
+                .isInstanceOfSatisfying(ProductNotAvailableException.class,
+                        e -> assertThat(e.productIds()).isEqualTo(Set.of(baseA, comboB)));
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM orders", Long.class)).isZero();
+        assertThat(output.getAll()).contains("StockNotConfiguredException", String.valueOf(baseA),
+                String.valueOf(baseB));
+        assertThat(output.getAll().split("StockNotConfiguredException", -1)).hasSize(2);
     }
 
     @Test

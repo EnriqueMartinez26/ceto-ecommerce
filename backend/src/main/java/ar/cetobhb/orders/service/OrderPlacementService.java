@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -168,6 +169,8 @@ public class OrderPlacementService {
             demand.addLine(product.baseProductId(), product.baseUnitsPerUnit(), requested.quantity());
         }
 
+        requireStockRows(demand, products, productIds);
+
         NewOrder data = new NewOrder(OrderNumber.format(orders.nextOrderNumber()), request.idempotencyKey(),
                 fingerprint, request.name(), request.phoneE164(), request.address(), request.zone(),
                 now.plus(reservationTime), lines);
@@ -177,21 +180,43 @@ public class OrderPlacementService {
     }
 
     /**
-     * A base without a stock row is an operator data problem (REQ-ERR-04): log it once (class and base product id,
-     * never buyer data) and tell the buyer which REQUESTED products are unavailable: only those whose base is the
-     * unconfigured one (the base itself or a combo over it), like the inactive-product failure. The exception's own
-     * id is a base id the buyer may never have asked for.
+     * A base without a stock row is an operator data problem (REQ-ERR-04): log it once (class and base product ids,
+     * never buyer data) and tell the buyer which REQUESTED products are unavailable: only those whose base is an
+     * unconfigured one (the base itself or a combo over it), like the inactive-product failure.
+     *
+     * <p>Checked BEFORE the order row and the order number, with a non-locking projection query (never an entity,
+     * so the later lock query still reads the database) over ALL bases, so every affected id is reported, not just
+     * the first one the lock loop would hit.
+     */
+    private void requireStockRows(BaseUnitDemand demand, Map<Long, ProductSnapshot> products,
+            List<Long> requestedIds) {
+        Set<Long> configured = inventory.availableByBase(demand.productIds()).keySet();
+        Set<Long> missing = demand.productIds().stream().filter(id -> !configured.contains(id))
+                .collect(Collectors.toCollection(TreeSet::new));
+        if (!missing.isEmpty()) {
+            throw unavailable(missing, products, requestedIds);
+        }
+    }
+
+    /**
+     * The reserve lock loop stays as the safety net for the race where a stock row disappears between the check
+     * above and the lock.
      */
     private void reserve(BaseUnitDemand demand, Map<Long, ProductSnapshot> products, List<Long> requestedIds) {
         try {
             inventory.reserve(demand);
         } catch (StockNotConfiguredException e) {
-            LOG.error("{} baseProductId={}", e.getClass().getSimpleName(), e.productId());
-            Set<Long> affected = requestedIds.stream()
-                    .filter(id -> products.get(id).baseProductId() == e.productId())
-                    .collect(Collectors.toUnmodifiableSet());
-            throw new ProductNotAvailableException(affected);
+            throw unavailable(Set.of(e.productId()), products, requestedIds);
         }
+    }
+
+    private static ProductNotAvailableException unavailable(Set<Long> missingBaseIds,
+            Map<Long, ProductSnapshot> products, List<Long> requestedIds) {
+        LOG.error("{} baseProductIds={}", StockNotConfiguredException.class.getSimpleName(), missingBaseIds);
+        Set<Long> affected = requestedIds.stream()
+                .filter(id -> missingBaseIds.contains(products.get(id).baseProductId()))
+                .collect(Collectors.toUnmodifiableSet());
+        return new ProductNotAvailableException(affected);
     }
 
     /** Built inside the transaction that loaded the order: the lines are lazy and read from the snapshot rows. */
