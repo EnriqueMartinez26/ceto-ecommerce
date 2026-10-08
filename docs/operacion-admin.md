@@ -99,9 +99,11 @@ java -Dloader.main=ar.cetobhb.admin.security.AdminPasswordHashCommand \
 
 - **En una terminal** pide la contraseña **sin eco** y la pide dos veces; si no
   coinciden, no emite nada.
-- **Con la entrada redirigida** (`printf '%s\n' "$CLAVE" | java ...`) lee la primera línea
-  de la entrada estándar, sin terminador de línea y respetando los espacios. Es para
-  scripts; no pegue la contraseña en la línea de comandos de un historial compartido.
+- **Con la entrada redirigida** lee la primera línea de la entrada estándar, sin
+  terminador de línea y respetando los espacios, hasta 1 KB (1024 bytes): una línea más
+  larga se rechaza con un mensaje fijo, código de salida 1 y sin repetir nada de ella. Es
+  para scripts; cómo pasarle la contraseña sin dejarla en el historial está en la sección
+  siguiente.
 - **Nunca acepta la contraseña como argumento**: cualquier argumento se rechaza antes de
   leer nada (código de salida 2), porque una línea de comandos queda en el historial del
   intérprete y en la lista de procesos.
@@ -122,9 +124,67 @@ las variables en un archivo de entorno que Compose lee, cada `$` del hash va esc
 comando, se reemplaza `ADMIN_PASSWORD_HASH` y se vuelve a desplegar. Las sesiones viven
 en memoria, así que un despliegue cierra la sesión abierta.
 
-El comando está probado en `AdminPasswordHashCommandTest` (reglas, ausencia de la
-contraseña en la salida, buffers borrados) y `AdminPasswordHashCommandProcessTest` (una
-JVM aparte: códigos de salida y qué va a cada flujo).
+El comando está probado en `AdminPasswordHashCommandTest` (reglas, límite de línea,
+ausencia de la contraseña en la salida, buffers propios borrados) y
+`AdminPasswordHashCommandProcessTest` (una JVM aparte: códigos de salida y qué va a cada
+flujo).
+
+**Alcance del borrado de memoria.** El comando sobrescribe, en la medida de lo posible,
+los buffers que él mismo crea y que tuvieron la contraseña. El codificador BCrypt convierte
+la contraseña a un `String` por dentro y esa copia no se puede borrar, así que el borrado
+reduce la ventana de exposición pero no garantiza que la contraseña desaparezca de la
+memoria del proceso. La protección firme es otra: que la contraseña no salga en la salida,
+en los argumentos ni en el historial.
+
+**Terminal o entrada redirigida.** El proyecto apunta a Java 21, donde `System.console()`
+es `null` apenas la entrada o la salida están redirigidas; el comando lo usa así. En un JDK
+posterior (22 o más) la consola existe aunque se redirija, y el comando consulta
+`Console.isTerminal()` para decidir; el resultado para el operador es el mismo.
+
+## Ingreso seguro de la contraseña
+
+- **Preferir el modo interactivo**: ejecutar el comando en una terminal; pide la contraseña
+  sin eco, dos veces, y no deja nada en el historial.
+- **Para scripts**, leer la contraseña sin eco a una variable que no se exporta y pasarla
+  por la entrada estándar; después borrarla:
+
+  ```sh
+  read -rs CLAVE
+  printf '%s\n' "$CLAVE" | java -Dloader.main=ar.cetobhb.admin.security.AdminPasswordHashCommand \
+       -cp ceto-backend-0.0.1-SNAPSHOT.jar org.springframework.boot.loader.launch.PropertiesLauncher
+  unset CLAVE
+  ```
+
+  Nunca escribir `CLAVE=...` en la línea de comandos (queda en el historial y en la lista
+  de procesos) ni exportar la variable (la heredan todos los procesos hijos). `printf` es
+  una orden interna del intérprete: la contraseña no aparece en la lista de procesos.
+- Como medida adicional, `HISTCONTROL=ignorespace` (en bash) permite que una línea que
+  empiece con un espacio no se guarde en el historial. Es una ayuda, no una garantía: no
+  reemplaza a las reglas anteriores.
+
+## Archivos que contienen `ADMIN_PASSWORD_HASH`
+
+El hash es un verificador que se puede intentar romper sin conexión: quien lo obtenga puede
+probar contraseñas en su propia máquina, sin el límite de intentos del login. Por eso:
+
+- El archivo `.env` y el override de compose que lo contienen tienen permisos **600**
+  (`chmod 600`), pertenecen al usuario que despliega y **no se versionan**.
+- Quedan **fuera de los respaldos sin cifrar** (el respaldo diario de Postgres con copia
+  fuera del VPS no debe arrastrar esos archivos en claro).
+- Una contraseña larga y única es la defensa real; el costo 12 solo encarece cada intento.
+
+## Desarrollo local con la cookie `Secure`
+
+La cookie de sesión es `Secure` y la aplicación no arranca de otro modo (`AdminSessionGuard`).
+En desarrollo local:
+
+- `http://localhost` funciona en Chrome y Firefox, que tratan `localhost` como contexto
+  seguro y aceptan cookies `Secure` por HTTP.
+- **No** funciona en Safari ni con una IP de la red local (`http://192.168...`) por HTTP:
+  el navegador descarta la cookie y el login parece no hacer nada.
+- En esos casos usar un **Caddy local con TLS** (`tls internal`) delante de la aplicación.
+- **No existe un perfil inseguro y nadie debe agregarlo**: la guarda corre en todos los
+  perfiles, y debilitar la cookie para comodidad local es justo lo que impide.
 
 ## Sesión de administración
 

@@ -869,14 +869,23 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 - **Comando de aprovisionamiento del hash** (`AdminPasswordHashCommand`, X5.4, AUTH-14). Lee la
   contraseña sin eco desde la terminal (dos veces) o, con la entrada redirigida, la primera línea
   de la entrada estándar; **nunca** como argumento (cualquier argumento es código de salida 2 sin
-  leer nada); rechaza menos de 14 caracteres o más de 72 bytes UTF-8; imprime solo `{bcrypt}` más el
-  hash de costo 12, en una línea con LF, y borra los buffers que tuvieron la contraseña. No usa
-  logging. `AdminPasswordHashCommandTest` (reglas, centinela fuera de salida y error, buffers
-  borrados, el valor pasa `AdminCredentials.parse`) y `AdminPasswordHashCommandProcessTest` (JVM aparte:
-  códigos de salida y flujos). Cómo se invoca (`PropertiesLauncher`), el `$$` de compose y que cambiar la
-  contraseña es un hash nuevo más un despliegue: `docs/operacion-admin.md`. `BCryptPasswordEncoder`
-  convierte la contraseña a `String` por dentro, que no se puede borrar: la garantía es sobre los
-  buffers propios y sobre la salida, no sobre la memoria del proceso.
+  leer nada); rechaza menos de 14 caracteres o más de 72 bytes UTF-8; una línea de más de 1 KB
+  (1024 bytes) se rechaza con un mensaje fijo y código 1 sin leer más allá del límite y sin repetir
+  nada de la línea (la entrada estándar se lee a un `byte[]` acotado, sin `ByteArrayOutputStream`);
+  imprime solo `{bcrypt}` más el hash de costo 12, en una línea con LF. Los buffers propios (bytes
+  de entrada, caracteres decodificados, arreglo de la terminal) se sobrescriben **en la medida de lo
+  posible** antes de volver. No usa logging. `AdminPasswordHashCommandTest` (reglas, línea de más de
+  1 KB y su borde, entrada infinita, centinela fuera de salida y error, buffers borrados, el valor
+  pasa `AdminCredentials.parse`) y `AdminPasswordHashCommandProcessTest` (JVM aparte: códigos de salida
+  y flujos; mutación 2026-10-08: sin el límite de lectura falla el test de la entrada infinita).
+  Terminal o entrada redirigida se decide con `Console#isTerminal()` cuando existe (JDK 22 o
+  posterior, donde `System.console()` ya no es `null` al redirigir) y, en Java 21, que es el destino
+  del proyecto (`java.version` 21 en `pom.xml`), por el propio `System.console() != null`.
+  Cómo se invoca (`PropertiesLauncher`), el `$$` de compose, cómo ingresar la contraseña sin dejarla
+  en el historial y que cambiar la contraseña es un hash nuevo más un despliegue:
+  `docs/operacion-admin.md`. `BCryptPasswordEncoder` convierte la contraseña a `String` por dentro y
+  esa copia no se puede borrar: el borrado no es una garantía sobre la memoria del proceso, solo
+  reduce la ventana de los buffers propios; la garantía firme es sobre la salida y los argumentos.
 - **Credencial de administración** (`ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, sin
   valor por defecto; el login y la política de sesión están en los dos puntos siguientes). Se
   valida en `AdminCredentials.parse` con mensajes fijos, no con Bean Validation:
