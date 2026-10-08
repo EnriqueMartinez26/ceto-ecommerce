@@ -294,7 +294,7 @@ Una clave nueva crea un pedido nuevo.
 
 Todo error es `application/problem+json` con esta forma: `title`, `status`,
 `detail` (texto fijo en inglés, nunca un valor de la petición), `instance` (la
-ruta pedida), `code` (estable, para decidir qué mostrar) y `requestId`. Se suma
+ruta pedida; ver la excepción de `/api/admin/*` más abajo), `code` (estable, para decidir qué mostrar) y `requestId`. Se suma
 `reason` (solo en `VALIDATION_ERROR`) o `productIds` (solo en
 `PRODUCT_UNAVAILABLE`). Nunca hay `type`, stack trace ni mensajes de excepción.
 Los goldens de abajo no incluyen `requestId` porque el test lo compara aparte
@@ -491,9 +491,14 @@ Golden: `backend/src/test/resources/contract/error-internal.json`
 
 ### Errores de Security en `/api/admin/*`
 
-Los produce Spring Security, no el controller, y tienen la misma forma. Estos
-tres goldens no incluyen `instance` (es la ruta pedida y cambia en cada
-ruta) ni `requestId`; los tests los comparan aparte.
+Los produce Spring Security, no el controller, y tienen la misma forma, con una
+diferencia en `instance`. En el 401 y el 403 es la ruta pedida, como en el resto
+de los errores, pero si la ruta pasa de 256 caracteres vale `/api/admin` (el
+cuerpo no crece con la petición). En el 400 `MALFORMED_REQUEST` del firewall
+(una ruta con `;`, `//`, `/./` o `/../`) **no hay `instance`**: la ruta es
+justamente lo que se rechazó y no se repite. Estos tres goldens no incluyen
+`instance` (cambia en cada ruta) ni `requestId`; los tests los comparan aparte
+(`ContractAssertions.assertMatchesGoldenForPath`).
 
 Golden: `backend/src/test/resources/contract/admin-error-unauthenticated.json`
 

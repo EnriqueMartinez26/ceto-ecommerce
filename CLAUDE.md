@@ -821,7 +821,15 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   primero fallan ese test, 3 de `AdminSecurityChainIT` y 8 de
   `SecurityFirewallVariantsIT`. M9 (cache de peticiones activada): fallan
   `AdminAnonymousSessionIT`, porque el 401 anónimo abre
-  una sesión.
+  una sesión. `instance` del 401 y el 403 es la ruta pedida, acotada a 256
+  caracteres (más largo vale `/api/admin`); el 400 del firewall no lleva
+  `instance`, porque la ruta es lo rechazado (`ProblemResponsesIT`,
+  `SecurityFirewallVariantsIT`, D-20261008-38). La página de error de Tomcat para
+  esas rutas (barra, contrabarra o NUL codificados, en rutas públicas y de admin)
+  no nombra al servidor, ni versión ni traza, y no hay cabecera `Server`:
+  `ContainerErrorPageIT` lo fija en un servidor real; es el valor por defecto de
+  Tomcat 11.0.24, sin código propio (D-20261008-37), y con un `ErrorReportValve`
+  que muestra reporte e información del servidor el test falla (7 de 7).
 - **Una sola cuenta: la de administración.** Contraseña con BCrypt o
   Argon2, login con rate limit y bloqueo temporal, sesión en cookie
   `HttpOnly` + `Secure` + `SameSite`. Nunca un token en `localStorage`.
