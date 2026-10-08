@@ -848,7 +848,14 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   llamada anónima generada a cada ruta mapeada no pública da el golden 401;
   `EndpointInventoryIT` repite eso sobre el contexto real, exige que toda ruta de
   `/api/admin/` esté en `ADMIN_ROUTES` y que no exista ninguna ruta de
-  restablecimiento o cambio de contraseña.
+  restablecimiento o cambio de contraseña. Una ruta sin método declarado se
+  llama con GET, POST, PUT, PATCH, DELETE, HEAD y OPTIONS y las siete dan 401
+  (`EndpointInventoryDriftIT`; en servidor real, con token CSRF válido para las
+  que lo exigen, HEAD sin cuerpo y OPTIONS como un 401 común sin `Allow` ni
+  cabeceras CORS: `AdminAnonymousMethodsServerIT`; mutación 2026-10-08: con HEAD
+  y OPTIONS permitidos fallan 2 y 1 tests). El generador de rutas concretas
+  (`EndpointInventory.concretePath`) resuelve variables con regex y falla con un
+  `AssertionError` ante `**`, `*`, `?` o `{*x}` (`EndpointInventoryTest`).
 - **Una sola cuenta: la de administración.** Contraseña con BCrypt o
   Argon2, login con rate limit y bloqueo temporal, sesión en cookie
   `HttpOnly` + `Secure` + `SameSite`. Nunca un token en `localStorage`.

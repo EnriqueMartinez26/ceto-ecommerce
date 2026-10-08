@@ -90,6 +90,9 @@ final class ApiErrorCatalog {
      * The rows Spring Security answers with (written by {@code ProblemResponses}, not by the advice), derived from the
      * {@link SecurityProblem} enum so the text has one source. Nothing is logged for them: an anonymous client can
      * trigger a 401 at will and the line would carry no information.
+     *
+     * <p>Only the tests read it: it is the test-side agreement check between the enum and the documented rows
+     * ({@code SecurityProblemTest}, {@code ApiDocConsistencyTest}).
      */
     static Map<SecurityProblem, ApiError> securityRows() {
         Map<SecurityProblem, ApiError> rows = new EnumMap<>(SecurityProblem.class);
