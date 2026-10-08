@@ -38,6 +38,7 @@ class OrderPropertiesValidationTest {
         keys.put("ceto.orders.reservation-hours", "48");
         keys.put("ceto.orders.max-units-per-line", "10");
         keys.put("ceto.orders.max-lines-per-order", "20");
+        keys.put("ceto.orders.max-pending-per-phone", "3");
         keys.put("ceto.orders.expiry.batch-size", "100");
         keys.put("ceto.orders.expiry.fixed-delay-ms", "60000");
         keys.put("ceto.orders.expiry.max-batches-per-tick", "10");
@@ -71,7 +72,7 @@ class OrderPropertiesValidationTest {
 
     @ParameterizedTest(name = "{0} absent fails startup")
     @ValueSource(strings = {"ceto.orders.reservation-hours", "ceto.orders.max-units-per-line",
-        "ceto.orders.max-lines-per-order"})
+        "ceto.orders.max-lines-per-order", "ceto.orders.max-pending-per-phone"})
     void startupFailsWhenATopLevelKeyIsAbsent(String key) {
         java.util.Map<String, String> keys = allKeys();
         keys.remove(key);
@@ -84,7 +85,7 @@ class OrderPropertiesValidationTest {
 
     @ParameterizedTest(name = "{0} blank fails startup")
     @ValueSource(strings = {"ceto.orders.reservation-hours", "ceto.orders.max-units-per-line",
-        "ceto.orders.max-lines-per-order"})
+        "ceto.orders.max-lines-per-order", "ceto.orders.max-pending-per-phone"})
     void startupFailsWhenATopLevelKeyIsBlank(String key) {
         java.util.Map<String, String> keys = allKeys();
         keys.put(key, "");
@@ -99,6 +100,7 @@ class OrderPropertiesValidationTest {
             assertThat(p.reservationHours()).isEqualTo(48);
             assertThat(p.maxUnitsPerLine()).isEqualTo(30);
             assertThat(p.maxLinesPerOrder()).isEqualTo(20);
+            assertThat(p.maxPendingPerPhone()).isEqualTo(3);
             assertThat(p.expiry().batchSize()).isEqualTo(100);
             assertThat(p.expiry().fixedDelayMs()).isEqualTo(60_000);
             assertThat(p.expiry().maxBatchesPerTick()).isEqualTo(10);
@@ -107,11 +109,13 @@ class OrderPropertiesValidationTest {
 
     @Test
     void honorsTheEnvironmentStyleOverrides() {
-        runner.withSystemProperties("ORDER_RESERVATION_HOURS=72", "ORDER_MAX_UNITS_PER_LINE=25").run(context -> {
+        runner.withSystemProperties("ORDER_RESERVATION_HOURS=72", "ORDER_MAX_UNITS_PER_LINE=25",
+                "ORDER_MAX_PENDING_PER_PHONE=5").run(context -> {
             assertThat(context).hasNotFailed();
             OrderProperties p = context.getBean(OrderProperties.class);
             assertThat(p.reservationHours()).isEqualTo(72);
             assertThat(p.maxUnitsPerLine()).isEqualTo(25);
+            assertThat(p.maxPendingPerPhone()).isEqualTo(5);
         });
     }
 
@@ -123,6 +127,8 @@ class OrderPropertiesValidationTest {
                 Arguments.of("ceto.orders.max-units-per-line", "101"),
                 Arguments.of("ceto.orders.max-lines-per-order", "0"),
                 Arguments.of("ceto.orders.max-lines-per-order", "51"),
+                Arguments.of("ceto.orders.max-pending-per-phone", "0"),
+                Arguments.of("ceto.orders.max-pending-per-phone", "21"),
                 Arguments.of("ceto.orders.expiry.batch-size", "0"),
                 Arguments.of("ceto.orders.expiry.batch-size", "1001"),
                 Arguments.of("ceto.orders.expiry.fixed-delay-ms", "999"),
@@ -152,6 +158,8 @@ class OrderPropertiesValidationTest {
                 Arguments.of("ceto.orders.max-units-per-line", "100"),
                 Arguments.of("ceto.orders.max-lines-per-order", "1"),
                 Arguments.of("ceto.orders.max-lines-per-order", "50"),
+                Arguments.of("ceto.orders.max-pending-per-phone", "1"),
+                Arguments.of("ceto.orders.max-pending-per-phone", "20"),
                 Arguments.of("ceto.orders.expiry.batch-size", "1"),
                 Arguments.of("ceto.orders.expiry.batch-size", "1000"),
                 Arguments.of("ceto.orders.expiry.fixed-delay-ms", "1000"),

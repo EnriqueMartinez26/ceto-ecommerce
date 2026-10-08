@@ -42,6 +42,7 @@ ceto:
     reservation-hours: ${ORDER_RESERVATION_HOURS:48}
     max-units-per-line: ${ORDER_MAX_UNITS_PER_LINE:30}
     max-lines-per-order: 20
+    max-pending-per-phone: ${ORDER_MAX_PENDING_PER_PHONE:3}
     expiry:
       batch-size: 100
       fixed-delay-ms: 60000

@@ -46,7 +46,7 @@ class OrderPlacementServiceTest {
         when(orders.findByIdempotencyKey(any())).thenReturn(Optional.empty());
         when(catalog.findForOrder(any())).thenThrow(lost);
         OrderPlacementService service = new OrderPlacementService(
-                new OrderProperties(24, 10, 10, new OrderProperties.Expiry(100, 60_000, 10)), catalog,
+                new OrderProperties(24, 10, 10, 3, new OrderProperties.Expiry(100, 60_000, 10)), catalog,
                 mock(InventoryService.class), orders, Clock.fixed(Instant.parse("2026-10-07T12:00:00Z"), ZoneOffset.UTC),
                 txManager);
 

@@ -26,7 +26,7 @@ class OrderExpiryJobTest {
 
     private final OrderLifecycleService lifecycle = mock(OrderLifecycleService.class);
     private final OrderExpiryJob job = new OrderExpiryJob(lifecycle,
-            new OrderProperties(48, 10, 20, new OrderProperties.Expiry(BATCH_SIZE, 45_000, 10)));
+            new OrderProperties(48, 10, 20, 3, new OrderProperties.Expiry(BATCH_SIZE, 45_000, 10)));
     private final Logger jobLogger = (Logger) LoggerFactory.getLogger(OrderExpiryJob.class);
     private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
 

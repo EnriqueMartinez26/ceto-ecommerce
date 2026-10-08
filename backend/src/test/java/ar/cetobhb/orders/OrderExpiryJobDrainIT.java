@@ -56,7 +56,7 @@ class OrderExpiryJobDrainIT extends AbstractPostgresIT {
     }
 
     private OrderExpiryJob job(int batchSize, int maxBatchesPerTick) {
-        return new OrderExpiryJob(lifecycle, new OrderProperties(48, 10, 20,
+        return new OrderExpiryJob(lifecycle, new OrderProperties(48, 10, 20, 3,
                 new OrderProperties.Expiry(batchSize, 60_000, maxBatchesPerTick)));
     }
 

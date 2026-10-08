@@ -45,7 +45,7 @@ class OrderExpiryJobSchedulingTest {
 
         @Bean
         OrderProperties orderProperties() {
-            return new OrderProperties(48, 10, 20, new OrderProperties.Expiry(7, 45_000, 10));
+            return new OrderProperties(48, 10, 20, 3, new OrderProperties.Expiry(7, 45_000, 10));
         }
 
         @Bean
@@ -97,7 +97,7 @@ class OrderExpiryJobSchedulingTest {
         org.mockito.Mockito.reset(SERVICE);
         when(SERVICE.expireDueOrders(7)).thenReturn(result(3));
 
-        new OrderExpiryJob(SERVICE, new OrderProperties(48, 10, 20, new OrderProperties.Expiry(7, 45_000, 10))).run();
+        new OrderExpiryJob(SERVICE, new OrderProperties(48, 10, 20, 3, new OrderProperties.Expiry(7, 45_000, 10))).run();
 
         verify(SERVICE).expireDueOrders(7);
         Method run = OrderExpiryJob.class.getMethod("run");
@@ -162,6 +162,6 @@ class OrderExpiryJobSchedulingTest {
     }
 
     private static OrderProperties props(int batchSize, int maxBatchesPerTick) {
-        return new OrderProperties(48, 10, 20, new OrderProperties.Expiry(batchSize, 45_000, maxBatchesPerTick));
+        return new OrderProperties(48, 10, 20, 3, new OrderProperties.Expiry(batchSize, 45_000, maxBatchesPerTick));
     }
 }
