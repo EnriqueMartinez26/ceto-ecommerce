@@ -9,7 +9,6 @@ import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 
 /**
  * The account store and the authentication manager of the administration area (design AD-A4, AD-A5).
@@ -33,17 +32,18 @@ class AdminAuthenticationConfig {
     }
 
     /**
-     * The BCrypt work, at the cost of the stored hash. It is a separate bean (and the only {@code PasswordEncoder}
-     * built from the credential) so that a test can wrap it and count how many hashes were really computed.
+     * The BCrypt work, at the cost of the stored hash. It is a separate bean so that a test can wrap it and count how
+     * many hashes were really computed, but it is a holder and NOT a {@code PasswordEncoder}: the guarded
+     * {@link AdminPasswordEncoder} is the only {@code PasswordEncoder} bean.
      */
     @Bean
-    PasswordEncoder adminBcryptEncoder(AdminCredentials credentials) {
-        return new BCryptPasswordEncoder(credentials.cost());
+    AdminBcrypt adminBcryptEncoder(AdminCredentials credentials) {
+        return new AdminBcrypt(new BCryptPasswordEncoder(credentials.cost()));
     }
 
     @Bean
-    AdminPasswordEncoder adminPasswordEncoder(@Qualifier("adminBcryptEncoder") PasswordEncoder bcrypt) {
-        return new AdminPasswordEncoder(bcrypt);
+    AdminPasswordEncoder adminPasswordEncoder(@Qualifier("adminBcryptEncoder") AdminBcrypt bcrypt) {
+        return new AdminPasswordEncoder(bcrypt.encoder());
     }
 
     @Bean

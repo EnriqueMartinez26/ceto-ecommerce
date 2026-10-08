@@ -35,6 +35,9 @@ logging:
     # Spring MVC logs the exception message of malformed requests, and that message echoes the rejected value.
     org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver: "OFF"
     org.springframework.web.servlet.PageNotFound: "OFF"
+    # DaoAuthenticationProvider logs "Failed to find user '<username>'" at DEBUG, and the username is whatever the client
+    # typed. Silenced on its own category so a broader org.springframework.security DEBUG cannot print it.
+    org.springframework.security.authentication.dao: "OFF"
 
 spring:
   datasource:

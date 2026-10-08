@@ -4,7 +4,7 @@ import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import ar.cetobhb.admin.security.AdminBcrypt;
 import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
@@ -37,14 +37,14 @@ public class TestcontainersConfiguration {
         };
     }
 
-    /** Wraps the BCrypt encoder of the admin account (bean "adminBcryptEncoder") in a counting decorator. */
+    /** Wraps the BCrypt encoder of the admin account (holder bean "adminBcryptEncoder") in a counting decorator. */
     @Bean
     static BeanPostProcessor countAdminBcryptWork() {
         return new BeanPostProcessor() {
             @Override
             public Object postProcessAfterInitialization(Object bean, String beanName) {
-                if ("adminBcryptEncoder".equals(beanName) && bean instanceof PasswordEncoder encoder) {
-                    return new CountingPasswordEncoder(encoder);
+                if ("adminBcryptEncoder".equals(beanName) && bean instanceof AdminBcrypt holder) {
+                    return new AdminBcrypt(new CountingPasswordEncoder(holder.encoder()));
                 }
                 return bean;
             }

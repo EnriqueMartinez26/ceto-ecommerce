@@ -35,7 +35,7 @@ class AdminCredentialsTest {
     }
 
     static Stream<String> badUsernames() {
-        return Stream.of(null, "", " ", "   ", "own er", "owner ", " owner", "own\ter", "own\ner", "own\u0000er",
+        return Stream.of(null, "", " ", "   ", "own er", "owner ", " owner", "own\ter", "own\ner", "owner\r", "own\u0000er",
                 "own\u007Fer", "own​er", "own er", "own er", "x".repeat(65),
                 "${ADMIN_USERNAME}", "own${er");
     }
@@ -51,7 +51,7 @@ class AdminCredentialsTest {
     static Stream<String> badHashes() {
         return Stream.of(null, "", " ", PREFIX, "{noop}secret", "secret", "{sha256}" + "a".repeat(64),
                 "{bcrypt" + RAW_HASH, RAW_HASH, "{BCRYPT}" + RAW_HASH, " " + PREFIX + RAW_HASH,
-                PREFIX + RAW_HASH + " ", PREFIX + RAW_HASH + "\n", PREFIX + RAW_HASH + "x",
+                PREFIX + RAW_HASH + " ", PREFIX + RAW_HASH + "\n", PREFIX + RAW_HASH + "\r\n", PREFIX + RAW_HASH + "\r", PREFIX + RAW_HASH + "x",
                 PREFIX + RAW_HASH.substring(0, RAW_HASH.length() - 1),
                 PREFIX + RAW_HASH.replace("$2a$", "$2x$"),
                 PREFIX + "$2a$10$" + "!".repeat(53),
@@ -128,5 +128,13 @@ class AdminCredentialsTest {
     void theFixedMessagesNameThePropertyAndNeverTheValue() {
         assertThat(AdminCredentials.INVALID_USERNAME).contains("ceto.admin.username");
         assertThat(AdminCredentials.INVALID_PASSWORD_HASH).contains("ceto.admin.password-hash");
+    }
+
+    @Test
+    void theFixedMessagesHintAtTheLikelyCauseWithoutEchoingAnyValue() {
+        assertThat(AdminCredentials.INVALID_PASSWORD_HASH).contains("stray spaces", "line breaks", "$$")
+                .contains("compose");
+        assertThat(AdminCredentials.INVALID_USERNAME).contains("stray spaces", "line breaks");
+        assertThat(AdminCredentials.INVALID_PASSWORD_HASH).doesNotContain("$2").doesNotContain("{bcrypt}$");
     }
 }

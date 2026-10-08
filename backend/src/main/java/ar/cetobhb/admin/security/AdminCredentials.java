@@ -16,10 +16,11 @@ import java.util.regex.Pattern;
 public final class AdminCredentials {
 
     public static final String INVALID_USERNAME = "ceto.admin.username (ADMIN_USERNAME) is required: 1 to 64 "
-            + "characters with no whitespace, control or format characters";
+            + "characters with no whitespace, control or format characters (check for stray spaces and line breaks)";
 
     public static final String INVALID_PASSWORD_HASH = "ceto.admin.password-hash (ADMIN_PASSWORD_HASH) is required "
-            + "and must be a {bcrypt} hash of cost 10 to 14";
+            + "and must be a {bcrypt} hash of cost 10 to 14 (check for stray spaces, line breaks and the $$ escaping in "
+            + "compose files)";
 
     static final int MAX_USERNAME_LENGTH = 64;
 
