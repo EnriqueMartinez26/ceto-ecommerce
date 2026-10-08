@@ -32,7 +32,8 @@ public final class ContractAssertions {
     /**
      * Golden check for the problem bodies of the administration area, whose {@code instance} is the requested path and
      * so differs per route: the golden has no {@code instance}; here the member must equal {@code expectedPath} and is
-     * then stripped, like {@code requestId}.
+     * then stripped, like {@code requestId}. A {@code null} {@code expectedPath} means the member must be absent (the
+     * firewall's 400 never echoes the refused spelling).
      */
     public static void assertMatchesGoldenForPath(MockHttpServletResponse response, String goldenName,
             String expectedPath) throws Exception {
@@ -45,8 +46,12 @@ public final class ContractAssertions {
             String expectedPath) throws Exception {
         JsonNode node = MAPPER.readTree(body);
         ObjectNode object = (ObjectNode) node;
-        assertThat(object.get("instance").asString()).as("instance").isEqualTo(expectedPath);
-        object.remove("instance");
+        if (expectedPath == null) {
+            assertThat(object.has("instance")).as("the member instance is omitted").isFalse();
+        } else {
+            assertThat(object.get("instance").asString()).as("instance").isEqualTo(expectedPath);
+            object.remove("instance");
+        }
         assertThat(object.has("requestId")).as("requestId member").isTrue();
         String requestId = object.get("requestId").asString();
         assertThat(UUID.fromString(requestId)).hasToString(requestId);

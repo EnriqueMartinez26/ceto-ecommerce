@@ -67,7 +67,11 @@ class ProblemResponsesIT extends AbstractPostgresIT {
             assertThat(body.get("detail").asString()).isEqualTo(problem.detail());
             assertThat(body.get("status").asInt()).isEqualTo(problem.status().value());
             assertThat(body.get("title").asString()).isEqualTo(problem.status().getReasonPhrase());
-            assertThat(body.get("instance").asString()).isEqualTo("/api/admin/orders");
+            if (problem == SecurityProblem.REJECTED_REQUEST) {
+                assertThat(body.has("instance")).as("a refused spelling is never echoed").isFalse();
+            } else {
+                assertThat(body.get("instance").asString()).isEqualTo("/api/admin/orders");
+            }
             assertThat(body.get("requestId").asString()).isEqualTo("rid-7");
             assertThat(body.has("type")).isFalse();
         }
@@ -85,6 +89,39 @@ class ProblemResponsesIT extends AbstractPostgresIT {
         problems.write(request, response, SecurityProblem.UNAUTHENTICATED);
 
         assertThat(response.getContentAsString()).doesNotContain("sentinel");
+    }
+
+    @Test
+    void the401And403InstanceIsTheRequestPathUpToTheCapAndTheFixedAdminRootBeyondIt() throws Exception {
+        String atTheCap = "/api/admin/" + "a".repeat(ProblemResponses.MAX_INSTANCE_LENGTH - "/api/admin/".length());
+        String overTheCap = atTheCap + "a";
+        assertThat(atTheCap).hasSize(ProblemResponses.MAX_INSTANCE_LENGTH);
+
+        for (SecurityProblem problem : new SecurityProblem[] {SecurityProblem.UNAUTHENTICATED,
+                SecurityProblem.FORBIDDEN}) {
+            assertThat(instanceOf(problem, atTheCap)).isEqualTo(atTheCap);
+            assertThat(instanceOf(problem, overTheCap)).isEqualTo("/api/admin");
+            assertThat(instanceOf(problem, "/api/admin/" + "a".repeat(5000))).isEqualTo("/api/admin");
+        }
+    }
+
+    @Test
+    void theRejectedRequestProblemOmitsInstanceWhateverThePath() throws Exception {
+        for (String path : new String[] {"/api/admin;x=1/orders", "/api/admin//orders", "/api/admin/" + "a".repeat(5000)}) {
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            problems.write(new MockHttpServletRequest("GET", path), response, SecurityProblem.REJECTED_REQUEST);
+
+            JsonNode body = json.readTree(response.getContentAsString());
+            assertThat(body.has("instance")).as(path).isFalse();
+            assertThat(response.getContentAsString()).doesNotContain("x=1");
+        }
+    }
+
+    private String instanceOf(SecurityProblem problem, String path) throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        problems.write(new MockHttpServletRequest("GET", path), response, problem);
+        return json.readTree(response.getContentAsString()).get("instance").asString();
     }
 
     @Test
