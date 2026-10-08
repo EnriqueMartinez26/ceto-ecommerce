@@ -43,7 +43,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Places orders (CLAUDE.md rules 3, 6, 7, 10). Prices and totals come from the catalog, never from the request.
  *
  * <p>Everything persistent happens in ONE transaction with a fixed lock order: the advisory lock of the buyer phone
- * (it serializes the pending-orders cap, REQ-ABU-01), then the order row is inserted and flushed first (the idempotency claim, AD-7), then stock rows are locked in ascending base-product id by
+ * (it serializes the pending-orders cap, REQ-ABU-01), then the order row is inserted and flushed first (the
+ * idempotency claim, AD-7), then stock rows are locked in ascending base-product id by
  * {@link InventoryService#reserve}. Nothing reads a stock row before that lock query, so no stale instance can sit
  * in the persistence context. A business failure (unavailable product, shortage) is a runtime exception that rolls
  * back the order row too: nothing partial survives.
@@ -145,7 +146,16 @@ public class OrderPlacementService {
      * <p>Domain exceptions (unavailable product, shortage) leave the transactional collaborators and mark the
      * caller's transaction rollback-only. Callers must not catch one and carry on in the same transaction: the commit
      * would fail with an {@code UnexpectedRollbackException}.
-     * Does no idempotency lookup: use {@link #placeOrder} for that.
+     *
+     * <p>Precondition: call it BEFORE touching orders or stock in the transaction. It takes the per-phone advisory
+     * lock first, so any earlier order or stock lock in the same transaction inverts the lock order
+     * (advisory(phone) -> order row -> stock rows) and can deadlock against {@link #placeOrder}.
+     *
+     * <p>Contract differences from {@link #placeOrder}: it does NO idempotency lookup and no replay, so a duplicate
+     * key surfaces as a {@link DataIntegrityViolationException} (constraint {@code orders_idempotency_key_uk}) in the
+     * caller's transaction, which the caller must roll back. The pending cap is checked BEFORE the key, so a retry
+     * at the cap through this method gets {@link TooManyPendingOrdersException} (429), unlike {@code placeOrder},
+     * which replays it as a 200.
      */
     public PlacedOrder placeInCurrentTransaction(PlaceOrderCommand command) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
