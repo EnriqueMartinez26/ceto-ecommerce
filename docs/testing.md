@@ -137,6 +137,23 @@ teléfono), `oneKeyAcrossManyPhonesInABurstCreatesOneOrderAndConflictsTheRest`
 
 Cobertura de líneas (solo clases mutadas): 299/305 (98 %). Duración ~17 min.
 
+### Nueva medición `services` (2026-10-07, rama `feat/http-s4a2-pending-cap-bursts`, después de la revisión de S4a)
+
+Se re-corrió `services` después de `requireStockRows` (S3b-1a) y de las
+correcciones de la revisión de S4a (javadoc, nivel DEBUG del 429, prueba con
+mocks de la carrera perdida con otra huella). Sin sobrevivientes ni mutantes sin
+cobertura: no hizo falta ninguna prueba nueva para matar mutantes ni se aceptó
+ningún equivalente.
+
+| Corrida | Paquete | Mutantes | Antes | Después |
+|---|---|---|---|---|
+| services | `orders.service` | 94 (+5) | 89 (100 %) | 94 (100 %) |
+| services | `inventory.service` | 29 | 29 (100 %) | 29 (100 %) |
+| services | `catalog.service` | 25 | 25 (100 %) | 25 (100 %) |
+| **Total** | | **148** | **143 (100 %)** | **148 (100 %)** |
+
+Cobertura de líneas (solo clases mutadas): 305/313 (97 %). Duración ~7 min.
+
 ### Mutantes equivalentes aceptados
 
 | Clase | Línea | Mutación | Por qué es equivalente |

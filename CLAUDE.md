@@ -340,8 +340,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     iteraciones de `distinctKeysOfOnePhoneInABurstYieldExactlyTheCap`; sin la
     segunda búsqueda falló `oneKeyRetriedInABurstBelowTheCapCreatesOneOrderAndNeverRejects`
     5 de 5). Por HTTP: golden `contract/error-too-many-pending.json` y el
-    reintento en el tope sigue siendo 200 (`CheckoutErrorsHttpIT`). Los ITs que colocan muchos pedidos usan `BuyerFixtures.freshBuyer()`
-    (un teléfono por pedido), si no el tope y el lock los serializan.
+    reintento en el tope sigue siendo 200 (`CheckoutErrorsHttpIT`). Un
+    `PAGO_PENDIENTE` vencido que el job todavía no canceló sigue contando
+    (D-20261007-24, `OrderPendingCapIT`). El 429 se registra en DEBUG. Los ITs
+    que colocan muchos pedidos usan `BuyerFixtures.freshBuyer()` (un teléfono
+    por pedido), si no el tope y el lock los serializan.
 
 ### Checkout, WhatsApp y envío
 
