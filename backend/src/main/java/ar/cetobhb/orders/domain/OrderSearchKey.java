@@ -2,6 +2,7 @@ package ar.cetobhb.orders.domain;
 
 import ar.cetobhb.common.domain.PhoneNumberNormalizer;
 import ar.cetobhb.common.domain.ValidationException;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -11,7 +12,8 @@ import java.util.regex.Pattern;
  *
  * <p>Interpretation of the (trimmed) text:
  * <ul>
- *   <li>{@code CETO-} plus six or more digits, in the canonical format of {@link OrderNumber}: that order number;</li>
+ *   <li>{@code CETO-} plus six or more digits, in the canonical format of {@link OrderNumber} and in any letter case
+ *       (the text is uppercased with {@link Locale#ROOT} first): that order number;</li>
  *   <li>one to nine digits: the order number with that sequence value AND, when the digits also form a valid
  *       mobile number, that phone (both are exact candidates);</li>
  *   <li>anything else: the E.164 phone given by {@link PhoneNumberNormalizer}, or no key when it rejects it.</li>
@@ -45,10 +47,11 @@ public record OrderSearchKey(String number, String phone) {
         if (text.isEmpty()) {
             return Optional.empty();
         }
-        var orderNumber = ORDER_NUMBER.matcher(text);
+        String upperText = text.toUpperCase(Locale.ROOT);
+        var orderNumber = ORDER_NUMBER.matcher(upperText);
         if (orderNumber.matches()) {
             String number = canonicalNumber(orderNumber.group(1));
-            return number != null && number.equals(text)
+            return number != null && number.equals(upperText)
                     ? Optional.of(new OrderSearchKey(number, null))
                     : Optional.empty();
         }
