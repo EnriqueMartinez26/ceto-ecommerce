@@ -57,7 +57,7 @@ final class ApiErrorCatalog {
             Map.entry(IdempotencyConflictException.class, new ApiError(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT",
                     "The idempotency key was already used for a different order.", Level.INFO)),
             Map.entry(TooManyPendingOrdersException.class, new ApiError(HttpStatus.TOO_MANY_REQUESTS,
-                    "TOO_MANY_PENDING_ORDERS", "Too many pending orders for this phone.", Level.INFO)),
+                    "TOO_MANY_PENDING_ORDERS", "Too many pending orders for this phone.", Level.DEBUG)),
             // No public endpoint reaches these three yet; explicit rows keep a future endpoint from returning 500.
             Map.entry(IllegalOrderTransitionException.class, CONFLICT),
             Map.entry(StockAlreadyConfiguredException.class, CONFLICT),

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import ar.cetobhb.CetoBackendApplication;
 import ar.cetobhb.common.domain.DomainException;
+import ar.cetobhb.orders.domain.TooManyPendingOrdersException;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaModifier;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.slf4j.event.Level;
 
 /** REQ-ERR-03: a new DomainException subclass without a table entry must fail the build, not fall through to 500. */
 class ApiErrorCatalogTest {
@@ -50,6 +52,13 @@ class ApiErrorCatalogTest {
             assertThat(error.code()).matches("[A-Z][A-Z_]+");
             assertThat(error.detail()).isNotBlank().doesNotContain("%", "{", "[");
         });
+    }
+
+    @Test
+    void thePendingCapRejectionLogsAtDebugSoAbuseCannotFloodTheLog() {
+        // A client can trigger this 429 at will: anything above DEBUG would let abuse flood the production log.
+        assertThat(ApiErrorCatalog.domainErrors().get(TooManyPendingOrdersException.class).logLevel())
+                .isEqualTo(Level.DEBUG);
     }
 
     private static List<String> missingEntries(List<String> scanned,
