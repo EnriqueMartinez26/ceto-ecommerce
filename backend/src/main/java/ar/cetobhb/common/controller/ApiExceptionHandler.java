@@ -228,7 +228,11 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         if (request != null && request.getAttribute(REQUEST_ID_ATTRIBUTE) instanceof String requestId) {
             problem.setProperty("requestId", requestId);
         }
-        return new ResponseEntity<>(problem, headers, error.status());
+        // Error responses are per-request and may carry ids: no cache may store or reuse them.
+        HttpHeaders responseHeaders = new HttpHeaders();
+        responseHeaders.putAll(headers);
+        responseHeaders.set(HttpHeaders.CACHE_CONTROL, "no-store");
+        return new ResponseEntity<>(problem, responseHeaders, error.status());
     }
 
     /** Always non-null: Spring would call {@code URI.create} itself on a null instance and could throw. */

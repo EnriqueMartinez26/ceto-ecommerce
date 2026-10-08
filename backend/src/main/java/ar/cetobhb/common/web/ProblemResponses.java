@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.stereotype.Component;
@@ -37,6 +38,7 @@ public class ProblemResponses {
         }
         byte[] body = json.writeValueAsString(problem).getBytes(StandardCharsets.UTF_8);
         response.setStatus(status.value());
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
         response.setContentType("application/problem+json");
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentLength(body.length);

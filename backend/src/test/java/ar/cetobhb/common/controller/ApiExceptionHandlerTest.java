@@ -262,6 +262,31 @@ class ApiExceptionHandlerTest {
     }
 
     @Test
+    void aFrameworkClientErrorIsNeverCached() throws Exception {
+        mvc.perform(post("/valid").contentType(MediaType.APPLICATION_JSON).content("{\"name\": x"))
+                .andExpect(status().isBadRequest())
+                .andExpect(header().string("Cache-Control", "no-store"));
+    }
+
+    @Test
+    void aDomainConflictIsNeverCached() throws Exception {
+        THROWN.set(new IdempotencyConflictException(42L));
+
+        mvc.perform(get("/boom"))
+                .andExpect(status().isConflict())
+                .andExpect(header().string("Cache-Control", "no-store"));
+    }
+
+    @Test
+    void anUnexpectedFailureIsNeverCached() throws Exception {
+        THROWN.set(new RuntimeException(SECRET));
+
+        mvc.perform(get("/boom"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(header().string("Cache-Control", "no-store"));
+    }
+
+    @Test
     void nonJsonContentTypeIsUnsupportedMediaType() throws Exception {
         mvc.perform(post("/valid").contentType(MediaType.TEXT_PLAIN).content("x"))
                 .andExpect(status().isUnsupportedMediaType())

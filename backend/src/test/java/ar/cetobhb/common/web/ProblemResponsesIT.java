@@ -41,6 +41,16 @@ class ProblemResponsesIT extends AbstractPostgresIT {
     }
 
     @Test
+    void aFilterWrittenProblemIsNeverCached() throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        problems.write(new MockHttpServletRequest("POST", "/api/checkout/orders"), response,
+                HttpStatus.CONTENT_TOO_LARGE, "PAYLOAD_TOO_LARGE", "The request is too large.");
+
+        assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+    }
+
+    @Test
     void instanceIsNeverNullEvenForAnUnparsablePath() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/a b");
         MockHttpServletResponse response = new MockHttpServletResponse();
