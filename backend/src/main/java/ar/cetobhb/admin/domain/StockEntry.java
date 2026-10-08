@@ -11,9 +11,13 @@ package ar.cetobhb.admin.domain;
  * @param reserved           units held by pending orders of a configured base product, null otherwise
  * @param available          free sellable units (base: on_hand minus reserved; combo: floor of that over N), null when
  *                           not configured
+ * @param sellable           catalog-level sellability: the product is active and, for a combo, so is its base product
+ *                           (REQ-CAT-02). The figures are kept either way, so a positive {@code available} on a line
+ *                           that is not sellable must not be read as "can be bought"
  */
 public record StockEntry(long productId, String name, boolean active, Long comboBaseProductId,
-        Integer comboBaseUnits, boolean configured, Integer onHand, Integer reserved, Long available) {
+        Integer comboBaseUnits, boolean configured, Integer onHand, Integer reserved, Long available,
+        boolean sellable) {
 
     public boolean isCombo() {
         return comboBaseProductId != null;

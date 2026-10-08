@@ -16,8 +16,10 @@ import ar.cetobhb.support.AbstractPostgresIT;
 import ar.cetobhb.support.BurstRunner;
 import ar.cetobhb.support.BurstRunner.Outcome;
 import ar.cetobhb.support.BurstRunner.Report;
+import ar.cetobhb.support.LockProbe;
 import ar.cetobhb.support.StockReconciliation;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -26,6 +28,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +51,8 @@ class StockAdjustBurstIT extends AbstractPostgresIT {
 
     private static final int ITERATIONS = 15;
 
+    private static final Duration BLOCKED_DEADLINE = Duration.ofSeconds(5);
+
     @Autowired
     private AdminInventoryService admin;
 
@@ -65,6 +70,9 @@ class StockAdjustBurstIT extends AbstractPostgresIT {
 
     @Autowired
     private PlatformTransactionManager txManager;
+
+    @Autowired
+    private DataSource dataSource;
 
     @AfterEach
     void reconciliationIsClean() {
@@ -122,9 +130,9 @@ class StockAdjustBurstIT extends AbstractPostgresIT {
                     placed.completeExceptionally(e);
                 }
             });
-            assertThatThrownBy(() -> placed.get(1, TimeUnit.SECONDS))
-                    .as("the placement must wait for the row the adjustment holds")
-                    .isInstanceOf(TimeoutException.class);
+            // Postgres itself must report the probe as waiting on a lock before we conclude anything from "not done".
+            LockProbe.awaitBlocked(dataSource, BLOCKED_DEADLINE, "inventory_stock");
+            assertThat(placed.isDone()).as("the placement must wait for the row the adjustment holds").isFalse();
         });
 
         placed.get(10, TimeUnit.SECONDS);
@@ -148,9 +156,8 @@ class StockAdjustBurstIT extends AbstractPostgresIT {
                     adjusted.completeExceptionally(e);
                 }
             });
-            assertThatThrownBy(() -> adjusted.get(1, TimeUnit.SECONDS))
-                    .as("the adjustment must wait for the held row")
-                    .isInstanceOf(TimeoutException.class);
+            LockProbe.awaitBlocked(dataSource, BLOCKED_DEADLINE, "inventory_stock");
+            assertThat(adjusted.isDone()).as("the adjustment must wait for the held row").isFalse();
         });
 
         // Having waited, it reads the committed reserved = 4: 5 - 3 = 2 is below it, rejected in Java (not by the CHECK).
@@ -165,6 +172,8 @@ class StockAdjustBurstIT extends AbstractPostgresIT {
 
     @Test
     void aRowHeldPastTheLockTimeoutFailsTheAdjustmentWithNoChangeAndNoAuditRow() throws Exception {
+        // The 5 s bound the whole test relies on: if the pool setting ever changes the wait would no longer be bounded.
+        assertThat(jdbc.queryForObject("SHOW lock_timeout", String.class)).isEqualTo("5s");
         long base = baseWithStock(5);
         CompletableFuture<Object> adjusted = new CompletableFuture<>();
 
@@ -177,6 +186,8 @@ class StockAdjustBurstIT extends AbstractPostgresIT {
                     adjusted.completeExceptionally(e);
                 }
             });
+            LockProbe.awaitBlocked(dataSource, BLOCKED_DEADLINE, "inventory_stock");
+            assertThat(adjusted.isDone()).as("the adjustment must be waiting on the held row").isFalse();
             try {
                 adjusted.get(15, TimeUnit.SECONDS);
             } catch (ExecutionException | InterruptedException | TimeoutException expected) {

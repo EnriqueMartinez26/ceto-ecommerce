@@ -215,22 +215,42 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   sin rutas): `adjust(productId, delta, reason)` llama a
   `InventoryService.adjustBy`, escribe una fila `STOCK_ADJUSTED` con el stock
   antes y después y el motivo del conjunto cerrado (sin nota), todo en una
-  transacción; un delta en 0 o fuera de ±10000, un descuento por debajo de
-  `reserved`, un combo, un producto sin fila de stock o un id desconocido no
-  escriben nada, y si falla el insert de auditoría vuelve atrás el stock
-  (`AdminInventoryServiceAdjustIT`). La vista de stock
+  transacción; un delta en 0 o fuera de ±10000 (D-20261008-10), un descuento
+  por debajo de `reserved`, un resultado por encima de `Integer.MAX_VALUE`
+  (`STOCK_OUT_OF_RANGE`), un combo, un producto sin fila de stock o un id
+  desconocido no escriben nada, y si falla el insert de auditoría vuelve atrás
+  el stock (`AdminInventoryServiceAdjustIT`, que también prueba que un base
+  desactivado se puede ajustar con su fila de auditoría). Los motivos del
+  conjunto cerrado (`COUNT_CORRECTION`, `RESTOCK`, `DAMAGED_OR_LOST`, `RETURN`,
+  `OTHER`) son la propuesta D-20261008-18, pendiente de OK de la clienta. La
+  fila de stock de un producto base se crea al crearlo, en cero
+  (D-20261008-15). La vista de stock
   (`AdminInventoryService.stockView`, tope `ceto.admin.max-listed-products`, 1 a
   500) y la conciliación (`reconciliation`, tope
   `ceto.admin.max-reconciliation-rows`, 1 a 1000) son lecturas sin locks ni
   filas gestionadas: combo derivado del producto base, base sin fila listada
   como no configurada y sin cifras (`AdminStockViewIT`, `AdminReconciliationIT`,
   `AdminInventoryServiceCapsTest`; los topes y sus valores por defecto,
-  `AdminPropertiesCapsValidationTest`). El ajuste toma solo el lock de la fila
+  `AdminPropertiesCapsValidationTest`, que además exige que el fallo de
+  arranque nombre la propiedad). Ninguna trunca en silencio: piden una fila de
+  más que el tope y devuelven `CappedList` con `truncated`, verdadero solo si
+  había más filas (`AdminCappedReadsTruncationIT` contra las consultas reales
+  con tope 2: con 3 filas, las dos primeras por id y `truncated`; con tope igual
+  a la cantidad, no). Cada línea de la vista lleva `sellable`, verdadero solo si
+  el producto está activo y, en un combo, también su base: un combo sobre una
+  base desactivada conserva las cifras pero no es vendible
+  (`AdminStockViewIT.aComboOverAnInactiveBaseKeepsItsFiguresButIsNotSellable`).
+  La vista lee en dos sentencias bajo READ COMMITTED (productos y luego
+  cifras), así que un cambio concurrente puede mezclar instantáneas; se acepta
+  para una pantalla de lectura que se refresca. El ajuste toma solo el lock de la fila
   de stock, así que no agrega aristas al orden de locks: lo prueba con
   retención determinista `StockAdjustBurstIT` (una compra espera mientras un
   ajuste retiene la fila y un ajuste espera a una fila retenida y recién
-  después verifica contra el `reserved` confirmado; una fila retenida más de
-  `lock_timeout` da `55P03` sin cambios ni auditoría) y, con ráfagas, el
+  después verifica contra el `reserved` confirmado; antes de afirmar que la
+  sonda no terminó, `LockProbe` consulta `pg_stat_activity` y `pg_locks` con un
+  plazo de 5 s hasta ver un backend esperando un lock; una fila retenida más
+  de `lock_timeout`, que la prueba verifica en `5s`, da `55P03` sin cambios ni
+  auditoría) y, con ráfagas, el
   estado final de ajustes contra compras de las últimas unidades (los
   contadores finales son exactamente los de las operaciones que tuvieron éxito
   y nunca se tolera `40P01`) y `OrderLockOrderingIT` con `adjustBy` mezclado.
@@ -240,7 +260,10 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   (llega la violación del CHECK en vez de `InsufficientStockException`); hacer
   que `adjustBy` tome además la fila `productId - 1` hizo fallar
   `OrderLockOrderingIT` con `40P01`; quitar `record` hizo fallar tres tests de
-  `AdminInventoryServiceAdjustIT`. Los caminos de stock no loguean nombres de
+  `AdminInventoryServiceAdjustIT`; pedir solo `cap` filas en vez de `cap + 1`,
+  ignorar la base en `sellable`, quitar el chequeo de rango de `adjustBy` y
+  rechazar productos inactivos en `adjustBy` hicieron fallar las pruebas
+  correspondientes (2026-10-08). Los caminos de stock no loguean nombres de
   producto ni datos de la compradora (`AdminStockPiiLoggingIT`; evidencia por
   mutación: imprimir los nombres en la vista lo hizo fallar).
 - **Catálogo de administración** (`AdminCatalogService`, solo servicio,

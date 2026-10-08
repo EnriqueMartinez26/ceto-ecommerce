@@ -56,8 +56,11 @@ public class InventoryService {
     private static final String UNIQUE_VIOLATION = "23505";
     private static final String STOCK_PK = "inventory_stock_pk";
 
-    /** Largest reconciliation page: the design bounds {@code ceto.admin.max-reconciliation-rows} to 1..1000. */
-    public static final int MAX_MISMATCH_LIMIT = 1000;
+    /**
+     * Largest reconciliation page: {@code ceto.admin.max-reconciliation-rows} is bounded to 1..1000 and the admin
+     * facade asks for one row more than its cap to detect truncation.
+     */
+    public static final int MAX_MISMATCH_LIMIT = 1001;
 
     /** Largest id set for {@link #levels}: far below Postgres' 32767 bind parameters per statement. */
     public static final int MAX_LEVEL_IDS = 1000;

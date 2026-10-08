@@ -47,7 +47,7 @@ class AdminReconciliationIT extends AbstractPostgresIT {
     void consistentDataGivesAnEmptyList() {
         baseWithPendingOrder("Frasco", 3);
 
-        assertThat(admin.reconciliation()).isEmpty();
+        assertThat(admin.reconciliation().rows()).isEmpty();
     }
 
     @Test
@@ -56,7 +56,7 @@ class AdminReconciliationIT extends AbstractPostgresIT {
         long corrupted = baseWithPendingOrder("Roto", 3);
         jdbc.update("UPDATE inventory_stock SET reserved = 5 WHERE product_id = ?", corrupted);
 
-        assertThat(admin.reconciliation()).containsExactly(new ReservationMismatch(corrupted, 5, 3));
+        assertThat(admin.reconciliation().rows()).containsExactly(new ReservationMismatch(corrupted, 5, 3));
 
         assertThat(jdbc.queryForObject("SELECT reserved FROM inventory_stock WHERE product_id = ?", Integer.class,
                 corrupted)).isEqualTo(5);
@@ -66,8 +66,9 @@ class AdminReconciliationIT extends AbstractPostgresIT {
     }
 
     @Test
-    void theLargestConfigurableCapIsAcceptedByTheReadPath() {
-        // AdminProperties allows up to 1000 rows; a cap the read path rejects would turn into a 500 at runtime.
-        assertThat(inventory.reservationMismatches(1000)).isEmpty();
+    void theLargestConfigurableCapPlusOneIsAcceptedByTheReadPath() {
+        // AdminProperties allows up to 1000 rows and the facade asks for one more to detect truncation; a limit the
+        // read path rejects would turn into a 500 at runtime.
+        assertThat(inventory.reservationMismatches(1001)).isEmpty();
     }
 }

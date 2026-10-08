@@ -72,7 +72,7 @@ class AdminStockPiiLoggingIT extends AbstractPostgresIT {
                 .isInstanceOf(StockNotAdjustableException.class);
         admin.stockView();
         jdbc.update("UPDATE inventory_stock SET reserved = 1 WHERE product_id = ?", base);
-        assertThat(admin.reconciliation()).hasSize(1);
+        assertThat(admin.reconciliation().rows()).hasSize(1);
         jdbc.update("UPDATE inventory_stock SET reserved = 3 WHERE product_id = ?", base);
         try {
             jdbc.execute("CREATE OR REPLACE FUNCTION fail_audit_stock_pii_for_test() RETURNS trigger AS $$ BEGIN"

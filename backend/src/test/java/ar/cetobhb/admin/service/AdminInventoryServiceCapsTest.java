@@ -12,7 +12,7 @@ import ar.cetobhb.inventory.service.InventoryService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** The configured caps reach the reads: the facade never asks for more rows than the validated settings allow. */
+/** The configured caps reach the reads: the facade asks for exactly one row more than the cap (to detect truncation) and never more. */
 class AdminInventoryServiceCapsTest {
 
     private final CatalogService catalog = mock(CatalogService.class);
@@ -21,22 +21,22 @@ class AdminInventoryServiceCapsTest {
             mock(AdminAuditService.class), new AdminProperties(37, 11));
 
     @Test
-    void theStockViewAsksTheCatalogForAtMostTheConfiguredProductCap() {
-        when(catalog.listAll(37)).thenReturn(List.of());
+    void theStockViewAsksTheCatalogForTheConfiguredProductCapPlusOne() {
+        when(catalog.listAll(38)).thenReturn(List.of());
 
-        assertThat(admin.stockView()).isEmpty();
+        assertThat(admin.stockView().rows()).isEmpty();
 
-        verify(catalog).listAll(37);
+        verify(catalog).listAll(38);
         verifyNoInteractions(inventory);
     }
 
     @Test
-    void theReconciliationAsksForAtMostTheConfiguredRowCap() {
-        when(inventory.reservationMismatches(11)).thenReturn(List.of());
+    void theReconciliationAsksForTheConfiguredRowCapPlusOne() {
+        when(inventory.reservationMismatches(12)).thenReturn(List.of());
 
-        assertThat(admin.reconciliation()).isEmpty();
+        assertThat(admin.reconciliation().rows()).isEmpty();
 
-        verify(inventory).reservationMismatches(11);
+        verify(inventory).reservationMismatches(12);
         verifyNoInteractions(catalog);
     }
 }
