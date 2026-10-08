@@ -36,6 +36,8 @@ class RateLimitIT extends AbstractHttpIT {
 
     private static final String PATH = "/api/checkout/orders";
     private static final String HANDLER_LOGGER = "ar.cetobhb.common.controller.ApiExceptionHandler";
+    /** Every class of the application (handler, interceptor, filters) logs at DEBUG while a test runs. */
+    private static final String APP_LOGGER = "ar.cetobhb";
     private static final int BURST = 10;
 
     @Autowired
@@ -45,13 +47,13 @@ class RateLimitIT extends AbstractHttpIT {
     private LoggingSystem logging;
 
     @BeforeEach
-    void logHandlerAtDebug() {
-        logging.setLogLevel(HANDLER_LOGGER, LogLevel.DEBUG);
+    void logTheApplicationAtDebug() {
+        logging.setLogLevel(APP_LOGGER, LogLevel.DEBUG);
     }
 
     @AfterEach
-    void restoreHandlerLevel() {
-        logging.setLogLevel(HANDLER_LOGGER, null);
+    void restoreTheLogLevel() {
+        logging.setLogLevel(APP_LOGGER, null);
     }
 
     private MockHttpServletResponse attempt(String clientAddress, String body) throws Exception {
@@ -169,11 +171,21 @@ class RateLimitIT extends AbstractHttpIT {
     }
 
     @Test
+    void theCaptureSeesAnAddressLoggedByTheHandlerAtDebug(CapturedOutput output) {
+        // Guards the next test against passing vacuously: the same logger at the same level, given an address.
+        org.slf4j.LoggerFactory.getLogger(HANDLER_LOGGER).debug("probe for client {}", "203.0.113.99");
+
+        assertThat(output.getAll()).contains("DEBUG").contains("probe for client 203.0.113.99");
+    }
+
+    @Test
     void theRejectionNeverLogsTheClientAddress(CapturedOutput output) throws Exception {
         spend("203.0.113.58", BURST);
 
         assertThat(attempt("203.0.113.58").getStatus()).isEqualTo(429);
 
-        assertThat(output.getAll()).contains("RATE_LIMITED").doesNotContain("203.0.113.58");
+        // The rejection IS logged (DEBUG, marker line), so an empty output cannot make this pass.
+        assertThat(output.getAll()).containsPattern("DEBUG .*ApiExceptionHandler.*RATE_LIMITED RATE_LIMITED")
+                .doesNotContain("203.0.113.58");
     }
 }
