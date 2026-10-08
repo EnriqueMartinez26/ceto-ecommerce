@@ -84,6 +84,43 @@ public abstract class AbstractServerIT extends AbstractPostgresIT {
         }
     }
 
+    /** Status, body and response headers (names lower-cased) of one exchange. */
+    protected record Raw(int status, String body, java.util.Map<String, java.util.List<String>> headers) {
+
+        /** Header names without the ones the container and the client add to every socket exchange. */
+        public java.util.Set<String> applicationHeaderNames() {
+            java.util.Set<String> names = new java.util.TreeSet<>(headers.keySet());
+            names.removeAll(PublicSurface.TRANSPORT_HEADERS);
+            return names;
+        }
+    }
+
+    /**
+     * Any request from 127.0.0.1 with the request target written exactly as given (no cookie jar, so a cookie never
+     * leaks between calls), its own client address through {@code X-Forwarded-For}, and the response headers kept.
+     */
+    protected Raw raw(String method, String rawPath, String idempotencyKey, String body)
+            throws IOException, InterruptedException {
+        int n = NEXT_CLIENT.getAndIncrement();
+        String client = "198." + (18 + ((n >> 16) & 0x01)) + "." + ((n >> 8) & 0xff) + "." + (n & 0xff);
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + rawPath))
+                .timeout(Duration.ofSeconds(30)).header("Accept", "application/json")
+                .header("X-Forwarded-For", client);
+        if (body == null) {
+            request.method(method, HttpRequest.BodyPublishers.noBody());
+        } else {
+            request.header("Content-Type", "application/json")
+                    .method(method, HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
+        }
+        if (idempotencyKey != null) {
+            request.header("Idempotency-Key", idempotencyKey);
+        }
+        HttpResponse<String> response = CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
+        java.util.Map<String, java.util.List<String>> headers = new java.util.TreeMap<>();
+        response.headers().map().forEach((k, v) -> headers.put(k.toLowerCase(java.util.Locale.ROOT), v));
+        return new Raw(response.statusCode(), response.body(), headers);
+    }
+
     private Reply exchange(HttpClient client, String host, String path, String forwardedFor, String idempotencyKey,
             String body) throws IOException, InterruptedException {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://" + host + ":" + port + path))

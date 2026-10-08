@@ -695,6 +695,22 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 
 ## 5. Seguridad
 
+- **Spring Security solo ve `/api/admin/*`** (D-20261008-05). El filtro
+  `springSecurityFilterChain` se registra en el contenedor únicamente para esa
+  ruta (`SecurityFilterScopeConfig`) y la cadena declara el mismo
+  `securityMatcher`, así que la tienda y el checkout no pasan por el firewall
+  ni por los escritores de cabeceras de Security: mismas cabeceras, sin
+  cookies, sin token CSRF y las mismas respuestas ante `;`, `//` y `/./`.
+  Guardas: `SecurityFilterScopeIT` y `SecurityFilterScopeServerIT` (mapeo del
+  filtro en el contexto y en Tomcat, el firewall no ve una ruta pública),
+  `PublicSurfaceUnchangedIT` y `PublicSurfaceUnchangedServerIT` (conjunto exacto
+  de nombres de cabecera fijado en `PublicSurface`, sin `Set-Cookie`, variantes
+  de ruta de la tienda) y `CheckoutPathLimitHttpIT` sin cambios. Evidencia por
+  mutación (2026-10-08): mapear el filtro a `/*` hizo fallar 6 casos de
+  `CheckoutPathLimitHttpIT`, 4 variantes de `PublicSurfaceUnchangedServerIT` y
+  el test del firewall y del mapeo de `SecurityFilterScopeIT`. Cualquier ruta
+  bajo `/api/admin/` responde 401 sin autenticar; todavía no hay login (la
+  cadena es el esqueleto del slice X1).
 - **Una sola cuenta: la de administración.** Contraseña con BCrypt o
   Argon2, login con rate limit y bloqueo temporal, sesión en cookie
   `HttpOnly` + `Secure` + `SameSite`. Nunca un token en `localStorage`.

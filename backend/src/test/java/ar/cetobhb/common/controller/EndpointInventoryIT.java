@@ -305,7 +305,7 @@ class EndpointInventoryIT extends AbstractHttpIT {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"/actuator", "/actuator/health", "/swagger-ui.html", "/v3/api-docs", "/api/admin/x",
+    @ValueSource(strings = {"/actuator", "/actuator/health", "/swagger-ui.html", "/v3/api-docs",
             "/api/store/products/1/anything", "/index.html", "/favicon.ico", "/"})
     void unknownPathsAreTheStandard404(String path) throws Exception {
         MockHttpServletResponse response = send(get(path));
@@ -315,6 +315,18 @@ class EndpointInventoryIT extends AbstractHttpIT {
         assertThat(body.get("code").asString()).isEqualTo("NOT_FOUND");
         assertThat(body.has("type")).isFalse();
         assertThat(response.getContentType()).startsWith("application/problem+json");
+    }
+
+    /**
+     * Nothing is mapped under {@code /api/admin/} yet, and the Security filter stops every request there before the
+     * handler lookup: an unmapped admin path is a bare 401 for an anonymous client, not the 404 of the public side
+     * (slice X1; the generated per-route inventory arrives with the chain, slice X3).
+     */
+    @Test
+    void anUnmappedAdminPathIsStoppedByTheSecurityFilterWith401() throws Exception {
+        MockHttpServletResponse response = send(get("/api/admin/x"));
+
+        assertThat(response.getStatus()).isEqualTo(401);
     }
 
     /** A direct request is not an error dispatch: /error answers the standard 404, whatever the method or Accept. */
