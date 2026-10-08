@@ -5,10 +5,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ar.cetobhb.support.BurstRunner;
 import ar.cetobhb.support.MutableClock;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 /** Pure GCRA limiter: a {@link MutableClock} drives time, nothing sleeps. */
@@ -19,7 +26,7 @@ class TokenBucketLimiterTest {
     private final MutableClock clock = new MutableClock();
 
     private TokenBucketLimiter limiter(int burst, Duration interval, int maxKeys) {
-        return new TokenBucketLimiter(clock, burst, interval, maxKeys);
+        return new TokenBucketLimiter(clock, burst, interval, maxKeys, burst, interval);
     }
 
     private void advance(Duration time) {
@@ -199,6 +206,28 @@ class TokenBucketLimiterTest {
     }
 
     @Test
+    void withAFullTableNewVisitorsShareTheOverflowBudgetWhichIsLargerThanOneClientsByConfiguration() {
+        Duration overflowInterval = Duration.ofSeconds(36);
+        TokenBucketLimiter limiter = new TokenBucketLimiter(clock, 2, INTERVAL, 1, 5, overflowInterval);
+        spend(limiter, "tracked", 1);
+        assertThat(limiter.tryAcquire("tracked").allowed()).isTrue();
+        assertThat(limiter.tryAcquire("tracked").allowed()).as("a client's own burst is 2").isFalse();
+
+        for (int visitor = 1; visitor <= 5; visitor++) {
+            assertThat(limiter.tryAcquire("visitor" + visitor).allowed())
+                    .as("distinct new visitor %d draws from the shared overflow burst of 5", visitor).isTrue();
+        }
+        TokenBucketLimiter.Decision sixth = limiter.tryAcquire("visitor6");
+
+        assertThat(sixth.allowed()).as("the shared budget is spent: sustained distributed floods get 429").isFalse();
+        assertThat(sixth.retryAfterSeconds()).as("the overflow pace, not the client's").isEqualTo(36);
+        advance(overflowInterval);
+        assertThat(limiter.tryAcquire("visitor7").allowed()).as("one overflow token came back").isTrue();
+        assertThat(limiter.tryAcquire("visitor8").allowed()).isFalse();
+        assertThat(limiter.trackedKeys()).as("overflow visitors are never tracked").isEqualTo(1);
+    }
+
+    @Test
     void theOverflowBucketRefillsAndKeysAreTrackedAgainOnceRoomAppears() {
         TokenBucketLimiter limiter = limiter(1, Duration.ofSeconds(10), 1);
         spend(limiter, "a", 1);
@@ -283,6 +312,47 @@ class TokenBucketLimiterTest {
     }
 
     @Test
+    void evictionScansRacingWithUpdatesOfATrackedKeyNeverGiveItAFreshBucket() {
+        // The clock only moves within one refill interval, so "hot" (tokens spent, TAT in the future) is never idle:
+        // a scan that removed it, or an update lost to a scan, would hand it a second burst.
+        int burst = 3;
+        TokenBucketLimiter limiter = limiter(burst, Duration.ofHours(1), 4);
+        AtomicInteger hotAllowed = new AtomicInteger(limiter.tryAcquire("hot").allowed() ? 1 : 0); // tracked first
+        List<Callable<Boolean>> tasks = new ArrayList<>();
+        for (int worker = 0; worker < 6; worker++) {
+            tasks.add(() -> {
+                boolean allowedAtLeastOnce = false;
+                for (int i = 0; i < 2_000; i++) {
+                    if (limiter.tryAcquire("hot").allowed()) {
+                        hotAllowed.incrementAndGet();
+                    }
+                }
+                return true;
+            });
+        }
+        for (int worker = 0; worker < 6; worker++) {
+            int id = worker;
+            tasks.add(() -> {
+                for (int i = 0; i < 2_000; i++) {
+                    limiter.tryAcquire("cold-" + id + "-" + i); // fills the table, forcing scans
+                    if (i % 10 == 0) {
+                        advance(Duration.ofSeconds(2)); // lets the scan cooldown expire again and again
+                    }
+                }
+                return false;
+            });
+        }
+
+        BurstRunner.Report<Boolean> report = BurstRunner.runMeasured(tasks);
+
+        assertThat(report.outcomes()).allMatch(BurstRunner.Outcome::succeeded);
+        assertThat(limiter.trackedKeys()).isLessThanOrEqualTo(4);
+        assertThat(hotAllowed).as("exactly one burst for hot, however the scans interleave").hasValue(burst);
+        // After the storm "hot" must still be spent: any attempt that finds a token means it was reset.
+        assertThat(limiter.tryAcquire("hot").allowed()).as("hot kept its state through the scans").isFalse();
+    }
+
+    @Test
     void aKeyAdmittedByAnotherThreadWhileThisOneWaitsForTheLockIsDecidedAgainstItsExistingState() throws Exception {
         TokenBucketLimiter limiter = limiter(1, INTERVAL, 10);
         Thread loser;
@@ -303,13 +373,81 @@ class TokenBucketLimiterTest {
         assertThat(limiter.trackedKeys()).isEqualTo(1);
     }
 
+    /** Clock that hands a given thread scripted instants first (one per call), then falls back to the shared clock. */
+    private static final class ScriptedClock extends Clock {
+
+        private final Clock shared;
+        private final Map<Thread, ConcurrentLinkedQueue<Instant>> scripts = new ConcurrentHashMap<>();
+
+        ScriptedClock(Clock shared) {
+            this.shared = shared;
+        }
+
+        void script(Thread thread, Instant... instants) {
+            scripts.put(thread, new ConcurrentLinkedQueue<>(List.of(instants)));
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return shared.getZone();
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Instant instant() {
+            ConcurrentLinkedQueue<Instant> script = scripts.get(Thread.currentThread());
+            Instant next = script == null ? null : script.poll();
+            return next != null ? next : shared.instant();
+        }
+    }
+
+    private static void awaitBlocked(Thread thread) {
+        while (thread.getState() != Thread.State.BLOCKED) {
+            Thread.onSpinWait();
+        }
+    }
+
+    @Test
+    void threadsQueuedOnTheLockUseTheTimeTheyGetItAtNotTheStaleOneTheyReadBeforeWaitingSoTheScanRunsOnce()
+            throws Exception {
+        Instant start = clock.instant();
+        ScriptedClock scripted = new ScriptedClock(clock);
+        TokenBucketLimiter limiter =
+                new TokenBucketLimiter(scripted, 1, Duration.ofMillis(100), 1, 1, Duration.ofMillis(100));
+        spend(limiter, "a", 1);
+        advance(Duration.ofMillis(200)); // "a" is idle now; the shared time inside the lock is start + 200 ms
+        Thread x = new Thread(() -> limiter.tryAcquire("x"));
+        Thread y = new Thread(() -> limiter.tryAcquire("y"));
+        // First call = the read before waiting (stale, wildly different), second call = the read under the lock.
+        scripted.script(x, start.plusSeconds(5), start.plusMillis(200));
+        scripted.script(y, start, start.plusMillis(200));
+
+        synchronized (limiter.admission) {
+            x.start();
+            awaitBlocked(x);
+            y.start();
+            awaitBlocked(y);
+        }
+        x.join(10_000);
+        y.join(10_000);
+
+        synchronized (limiter.admission) {
+            assertThat(limiter.scans).as("one scan; the second thread sees the cooldown of the first").isEqualTo(1);
+        }
+        assertThat(limiter.trackedKeys()).isEqualTo(1);
+    }
+
     // ---- construction ----
 
     @Test
     void invalidSettingsAreRejected() {
-        assertThatThrownBy(() -> new TokenBucketLimiter(null, 1, INTERVAL, 1))
+        assertThatThrownBy(() -> new TokenBucketLimiter(null, 1, INTERVAL, 1, 1, INTERVAL))
                 .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new TokenBucketLimiter(clock, 1, null, 1))
+        assertThatThrownBy(() -> new TokenBucketLimiter(clock, 1, null, 1, 1, INTERVAL))
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> limiter(0, INTERVAL, 1)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> limiter(1, Duration.ZERO, 1)).isInstanceOf(IllegalArgumentException.class);
@@ -317,6 +455,39 @@ class TokenBucketLimiterTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> limiter(1, INTERVAL, 0)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> limiter(1, INTERVAL, 1).tryAcquire(null)).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void absurdBurstsAndIntervalsAreRejectedAndTheDocumentedMaximaStillWork() {
+        assertThatThrownBy(() -> limiter(TokenBucketLimiter.MAX_BURST + 1, INTERVAL, 1))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("burst");
+        assertThatThrownBy(() -> limiter(Integer.MAX_VALUE, Duration.ofDays(1), 1))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> limiter(1, TokenBucketLimiter.MAX_REFILL_INTERVAL.plusMillis(1), 1))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("refillInterval");
+        assertThatThrownBy(() -> limiter(1, Duration.ofSeconds(Long.MAX_VALUE), 1))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        TokenBucketLimiter widest = limiter(TokenBucketLimiter.MAX_BURST, TokenBucketLimiter.MAX_REFILL_INTERVAL, 1);
+        spend(widest, "a", TokenBucketLimiter.MAX_BURST);
+        assertThat(widest.tryAcquire("a").allowed()).isFalse();
+    }
+
+    @Test
+    void theOverflowBudgetIsValidatedLikeTheClientOne() {
+        assertThatThrownBy(() -> new TokenBucketLimiter(clock, 1, INTERVAL, 1, 0, INTERVAL))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("overflowBurst");
+        assertThatThrownBy(() -> new TokenBucketLimiter(clock, 1, INTERVAL, 1, TokenBucketLimiter.MAX_BURST + 1,
+                INTERVAL)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("overflowBurst");
+        assertThatThrownBy(() -> new TokenBucketLimiter(clock, 1, INTERVAL, 1, 1, Duration.ZERO))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("overflowInterval");
+        assertThatThrownBy(() -> new TokenBucketLimiter(clock, 1, INTERVAL, 1, 1,
+                TokenBucketLimiter.MAX_REFILL_INTERVAL.plusMillis(1)))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("overflowInterval");
+        assertThatThrownBy(() -> new TokenBucketLimiter(clock, 1, INTERVAL, 1, 1, null))
+                .isInstanceOf(NullPointerException.class);
+        new TokenBucketLimiter(clock, 1, INTERVAL, 1, TokenBucketLimiter.MAX_BURST,
+                TokenBucketLimiter.MAX_REFILL_INTERVAL);
     }
 
     @Test
