@@ -350,8 +350,10 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     10 de golpe y uno cada 6 minutos, `ceto.web.checkout-rate-limit`); el 11.º es 429
     `RATE_LIMITED` con `Retry-After` (`RateLimitIT`, golden `contract/error-rate-limited.json`),
     en DEBUG y sin la IP. La clave sale solo de `getRemoteAddr()`; detrás del proxy de confianza
-    (`TRUSTED_PROXIES`, `RemoteIpValve`) es el cliente real y la cabecera de un par no
-    confiable se ignora (`ClientIpHttpIT`, puerto aleatorio). Los GET de la tienda no se limitan.
+    (`TRUSTED_PROXIES`, solo CIDR privados, `RemoteIpValve`) es el cliente real y la cabecera de
+    un par no confiable (127.0.0.2) se ignora (`ClientIpHttpIT`, puerto aleatorio). Las variantes
+    de ruta se fijan en `CheckoutPathLimitHttpIT`: con `;x=1` cuenta y con barra final, otra
+    capitalización o `//` da 404 sin leer el cuerpo. Los GET de la tienda no se limitan.
 
 ### Checkout, WhatsApp y envío
 
@@ -431,9 +433,13 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   configuración inválida no arranca. Hecho para `OrderProperties`
   (`OrderPropertiesValidationTest`: valores fuera de rango, ausentes o en blanco,
   incluido el bloque `expiry` entero, frenan el arranque) y para `WebProperties`
-  (`WebPropertiesValidationTest`: rangos, `TRUSTED_PROXIES` ausente, vacío, ilegible o que
-  confíe en direcciones públicas como `0.0.0.0/0` o `.*`; `WebConfigTest`: lo mismo sobre el
-  valor que Tomcat usa de verdad, y estrategia `native`); el resto de la configuración **[guarda pendiente]**
+  (`WebPropertiesValidationTest` y `TrustedProxiesTest`: rangos; `TRUSTED_PROXIES` ausente, vacío
+  o que no sea una lista CIDR cuyas entradas queden enteras dentro de `10.0.0.0/8`, `172.16.0.0/12`,
+  `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `fc00::/7`, `fe80::/10` o `::1/128`; sin
+  regex, entradas vacías ni coma final; `WebConfigTest`: la misma regla sobre el valor que Tomcat
+  usa de verdad, estrategia `native`, cabecera `X-Forwarded-For` y sin `trusted-proxies`
+  ni `proxies-header`, también con variables de entorno); el resto de la configuración
+  **[guarda pendiente]**
 - **Todo parámetro numérico de la API lleva mínimo Y máximo**
   (`@Min`/`@Max`, cantidades, paginado, estrellas). Un solo lado deja un 500
   alcanzable. Las propiedades de `ceto.orders.*` ya cumplen la regla
