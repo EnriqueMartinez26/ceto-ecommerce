@@ -50,6 +50,7 @@ class AdminPropertiesValidationTest {
             assertThat(context).hasNotFailed();
             AdminProperties p = context.getBean(AdminProperties.class);
             assertThat(p.sessionIdleTimeoutMinutes()).isEqualTo(480);
+            assertThat(p.sessionAbsoluteTimeoutMinutes()).isEqualTo(720);
             assertThat(p.loginRateLimit().burst()).isEqualTo(5);
             assertThat(p.loginRateLimit().refillIntervalSeconds()).isEqualTo(90);
             assertThat(p.loginRateLimit().maxTrackedClients()).isEqualTo(10_000);
@@ -58,6 +59,25 @@ class AdminPropertiesValidationTest {
             assertThat(p.maxListedProducts()).isEqualTo(200);
             assertThat(p.maxReconciliationRows()).isEqualTo(100);
         });
+    }
+
+    @Test
+    void theAbsoluteSessionTimeoutComesFromAdminSessionAbsoluteMinutesWhenThatVariableIsSet() {
+        shipped.withPropertyValues("ADMIN_SESSION_ABSOLUTE_MINUTES=90")
+                .run(context -> assertThat(context.getBean(AdminProperties.class).sessionAbsoluteTimeoutMinutes())
+                        .isEqualTo(90));
+    }
+
+    @Test
+    void aMissingAbsoluteTimeoutBindsToZeroAndStopsTheStartupInsteadOfDisablingTheLimit() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(ValidationAutoConfiguration.class))
+                .withUserConfiguration(Config.class)
+                .withPropertyValues(java.util.Arrays.stream(AdminPropertiesFixtures.bareValuesWithoutCaps())
+                        .filter(value -> !value.contains("absolute")).toArray(String[]::new))
+                .withPropertyValues(PREFIX + "max-listed-products=200", PREFIX + "max-reconciliation-rows=100",
+                        PREFIX + "username=owner", PREFIX + "password-hash=placeholder")
+                .run(context -> assertFailureNames(context, "sessionAbsoluteTimeoutMinutes"));
     }
 
     @Test
@@ -112,6 +132,10 @@ class AdminPropertiesValidationTest {
                 Arguments.of("session-idle-timeout-minutes", "4"),
                 Arguments.of("session-idle-timeout-minutes", "1441"),
                 Arguments.of("session-idle-timeout-minutes", "10080"),
+                Arguments.of("session-absolute-timeout-minutes", "0"),
+                Arguments.of("session-absolute-timeout-minutes", "59"),
+                Arguments.of("session-absolute-timeout-minutes", "1441"),
+                Arguments.of("session-absolute-timeout-minutes", "100000"),
                 Arguments.of("login-rate-limit.burst", "0"),
                 Arguments.of("login-rate-limit.burst", "21"),
                 Arguments.of("login-rate-limit.burst", "1000"),
@@ -154,6 +178,8 @@ class AdminPropertiesValidationTest {
         return Stream.of(
                 Arguments.of("session-idle-timeout-minutes", "5"),
                 Arguments.of("session-idle-timeout-minutes", "1440"),
+                Arguments.of("session-absolute-timeout-minutes", "60"),
+                Arguments.of("session-absolute-timeout-minutes", "1440"),
                 Arguments.of("login-rate-limit.burst", "1"),
                 Arguments.of("login-rate-limit.burst", "20"),
                 Arguments.of("login-rate-limit.refill-interval-seconds", "30"),
@@ -182,7 +208,7 @@ class AdminPropertiesValidationTest {
 
     @Test
     void toStringNeverPrintsTheUsernameOrTheHash() {
-        AdminProperties properties = new AdminProperties("owner-name-sentinel", "hash-sentinel-value", 480,
+        AdminProperties properties = new AdminProperties("owner-name-sentinel", "hash-sentinel-value", 480, 720,
                 new AdminProperties.LoginRateLimit(5, 90, 10_000, 20, 40), 200, 100);
 
         assertThat(properties.toString()).doesNotContain("owner-name-sentinel").doesNotContain("hash-sentinel-value")

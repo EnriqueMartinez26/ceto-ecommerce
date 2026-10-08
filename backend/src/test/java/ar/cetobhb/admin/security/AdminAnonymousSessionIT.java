@@ -51,6 +51,6 @@ class AdminAnonymousSessionIT extends AbstractAdminProbeHttpIT {
         MockHttpServletResponse response = send(request(c.method(), "/api/admin/probe").content("{}")
                 .contentType("application/json"));
 
-        assertThat(response.getHeaders("Set-Cookie")).allMatch(cookie -> cookie.startsWith("XSRF-TOKEN="));
+        assertThat(response.getHeaders("Set-Cookie")).allMatch(cookie -> cookie.startsWith("__Host-XSRF-TOKEN="));
     }
 }

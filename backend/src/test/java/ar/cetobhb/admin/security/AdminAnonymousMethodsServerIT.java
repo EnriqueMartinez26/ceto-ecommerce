@@ -27,7 +27,7 @@ class AdminAnonymousMethodsServerIT extends AbstractAdminProbeServerIT {
 
     private static final List<String> METHODS = List.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
 
-    private static final Pattern XSRF = Pattern.compile("XSRF-TOKEN=([^;]+)");
+    private static final Pattern XSRF = Pattern.compile("__Host-XSRF-TOKEN=([^;]+)");
 
     private static final HttpClient CLIENT = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofSeconds(5)).build();
@@ -42,13 +42,13 @@ class AdminAnonymousMethodsServerIT extends AbstractAdminProbeServerIT {
                 return match.group(1);
             }
         }
-        throw new AssertionError("the anonymous admin response did not set the XSRF-TOKEN cookie");
+        throw new AssertionError("the anonymous admin response did not set the __Host-XSRF-TOKEN cookie");
     }
 
     private HttpResponse<String> call(String method, String path, String token) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
                 .timeout(Duration.ofSeconds(30)).header("Accept", "application/json")
-                .header("Cookie", "XSRF-TOKEN=" + token).header("X-XSRF-TOKEN", token);
+                .header("Cookie", "__Host-XSRF-TOKEN=" + token).header("X-XSRF-TOKEN", token);
         if (List.of("POST", "PUT", "PATCH", "DELETE").contains(method)) {
             request.header("Content-Type", "application/json")
                     .method(method, HttpRequest.BodyPublishers.ofString("{}"));

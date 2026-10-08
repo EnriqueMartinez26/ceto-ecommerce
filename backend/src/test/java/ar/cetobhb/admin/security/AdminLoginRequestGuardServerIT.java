@@ -206,7 +206,7 @@ class AdminLoginRequestGuardServerIT extends AbstractAdminServerIT {
     private String rawLoginPost(AdminClient client, String target, String form) throws Exception {
         String request = "POST " + target + " HTTP/1.1\r\nHost: 127.0.0.1:" + port
                 + "\r\nContent-Type: " + FORM + "\r\nContent-Length: " + form.length() + "\r\nConnection: close\r\n"
-                + "Cookie: XSRF-TOKEN=" + client.xsrf() + "\r\nX-XSRF-TOKEN: " + client.xsrf() + "\r\n\r\n" + form;
+                + "Cookie: __Host-XSRF-TOKEN=" + client.xsrf() + "\r\nX-XSRF-TOKEN: " + client.xsrf() + "\r\n\r\n" + form;
         try (Socket socket = new Socket(InetAddress.getByName("127.0.0.1"), port)) {
             socket.setSoTimeout(10_000);
             socket.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));

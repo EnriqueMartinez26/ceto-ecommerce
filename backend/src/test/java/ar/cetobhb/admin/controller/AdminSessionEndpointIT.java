@@ -40,7 +40,7 @@ class AdminSessionEndpointIT extends AbstractHttpIT {
 
         List<String> cookies = response.getHeaders("Set-Cookie");
         assertThat(cookies).noneMatch(cookie -> cookie.startsWith("JSESSIONID"));
-        assertThat(cookies).filteredOn(cookie -> cookie.startsWith("XSRF-TOKEN=")).singleElement().satisfies(cookie ->
+        assertThat(cookies).filteredOn(cookie -> cookie.startsWith("__Host-XSRF-TOKEN=")).singleElement().satisfies(cookie ->
                 assertThat(cookie).contains("Secure").contains("Path=/").doesNotContain("HttpOnly"));
     }
 

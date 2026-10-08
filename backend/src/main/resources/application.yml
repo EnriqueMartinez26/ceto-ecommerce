@@ -106,6 +106,8 @@ ceto:
     password-hash: ${ADMIN_PASSWORD_HASH}
     # Idle time after which an admin session ends (AdminProperties: 5..1440).
     session-idle-timeout-minutes: ${ADMIN_SESSION_IDLE_MINUTES:480}
+    # Longest life of a session from its login, however active it is (AdminProperties: 60..1440; 12 h by default).
+    session-absolute-timeout-minutes: ${ADMIN_SESSION_ABSOLUTE_MINUTES:720}
     # POST /api/admin/login: 5 attempts at once, then one more every 90 seconds (40 per hour). Bounds in AdminProperties.
     login-rate-limit:
       burst: 5
