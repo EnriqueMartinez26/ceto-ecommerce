@@ -216,7 +216,7 @@ class StorefrontHttpIT extends AbstractHttpIT {
 
         assertThat(first).isNotBlank().isNotEqualTo(second);
         assertThat(java.util.UUID.fromString(first)).isNotNull();
-        assertThat(second).isNotBlank();
+        assertThat(java.util.UUID.fromString(second)).isNotNull();
     }
 
     @Test

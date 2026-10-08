@@ -109,6 +109,25 @@ class PlacedOrderDetailsIT extends AbstractPostgresIT {
     }
 
     @Test
+    void aMultiLineReplaySentOutOfOrderReplaysTheLinesInPersistedOrder() {
+        long a = base("Alpha", "100.00", 10);
+        long b = base("Beta", "45000.50", 10);
+        UUID key = UUID.randomUUID();
+        placement.placeOrder(command(key, line(a, 3), line(b, 2)));
+        // Make the persisted line order differ from both the product id order and the insertion order, so only an
+        // explicit ORDER BY line_no (the @OrderBy on the association) can produce the expected sequence.
+        jdbc.update("UPDATE order_items SET line_no = line_no + 10");
+        jdbc.update("UPDATE order_items SET line_no = CASE WHEN product_id = ? THEN 2 ELSE 1 END", a);
+
+        PlacedOrder again = placement.placeOrder(command(key, line(b, 2), line(a, 3)));
+
+        assertThat(again.replayed()).isTrue();
+        assertThat(again.lines()).containsExactly(
+                new PlacedLine(b, "Beta", 2, new BigDecimal("45000.50"), new BigDecimal("90001.00")),
+                new PlacedLine(a, "Alpha", 3, new BigDecimal("100.00"), new BigDecimal("300.00")));
+    }
+
+    @Test
     void aReplayOfACancelledOrderReportsCancelledWithTheSameLines() {
         long a = base("Alpha", "100.00", 10);
         UUID key = UUID.randomUUID();

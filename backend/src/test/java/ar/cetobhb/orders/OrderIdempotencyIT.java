@@ -9,6 +9,7 @@ import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.domain.Buyer;
 import ar.cetobhb.orders.domain.IdempotencyConflictException;
+import ar.cetobhb.orders.domain.OrderStatus;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
 import ar.cetobhb.orders.domain.ShippingZone;
 import ar.cetobhb.orders.service.OrderPlacementService;
@@ -212,6 +213,10 @@ class OrderIdempotencyIT extends AbstractPostgresIT {
         assertThat(results).extracting(PlacedOrder::orderId).containsOnly(results.get(0).orderId());
         assertThat(results.stream().filter(p -> !p.replayed())).hasSize(1);
         assertThat(results.stream().filter(PlacedOrder::replayed)).hasSize(THREADS - 1);
+        assertThat(results).extracting(PlacedOrder::status).containsOnly(OrderStatus.PAGO_PENDIENTE);
+        assertThat(results).extracting(PlacedOrder::lines).containsOnly(results.get(0).lines());
+        assertThat(results.get(0).lines()).extracting(PlacedOrder.PlacedLine::productId, PlacedOrder.PlacedLine::quantity)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(productId, 1));
         assertThat(orderCount()).isEqualTo(1);
         assertThat(reserved(productId)).isEqualTo(1);
     }

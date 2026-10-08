@@ -360,6 +360,9 @@ class OrderPlacementIT extends AbstractPostgresIT {
         assertThat(placed.total()).isEqualByComparingTo("200.00");
         assertThat(placed.reservedUntil()).isEqualTo(MutableClock.START.plus(Duration.ofHours(48)));
         assertThat(placed.replayed()).isFalse();
+        assertThat(placed.status()).isEqualTo(ar.cetobhb.orders.domain.OrderStatus.PAGO_PENDIENTE);
+        assertThat(placed.lines()).containsExactly(new PlacedOrder.PlacedLine(
+                b, "Base", 2, new java.math.BigDecimal("100.00"), new java.math.BigDecimal("200.00")));
         Map<String, Object> stored = jdbc.queryForMap("SELECT id, order_number FROM orders");
         assertThat(placed.orderId()).isEqualTo(((Number) stored.get("id")).longValue());
         assertThat(stored).containsEntry("order_number", placed.orderNumber());
