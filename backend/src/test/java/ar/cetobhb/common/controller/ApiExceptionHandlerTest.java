@@ -341,7 +341,8 @@ class ApiExceptionHandlerTest {
 
         result.andExpect(status().isContentTooLarge()).andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"))
                 .andExpect(jsonPath("$.detail").value("The request is too large."))
-                .andExpect(header().string("Cache-Control", "no-store"));
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("Connection", "close"));
         assertThat(body(result)).doesNotContain("16384");
     }
 
@@ -350,7 +351,16 @@ class ApiExceptionHandlerTest {
         THROWN.set(new BodyTooLargeException(16_384));
 
         mvc.perform(get("/boom")).andExpect(status().isContentTooLarge())
-                .andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"));
+                .andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"))
+                .andExpect(header().string("Connection", "close"));
+    }
+
+    @Test
+    void otherErrorsDoNotAskForTheConnectionToBeClosed() throws Exception {
+        THROWN.set(new RuntimeException(SECRET));
+
+        mvc.perform(get("/boom")).andExpect(status().isInternalServerError())
+                .andExpect(header().doesNotExist("Connection"));
     }
 
     @Test

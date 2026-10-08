@@ -37,10 +37,15 @@ class BodySizeLimitServerIT extends AbstractServerIT {
     }
 
     private String head(String framing) {
+        return head(framing, true);
+    }
+
+    /** Without {@code Connection: close} in the request, a reply that closes the connection is the server own decision. */
+    private String head(String framing, boolean closeRequested) {
         return "POST /api/checkout/orders HTTP/1.1\r\nHost: 127.0.0.1:" + port + "\r\n"
                 + "Content-Type: application/json\r\nAccept: application/json\r\n"
                 + "Idempotency-Key: " + UUID.randomUUID() + "\r\nX-Forwarded-For: " + freshClient() + "\r\n"
-                + framing + "\r\nConnection: close\r\n\r\n";
+                + framing + (closeRequested ? "\r\nConnection: close" : "") + "\r\n\r\n";
     }
 
     private RawReply exchange(String head, byte[][] writes) throws IOException {
@@ -101,10 +106,12 @@ class BodySizeLimitServerIT extends AbstractServerIT {
         String endless = ("{\"lines\":[" + line.repeat(100 * 1024 / line.length() + 1)).substring(0, 100 * 1024);
         byte[][] writes = chunked(endless.getBytes(StandardCharsets.US_ASCII));
 
-        RawReply reply = exchange(head("Transfer-Encoding: chunked"), writes);
+        RawReply reply = exchange(head("Transfer-Encoding: chunked", false), writes);
 
         assertThat(reply.status()).isEqualTo(413);
         assertThat(reply.headers()).containsIgnoringCase("application/problem+json").containsIgnoringCase("no-store");
+        // The advice produced this 413 after part of the body was consumed: the connection must not be reused.
+        assertThat(reply.headers()).containsIgnoringCase("Connection: close");
         assertThat(reply.body()).contains("\"code\":\"PAYLOAD_TOO_LARGE\"").contains("\"requestId\":\"");
         assertThat(orders()).isEqualTo(before);
     }
@@ -130,11 +137,14 @@ class BodySizeLimitServerIT extends AbstractServerIT {
 
     @Test
     void aContentLengthLiarThatSendsMoreThanItAnnouncedNeverMakesTheServerFail() throws IOException {
-        // Announces 12 bytes but sends 30000: the container reads only the announced bytes.
+        // Announces 12 bytes but sends 30000: the container reads only the announced bytes, a truncated JSON.
+        long before = orders();
         byte[] payload = ("{\"x\":\"" + "a".repeat(30_000) + "\"}").getBytes(StandardCharsets.US_ASCII);
 
         RawReply reply = exchange(head("Content-Length: 12"), new byte[][] {payload});
 
-        assertThat(reply.status()).isLessThan(500);
+        assertThat(reply.status()).isEqualTo(400);
+        assertThat(reply.body()).contains("\"code\":\"MALFORMED_REQUEST\"");
+        assertThat(orders()).isEqualTo(before);
     }
 }

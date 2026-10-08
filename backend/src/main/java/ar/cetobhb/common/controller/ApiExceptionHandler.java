@@ -259,6 +259,10 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         HttpHeaders responseHeaders = new HttpHeaders();
         responseHeaders.putAll(headers);
         responseHeaders.set(HttpHeaders.CACHE_CONTROL, "no-store");
+        if (error == ApiErrorCatalog.PAYLOAD_TOO_LARGE) {
+            // Part of the body may be unread: the connection must not be reused (BodySizeLimitFilter does the same).
+            responseHeaders.set(HttpHeaders.CONNECTION, "close");
+        }
         return new ResponseEntity<>(problem, responseHeaders, error.status());
     }
 
