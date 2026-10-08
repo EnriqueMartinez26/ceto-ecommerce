@@ -1,6 +1,7 @@
 package ar.cetobhb.checkout.controller;
 
 import ar.cetobhb.checkout.domain.StorefrontProduct;
+import ar.cetobhb.common.controller.ApiFormats;
 
 /**
  * One list item. A dedicated record on purpose: serializing the domain read model would also emit its public helper

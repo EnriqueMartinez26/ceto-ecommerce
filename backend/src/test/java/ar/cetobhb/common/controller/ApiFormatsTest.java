@@ -1,4 +1,4 @@
-package ar.cetobhb.checkout.controller;
+package ar.cetobhb.common.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

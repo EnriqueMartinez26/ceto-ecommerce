@@ -157,6 +157,18 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   puede desactivar o borrar el trigger; frena errores y bugs de la aplicación,
   no a un dueño de la base hostil. Todavía no hay rutas ni fachada que escriban
   en ella (ver `docs/DECISIONES.md`).
+- **Lectura de pedidos para administración** (`OrderQueryService`, solo
+  servicio, todavía sin rutas): la lista es paginada por clave (id descendente,
+  `size` 1..50, `after` 1..2^53-1, pedida con `size + 1` filas para saber si hay
+  otra página) y el detalle sale de proyecciones, sin lock y sin dejar la
+  entidad `Order` en el contexto de persistencia. La búsqueda es exacta, nunca
+  `LIKE`: `OrderSearchKey` (`OrderSearchKeyTest`) lee `CETO-000123` como número,
+  1 a 9 dígitos como número y también como teléfono, y el resto como teléfono
+  E.164 por `PhoneNumberNormalizer`; lo que no se puede leer da una página vacía
+  y el texto buscado no se loguea. La fila de la lista no tiene dirección
+  (`OrderPageRepositoryIT`, `OrderQueryServiceIT`). `secondsLeft` es nulo salvo
+  en `PAGO_PENDIENTE` y 0 si el plazo pasó y el job no corrió
+  (`ReservationCountdownTest`, `OrderQueryServiceIT`).
 
 ### Frontend (`frontend/`)
 
