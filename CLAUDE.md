@@ -8,12 +8,14 @@ Docker Compose en un VPS (postgres, backend, frontend, caddy).
 
 Este archivo se carga en cada sesión y es contexto autoritativo para
 cualquier cambio. Está escrito para el asistente de IA tanto como para las
-personas. **Estado al 2026-10-07: el backend (`backend/`, Spring Boot 4.1.1)
+personas. **Estado al 2026-10-08: el backend (`backend/`, Spring Boot 4.1.1)
 tiene la guarda de ddl-auto, las reglas ArchUnit, el catálogo, el stock, el
 dominio y el ciclo de vida de los pedidos (reserva, pago, cancelación y
-vencimiento por job) y la normalización del teléfono, todo probado contra
-Postgres real. No existen la API HTTP, el panel, el frontend ni el resto de
-las áreas de §4.** Por eso
+vencimiento por job), la normalización del teléfono y la API pública de la
+tienda y del checkout (3 rutas, documentadas a mano en `docs/API.md`, con
+límites por IP y por teléfono, tope de cuerpo, cabeceras de seguridad y
+límites de recursos), todo probado contra Postgres real. No existen el panel
+de administración, el frontend ni el resto de las áreas de §4.** Por eso
 cada regla dura dice cuál es su guarda (test, restricción de la base, chequeo
 estático) o lleva **[guarda pendiente]**: una regla con guarda pendiente es
 un requisito de implementación, no algo que ya esté protegido. Cuando la
@@ -107,7 +109,10 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   (ni `@CrossOrigin`, ni `CorsFilter`/`CorsRegistry`/`CorsRegistration`/tipos
   `web.cors`, ni `addCorsMappings`), `NO_FUNCTIONAL_ENDPOINTS` (ni
   `RouterFunction` ni `ServerResponse`) y `REQUEST_INPUTS_ARE_BOUNDED`
-  (sección 5). `EndpointInventoryIT` fija el
+  (sección 5). La API pública se documenta a mano en `docs/API.md` (sin
+  springdoc, D-20261007-18) y `ApiDocConsistencyTest` hace fallar el build si un
+  ejemplo deja de ser idéntico a su golden, si un golden no está citado o si un
+  `code` o `reason` del código no figura en el documento. `EndpointInventoryIT` fija el
   inventario: las 3 rutas públicas más `ANY /error` de `BasicErrorController`
   (permitido por tipo de handler, no por ruta), todos los `HandlerMapping` por
   clase (los de URL, welcome page y `RouterFunctionMapping` vacíos), sin
@@ -667,12 +672,17 @@ No se implementa nada de esta lista asumiendo una respuesta: se pregunta.
   mensual y del desarrollo.
 - Permiso de cada persona para usar los testimonios de Instagram.
 - Datos legales y del producto (§6).
-- Tope de unidades por línea: 30 (D-20261007-13, configurable). En el cambio
-  del checkout: límite de pedidos `PAGO_PENDIENTE` por teléfono e IP, porque
-  una reserva sin pago bloquea stock 48 h.
+- Tope de unidades por línea: 30 (D-20261007-13, configurable). Una reserva
+  sin pago bloquea stock 48 h, así que el checkout ya limita los pedidos
+  `PAGO_PENDIENTE` por teléfono (3, D-20261007-19) y los intentos por IP
+  (D-20261007-17). D-20261007-19, D-20261007-20 y D-20261007-21 siguen
+  pendientes de OK de la clienta. Quedan abiertos: un tope global o Turnstile
+  contra quien rota teléfonos e IPs (riesgo residual aceptado,
+  D-20261007-21 y D-20261007-25) y el límite de borde en Caddy.
 - Del lado técnico, todavía no existen: CI, pre-commit, backups ni las
   guardas que siguen marcadas como pendientes (los topes de la carga de
-  reseñas y la configuración de producción fuera de `OrderProperties`).
+  reseñas y la configuración de producción fuera de `OrderProperties` y
+  `WebProperties`).
 
 ## 10. Compuertas de proceso
 

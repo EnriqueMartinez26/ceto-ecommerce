@@ -72,6 +72,21 @@ cuentan como detectados (`TIMED_OUT`).
   `inventory.service` y dinero/stock/estados. Un `toString` o un mensaje de
   log que sobrevive es ruido.
 
+## Estado actual (2026-10-08, rama `feat/http-s6-api-docs`)
+
+Resumen de las últimas mediciones; el detalle de cada una está más abajo.
+
+| Qué | Resultado | Cuándo |
+|---|---|---|
+| `./mvnw clean verify` | 986 pruebas unitarias + 473 de integración, 0 fallas | 2026-10-08, cierre de S6 |
+| PIT `services` | 158 mutantes (`orders.service` 104, `inventory.service` 29, `catalog.service` 25), 158 muertos, 0 sobrevivientes, 0 sin cobertura | 2026-10-08, rama `feat/http-s5c1-lock-and-pool` |
+| PIT `domain` | 360 mutantes, 359 muertos; el sobreviviente es el equivalente aceptado de `PhoneNumberNormalizer` | 2026-10-08, rama `feat/http-s4b1b-client-ip-key` |
+
+`./mvnw clean verify` incluye `ApiDocConsistencyTest`, que compara `docs/API.md`
+con los goldens y con las tablas de códigos del código (no es una prueba de
+mutación, pero es parte de lo que mantiene el contrato honesto). PIT no se
+volvió a correr sobre el cambio de S6: solo agrega una prueba y documentación.
+
 ## Línea base y resultado (2026-10-07)
 
 Corrida con PIT 1.30.0, sobre la rama `chore/pit-mutation-testing`.
