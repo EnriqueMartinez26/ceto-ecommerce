@@ -2,6 +2,7 @@ package ar.cetobhb.common.controller;
 
 import ar.cetobhb.catalog.domain.ProductNotAvailableException;
 import ar.cetobhb.catalog.domain.ProductNotFoundException;
+import ar.cetobhb.catalog.domain.StaleProductVersionException;
 import ar.cetobhb.common.domain.DomainException;
 import ar.cetobhb.common.domain.RateLimitedException;
 import ar.cetobhb.common.domain.ValidationException;
@@ -74,6 +75,8 @@ final class ApiErrorCatalog {
             Map.entry(StockAlreadyConfiguredException.class, CONFLICT),
             // Admin stock adjustment of a combo or of a product without a stock row (AINV-04): WARN via CONFLICT.
             Map.entry(StockNotAdjustableException.class, CONFLICT),
+            // Admin product edit based on a version that is no longer current (ACAT-04): a conflict with the current state.
+            Map.entry(StaleProductVersionException.class, CONFLICT),
             Map.entry(OrderNotFoundException.class, NOT_FOUND),
             Map.entry(ProductNotFoundException.class, NOT_FOUND),
             Map.entry(ReservationNotExpiredException.class, INTERNAL));

@@ -352,7 +352,15 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    posterior; no se guarda en este cambio). Editar un producto después no
    cambia pedidos existentes. `OrderItem` no tiene
    setters y es `@Immutable`: Hibernate no emite `UPDATE` aunque se altere el
-   campo (`OrderMappingIT.orderItemsAreImmutableOnceStored`).
+   campo (`OrderMappingIT.orderItemsAreImmutableOnceStored`). La edición de
+   administración de un producto (`CatalogService.update`, D-20261008-21) usa
+   el bloqueo optimista `products.version` (migración `V5`, `@Version`): una
+   edición basada en una lectura vieja falla con `StaleProductVersionException`
+   y dos ediciones que compiten no se pisan (`ProductVersionIT`,
+   `CatalogServiceAdminIT.twoConcurrentEditsFromTheSameReadNeverOverwriteEachOther`);
+   cambiar el precio no toca las líneas de pedidos existentes y desactivar un
+   producto con un pedido pendiente deja el pedido pagable y cancelable
+   (`CatalogServiceAdminIT`).
 7. **El total lo calcula el servidor.** El cliente manda ids y cantidades;
    precios, descuentos y total salen de la base. El cálculo (`OrderTotals`)
    es `BigDecimal` exacto y rechaza lo que no entra en `NUMERIC(12,2)`

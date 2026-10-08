@@ -2,10 +2,15 @@ package ar.cetobhb.catalog.service;
 
 import ar.cetobhb.catalog.domain.CatalogRules;
 import ar.cetobhb.catalog.domain.NewProduct;
+import ar.cetobhb.catalog.domain.ProductAdminView;
+import ar.cetobhb.catalog.domain.ProductChange;
+import ar.cetobhb.catalog.domain.ProductEdit;
+import ar.cetobhb.catalog.domain.ProductEditData;
 import ar.cetobhb.catalog.domain.ProductNotAvailableException;
 import ar.cetobhb.catalog.domain.ProductNotFoundException;
 import ar.cetobhb.catalog.domain.ProductSnapshot;
 import ar.cetobhb.catalog.domain.ProductView;
+import ar.cetobhb.catalog.domain.StaleProductVersionException;
 import ar.cetobhb.catalog.repository.Product;
 import ar.cetobhb.catalog.repository.ProductRepository;
 import ar.cetobhb.common.domain.ReasonCode;
@@ -70,6 +75,42 @@ public class CatalogService {
     @Transactional(readOnly = true)
     public ProductSnapshot findAnyIncludingInactive(long id) {
         return products.findById(id).map(Product::toSnapshot).orElseThrow(() -> new ProductNotFoundException(id));
+    }
+
+    /**
+     * Admin list: every product, active or not, by id ascending, at most {@code limit}. Read-only, no locks.
+     *
+     * @throws IllegalArgumentException when {@code limit} is below 1
+     */
+    @Transactional(readOnly = true)
+    public List<ProductAdminView> listAll(int limit) {
+        return products.findAllOrdered(PageRequest.of(0, limit)).stream().map(Product::toAdminView).toList();
+    }
+
+    /**
+     * Admin edit with an optimistic lock (ACAT-04). {@code expectedVersion} is the version the client read: if the row
+     * moved on, the edit is rejected with {@link StaleProductVersionException} and nothing changes. Two edits that
+     * read the same version and race past that check collide on the {@code @Version} column at flush; the loser gets
+     * an {@code OptimisticLockingFailureException} (also a 409), never a silent overwrite. The flush happens here so
+     * the failure surfaces inside the method and the returned view carries the new version.
+     */
+    @Transactional
+    public ProductChange update(long id, long expectedVersion, ProductEditData data) {
+        Product product = products.findById(id).orElseThrow(() -> new ProductNotFoundException(id));
+        if (product.version() != expectedVersion) {
+            throw new StaleProductVersionException(id);
+        }
+        ProductEdit edit = product.update(data.name(), data.price(), data.compareAtPrice(), clock.instant());
+        products.flush();
+        return new ProductChange(edit.priceBefore(), edit.priceAfter(), edit.priceChanged(), edit.otherChanged(),
+                product.toAdminView());
+    }
+
+    /** Activates or deactivates a product; returns whether the state changed (a repeat is a no-op, not an error). */
+    @Transactional
+    public boolean setActive(long id, boolean active) {
+        Product product = products.findById(id).orElseThrow(() -> new ProductNotFoundException(id));
+        return active ? product.activate(clock.instant()) : product.deactivate(clock.instant());
     }
 
     /**

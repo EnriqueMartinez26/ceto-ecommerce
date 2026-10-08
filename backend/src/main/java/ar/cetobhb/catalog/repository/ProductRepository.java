@@ -21,6 +21,10 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             ORDER BY p.id""")
     List<Product> findVisible(Pageable page);
 
+    /** Every product, active or not, by id ascending and bounded by the page (admin list). */
+    @Query("SELECT p FROM Product p ORDER BY p.id")
+    List<Product> findAllOrdered(Pageable page);
+
     @Query("""
             SELECT p FROM Product p
             WHERE p.id = :id AND p.active = true

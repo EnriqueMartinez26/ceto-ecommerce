@@ -12,10 +12,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import ar.cetobhb.catalog.domain.ProductNotAvailableException;
 import ar.cetobhb.catalog.domain.ProductNotFoundException;
+import ar.cetobhb.catalog.domain.StaleProductVersionException;
 import ar.cetobhb.common.domain.DomainException;
 import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.common.web.BodyTooLargeException;
+import ar.cetobhb.catalog.domain.StaleProductVersionException;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
 import ar.cetobhb.inventory.domain.StockNotAdjustableException;
@@ -115,6 +117,7 @@ class ApiExceptionHandlerTest {
                         "CONFLICT"),
                 Arguments.of(new StockAlreadyConfiguredException(7L), 409, "CONFLICT"),
                 Arguments.of(new StockNotAdjustableException(7L), 409, "CONFLICT"),
+                Arguments.of(new StaleProductVersionException(7L), 409, "CONFLICT"),
                 Arguments.of(new OrderNotFoundException(9L), 404, "NOT_FOUND"),
                 Arguments.of(new ProductNotFoundException(9L), 404, "NOT_FOUND"),
                 Arguments.of(new ReservationNotExpiredException(), 500, "INTERNAL_ERROR"),

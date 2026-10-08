@@ -2,6 +2,7 @@ package ar.cetobhb.catalog.repository;
 
 import ar.cetobhb.catalog.domain.CatalogRules;
 import ar.cetobhb.catalog.domain.NewProduct;
+import ar.cetobhb.catalog.domain.ProductAdminView;
 import ar.cetobhb.catalog.domain.ProductEdit;
 import ar.cetobhb.catalog.domain.ProductSnapshot;
 import ar.cetobhb.catalog.domain.ProductView;
@@ -178,6 +179,11 @@ public class Product {
 
     public ProductSnapshot toSnapshot() {
         return new ProductSnapshot(id, name, price, compareAtPrice, comboBaseProductId, comboBaseUnits);
+    }
+
+    public ProductAdminView toAdminView() {
+        return new ProductAdminView(id, name, price, compareAtPrice, comboBaseProductId, comboBaseUnits, active,
+                version);
     }
 
     public ProductView toView() {
