@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import ar.cetobhb.support.AbstractHttpIT;
+import jakarta.servlet.DispatcherType;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +43,24 @@ class SecurityFilterScopeIT extends AbstractHttpIT {
         assertThat(securityRegistrations.get(0).getUrlPatterns()).containsExactly("/api/admin/*");
     }
 
+    /**
+     * The dispatcher types the Security filter is registered for, recorded from the real configuration with
+     * {@code determineDispatcherTypes()} (what Boot passes to the container): ALL five, REQUEST, ASYNC, ERROR, FORWARD
+     * and INCLUDE. So a forward or include whose target lies under {@code /api/admin/*} still goes through the chain;
+     * the mapping is the same URL pattern for every dispatch. If a Boot upgrade narrows this set the test fails and the
+     * consequence has to be reviewed. The rule that no controller forwards or includes
+     * ({@code ArchitectureTest.noForwardOrInclude}) is the second line.
+     */
+    @Test
+    void theSecurityFilterRegistrationDispatchesOnEveryDispatcherType() {
+        DelegatingFilterProxyRegistrationBean registration = context
+                .getBeansOfType(DelegatingFilterProxyRegistrationBean.class).values().stream()
+                .filter(r -> "springSecurityFilterChain".equals(r.getFilterName())).findFirst().orElseThrow();
+
+        assertThat(registration.determineDispatcherTypes()).containsExactlyInAnyOrder(DispatcherType.REQUEST,
+                DispatcherType.ASYNC, DispatcherType.ERROR, DispatcherType.FORWARD, DispatcherType.INCLUDE);
+    }
+
     @Test
     void publicRequestsNeverEnterTheSecurityFilterChain() throws Exception {
         MvcResult list = sendForResult(get("/api/store/products"));
@@ -70,13 +89,13 @@ class SecurityFilterScopeIT extends AbstractHttpIT {
     }
 
     @Test
-    void adminRequestsEnterTheChainAndAnonymousOnesGet401WithoutACookie() throws Exception {
+    void adminRequestsEnterTheChainAndAnonymousOnesGet401WithoutASessionCookie() throws Exception {
         MvcResult result = sendForResult(get("/api/admin/anything"));
 
         MockHttpServletResponse response = result.getResponse();
         assertThat(reachedTheChain(result)).isTrue();
         assertThat(response.getStatus()).isEqualTo(401);
-        assertThat(response.getCookies()).isEmpty();
-        assertThat(response.getHeader("Set-Cookie")).isNull();
+        // csrf.spa() renders the XSRF-TOKEN cookie on every admin response; a server session cookie never appears.
+        assertThat(response.getHeaders("Set-Cookie")).allMatch(cookie -> cookie.startsWith("XSRF-TOKEN="));
     }
 }
