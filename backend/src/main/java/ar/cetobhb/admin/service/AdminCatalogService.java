@@ -1,5 +1,6 @@
 package ar.cetobhb.admin.service;
 
+import ar.cetobhb.admin.config.AdminProperties;
 import ar.cetobhb.admin.domain.AuditAction;
 import ar.cetobhb.admin.domain.AuditEntry;
 import ar.cetobhb.catalog.domain.NewProduct;
@@ -9,6 +10,7 @@ import ar.cetobhb.catalog.domain.ProductEditData;
 import ar.cetobhb.catalog.domain.ProductSnapshot;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.service.InventoryService;
+import java.util.List;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,11 +29,20 @@ public class AdminCatalogService {
     private final CatalogService catalog;
     private final InventoryService inventory;
     private final AdminAuditService audit;
+    private final AdminProperties properties;
 
-    public AdminCatalogService(CatalogService catalog, InventoryService inventory, AdminAuditService audit) {
+    public AdminCatalogService(CatalogService catalog, InventoryService inventory, AdminAuditService audit,
+            AdminProperties properties) {
         this.catalog = catalog;
         this.inventory = inventory;
         this.audit = audit;
+        this.properties = properties;
+    }
+
+    /** Every product, active or not, by id ascending, at most {@code ceto.admin.max-listed-products}. */
+    @Transactional(readOnly = true)
+    public List<ProductAdminView> list() {
+        return catalog.listAll(properties.maxListedProducts());
     }
 
     /**
