@@ -27,6 +27,10 @@ import org.springframework.stereotype.Component;
  * behind a held lock costs about two lock waits, not one per due order. A tick that expired or failed something logs
  * how long it took.
  *
+ * <p>Trade-off, deliberate: because the fallback stops at the first lock timeout, a long-held lock on the stock of
+ * the oldest-due order delays the expiry of the other due orders until it frees. For a holder that is idle inside
+ * its transaction the delay is bounded by {@code idle_in_transaction_session_timeout}.
+ *
  * <p>Failures: a batch that fails is rolled back by the service and retried order by order; the orders that still
  * fail are logged by the service at ERROR (id, exception class, SQLState) and stay PAGO_PENDIENTE, the rest
  * advance. An exception that

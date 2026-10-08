@@ -10,6 +10,11 @@ import java.util.regex.Pattern;
  * migration's transaction: {@code SET [SESSION] lock_timeout|statement_timeout|idle_in_transaction_session_timeout}
  * and {@code set_config(<timeout>, ..., false)}. {@code SET LOCAL} and {@code set_config(..., true)} are fine.
  * Comments are removed before scanning.
+ *
+ * <p>Known limits (a text scan, not an SQL parser): a string literal that contains {@code --} is
+ * treated as the start of a comment, so the rest of that line is not scanned; and a {@code SET <timeout>} attribute
+ * of {@code CREATE FUNCTION ... SET lock_timeout = ...} is flagged although it is scoped to the function. Both are
+ * rare in migrations; if one is genuinely needed, write it so the scan passes or extend this scanner with a test.
  */
 public final class MigrationTimeoutScanner {
 

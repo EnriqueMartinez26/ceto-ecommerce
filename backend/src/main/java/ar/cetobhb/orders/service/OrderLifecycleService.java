@@ -116,6 +116,12 @@ public class OrderLifecycleService {
      * for the next tick. A failed order keeps occupying a slot of the oldest-due window, so as many corrupt
      * orders as the batch size would starve the younger ones: that is what the ERROR log is for.
      *
+     * <p>Trade-off, deliberate: stopping at the first lock timeout means a lock held for a long time on the stock of
+     * the oldest-due order delays the expiry of the other due orders until that lock frees, even ones that would not
+     * have been blocked. A holder that is idle inside its transaction is bounded by
+     * {@code idle_in_transaction_session_timeout} (30 s); one that is actively working is bounded only by its own
+     * work. The alternative (trying every order) costs one full lock wait per due order and a tick of minutes.
+     *
      * <p>This method is deliberately NOT {@code @Transactional}: the batch and each order run in their own
      * transactions through a {@link TransactionTemplate}, so it rejects a caller with an active transaction (it would
      * join it, and a rolled-back batch would poison the caller's transaction instead of falling back). Never catch an exception inside one of them and carry on
