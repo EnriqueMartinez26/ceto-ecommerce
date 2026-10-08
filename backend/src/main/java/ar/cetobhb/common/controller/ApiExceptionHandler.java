@@ -64,9 +64,10 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     static final String REQUEST_ID_ATTRIBUTE = "requestId";
 
     private static final Logger LOG = LoggerFactory.getLogger(ApiExceptionHandler.class);
-    private static final String RETRY_AFTER_SECONDS = "5";
+    /** Seconds a client waits after a lock timeout or an exhausted pool; API.md pins it (ApiDocConsistencyTest). */
+    static final String RETRY_AFTER_SECONDS = "5";
     /** The per-phone lock holder finishes in well under a second: a short retry is enough (D-20261008-01). */
-    private static final String CHECKOUT_IN_PROGRESS_RETRY_AFTER_SECONDS = "1";
+    static final String CHECKOUT_IN_PROGRESS_RETRY_AFTER_SECONDS = "1";
 
     @ExceptionHandler(DomainException.class)
     ResponseEntity<Object> handleDomain(DomainException ex, HttpServletRequest request) {

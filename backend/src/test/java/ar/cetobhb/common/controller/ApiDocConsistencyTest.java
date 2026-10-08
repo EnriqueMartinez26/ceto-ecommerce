@@ -90,18 +90,70 @@ class ApiDocConsistencyTest {
         }
     }
 
-    /** Every code the API can answer: the domain table plus the framework rows and the generic client error. */
-    static Set<String> allErrorCodes() {
-        Set<String> codes = new TreeSet<>();
-        ApiErrorCatalog.domainErrors().values().forEach(error -> codes.add(error.code()));
+    /** Every (status, code) pair the API can answer, as the "STATUS CODE" form used in reports and table rows. */
+    static Set<String> allErrorRows() {
+        Set<String> rows = new TreeSet<>();
+        ApiErrorCatalog.domainErrors().values().forEach(error -> rows.add(rowOf(error)));
         for (ApiError error : List.of(ApiErrorCatalog.VALIDATION, ApiErrorCatalog.MALFORMED,
                 ApiErrorCatalog.UNSUPPORTED_MEDIA_TYPE, ApiErrorCatalog.NOT_ACCEPTABLE,
                 ApiErrorCatalog.METHOD_NOT_ALLOWED, ApiErrorCatalog.NOT_FOUND, ApiErrorCatalog.PAYLOAD_TOO_LARGE,
                 ApiErrorCatalog.CONFLICT, ApiErrorCatalog.SERVICE_BUSY, ApiErrorCatalog.INTERNAL,
-                ApiErrorCatalog.clientError(org.springframework.http.HttpStatus.GONE))) {
-            codes.add(error.code());
+                ApiErrorCatalog.clientError(org.springframework.http.HttpStatus.BAD_REQUEST))) {
+            rows.add(rowOf(error));
         }
-        return codes;
+        return rows;
+    }
+
+    private static String rowOf(ApiError error) {
+        return error.status().value() + " " + error.code();
+    }
+
+    /**
+     * Pairs ("STATUS CODE") with no row of the form {@code | STATUS | `CODE` |} in the document: a code that is only
+     * mentioned in prose, or listed under another status, does not count.
+     */
+    static List<String> missingErrorCodes(String markdown) {
+        List<String> missing = new ArrayList<>();
+        for (String row : allErrorRows()) {
+            String[] parts = row.split(" ");
+            Pattern tableRow = Pattern.compile("(?m)^\\| " + parts[0] + " \\| `" + parts[1] + "` \\|");
+            if (!tableRow.matcher(markdown).find()) {
+                missing.add(row);
+            }
+        }
+        return missing;
+    }
+
+    /** Reasons the document does not mention. */
+    static List<String> missingReasons(String markdown) {
+        List<String> missing = new ArrayList<>();
+        for (ReasonCode reason : ReasonCode.values()) {
+            if (!markdown.contains("`" + reason.name() + "`")) {
+                missing.add(reason.name());
+            }
+        }
+        return missing;
+    }
+
+    private static final Pattern RETRY_AFTER_VALUE = Pattern.compile("`Retry-After: (\\d+)`");
+
+    /**
+     * Retry-After values the document pins that differ from what the advice sends: the document must show the
+     * per-phone busy value and the lock/pool value, and no other number.
+     */
+    static List<String> retryAfterProblems(String markdown) {
+        Set<String> shown = new TreeSet<>();
+        Matcher matcher = RETRY_AFTER_VALUE.matcher(markdown);
+        while (matcher.find()) {
+            shown.add(matcher.group(1));
+        }
+        Set<String> expected = new TreeSet<>(List.of(ApiExceptionHandler.CHECKOUT_IN_PROGRESS_RETRY_AFTER_SECONDS,
+                ApiExceptionHandler.RETRY_AFTER_SECONDS));
+        List<String> problems = new ArrayList<>();
+        if (!shown.equals(expected)) {
+            problems.add("documented Retry-After values " + shown + " but the advice sends " + expected);
+        }
+        return problems;
     }
 
     // ---- the real document ----
@@ -125,19 +177,18 @@ class ApiDocConsistencyTest {
 
     @Test
     void everyErrorCodeOfTheCatalogIsListed() {
-        String doc = read(DOC);
-
-        assertThat(allErrorCodes()).hasSizeGreaterThanOrEqualTo(14)
-                .allSatisfy(code -> assertThat(doc).as("code " + code).contains("`" + code + "`"));
+        assertThat(allErrorRows()).hasSizeGreaterThanOrEqualTo(14);
+        assertThat(missingErrorCodes(read(DOC))).isEmpty();
     }
 
     @Test
     void everyReasonCodeIsListed() {
-        String doc = read(DOC);
+        assertThat(missingReasons(read(DOC))).isEmpty();
+    }
 
-        for (ReasonCode reason : ReasonCode.values()) {
-            assertThat(doc).as("reason " + reason).contains("`" + reason.name() + "`");
-        }
+    @Test
+    void theDocumentedRetryAfterValuesMatchTheAdvice() {
+        assertThat(retryAfterProblems(read(DOC))).isEmpty();
     }
 
     // ---- the checks themselves bite ----
@@ -168,6 +219,50 @@ class ApiDocConsistencyTest {
                 """;
 
         assertThat(mismatches(missing, CONTRACT_DIR)).containsExactly("nope.json: the golden file does not exist");
+    }
+
+    @Test
+    void aCatalogCodeMissingFromTheErrorTableIsReported() {
+        String doc = read(DOC);
+
+        assertThat(missingErrorCodes(doc)).isEmpty();
+        assertThat(missingErrorCodes(doc.replace("| 409 | `INSUFFICIENT_STOCK` |", "| 409 | `RENAMED` |")))
+                .containsExactly("409 INSUFFICIENT_STOCK");
+    }
+
+    @Test
+    void aCodeMentionedOnlyInProseIsNotARow() {
+        String doc = read(DOC);
+        String proseOnly = doc.replace("| 405 | `METHOD_NOT_ALLOWED` |", "| 405 | METHOD_NOT_ALLOWED |")
+                + "\nMETHOD_NOT_ALLOWED is mentioned as `METHOD_NOT_ALLOWED` here.\n";
+
+        assertThat(missingErrorCodes(proseOnly)).containsExactly("405 METHOD_NOT_ALLOWED");
+    }
+
+    @Test
+    void aCodeListedWithAnotherStatusIsReported() {
+        String doc = read(DOC).replace("| 503 | `SERVICE_BUSY` |", "| 500 | `SERVICE_BUSY` |");
+
+        assertThat(missingErrorCodes(doc)).containsExactly("503 SERVICE_BUSY");
+    }
+
+    @Test
+    void aReasonMissingFromTheDocumentIsReported() {
+        String doc = read(DOC);
+
+        assertThat(missingReasons(doc)).isEmpty();
+        assertThat(missingReasons(doc.replace("`EMPTY_CART`", "`NOT_A_REASON`"))).containsExactly("EMPTY_CART");
+    }
+
+    @Test
+    void theDocumentedRetryAfterValuesAreTheOnesTheAdviceSends() {
+        String doc = read(DOC);
+
+        assertThat(retryAfterProblems(doc)).isEmpty();
+        assertThat(retryAfterProblems(doc.replace("`Retry-After: 1`", "`Retry-After: 2`"))).isNotEmpty();
+        assertThat(retryAfterProblems(doc.replace("`Retry-After: 5`", "`Retry-After: 9`"))).isNotEmpty();
+        assertThat(retryAfterProblems(doc.replace("`Retry-After: 5`", "`Retry-After: 5` y `Retry-After: 7`")))
+                .isNotEmpty();
     }
 
     @Test
