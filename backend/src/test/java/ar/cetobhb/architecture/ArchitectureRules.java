@@ -249,7 +249,17 @@ final class ArchitectureRules {
             .and(noMethods().should().haveName("addCorsMappings"))
             .as("no @CrossOrigin, no CORS configuration types, no addCorsMappings");
 
-    private static final Set<String> NUMERIC_TYPES = Set.of("byte", "short", "int", "long", "float", "double",
+    /**
+     * Annotated controllers are the only way to expose an endpoint: functional endpoints ({@code RouterFunction},
+     * {@code ServerResponse}) would escape the annotation-based ArchUnit input rules and the HTTP inventory
+     * (REQ-HRD-03).
+     */
+    static final ArchRule NO_FUNCTIONAL_ENDPOINTS = noClasses()
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "org.springframework.web.servlet.function..", "org.springframework.web.reactive.function.server..")
+            .as("no functional endpoints: no RouterFunction, HandlerFunction or ServerResponse");
+
+    private static final Set<String> NUMERIC_TYPES =Set.of("byte", "short", "int", "long", "float", "double",
             "java.lang.Byte", "java.lang.Short", "java.lang.Integer", "java.lang.Long", "java.lang.Float",
             "java.lang.Double", "java.math.BigDecimal", "java.math.BigInteger");
     private static final String BV = "jakarta.validation.constraints.";

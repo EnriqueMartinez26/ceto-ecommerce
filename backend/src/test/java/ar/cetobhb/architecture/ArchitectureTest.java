@@ -41,6 +41,9 @@ class ArchitectureTest {
     static final ArchRule requestInputsAreBounded = ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED;
 
     @ArchTest
+    static final ArchRule noFunctionalEndpoints = ArchitectureRules.NO_FUNCTIONAL_ENDPOINTS;
+
+    @ArchTest
     static final ArchRule repositoryOnlyFromOwnFeatureService =
             ArchitectureRules.REPOSITORY_ONLY_FROM_OWN_FEATURE_SERVICE;
 }

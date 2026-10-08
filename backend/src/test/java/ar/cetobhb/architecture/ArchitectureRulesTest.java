@@ -203,6 +203,15 @@ class ArchitectureRulesTest {
     }
 
     @Test
+    void functionalEndpointsRuleFailsOnRouterFunctionsAndServerResponses() {
+        assertThatThrownBy(() -> ArchitectureRules.NO_FUNCTIONAL_ENDPOINTS.check(fixtures("functional")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("FunctionalRoutes")
+                .hasMessageContaining("org.springframework.web.servlet.function.RouterFunction")
+                .hasMessageContaining("org.springframework.web.servlet.function.ServerResponse");
+    }
+
+    @Test
     void compliantCodeSatisfiesEveryRule() {
         JavaClasses clean = fixtures("clean");
         List<ArchRule> rules = List.of(
@@ -216,7 +225,8 @@ class ArchitectureRulesTest {
                 ArchitectureRules.WEB_TYPES_ONLY_IN_CONTROLLER_PACKAGES,
                 ArchitectureRules.SERVICES_AND_DOMAIN_ARE_WEB_FREE,
                 ArchitectureRules.NO_CROSS_ORIGIN,
-                ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED);
+                ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED,
+                ArchitectureRules.NO_FUNCTIONAL_ENDPOINTS);
         for (ArchRule rule : rules) {
             assertThatCode(() -> rule.check(clean)).doesNotThrowAnyException();
         }
