@@ -364,7 +364,17 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    `CatalogServiceAdminIT.twoConcurrentEditsFromTheSameReadNeverOverwriteEachOther`);
    cambiar el precio no toca las líneas de pedidos existentes y desactivar un
    producto con un pedido pendiente deja el pedido pagable y cancelable
-   (`CatalogServiceAdminIT`).
+   (`CatalogServiceAdminIT`). Una compradora nunca recibe el conflicto de una
+   edición de administración: colocar pedidos mientras se edita el precio no
+   produce ningún `OptimisticLockingFailureException` y cada línea queda con un
+   precio efectivamente confirmado (`BuyerNeverSeesAdminEditConflictIT`;
+   evidencia por mutación, 2026-10-08: hacer que `findForOrder` ensucie el
+   producto hizo fallar el test con `ObjectOptimisticLockingFailureException`).
+   Activar y desactivar (`setActive`) no recibe la versión y es idempotente
+   (D-20261008-28); reactivar un combo con la base inactiva falla con
+   `INVALID_COMBO_LINK` (`CatalogServiceAdminIT`). El nombre de un producto debe
+   tener al menos un carácter visible y no admite separadores de línea o
+   párrafo, uso privado ni puntos de código sin asignar (`CatalogRulesTest`).
 7. **El total lo calcula el servidor.** El cliente manda ids y cantidades;
    precios, descuentos y total salen de la base. El cálculo (`OrderTotals`)
    es `BigDecimal` exacto y rechaza lo que no entra en `NUMERIC(12,2)`
