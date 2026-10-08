@@ -1,0 +1,7 @@
+{
+  "title": "Not Found",
+  "status": 404,
+  "detail": "The resource was not found.",
+  "instance": "/api/checkout/unknown",
+  "code": "NOT_FOUND"
+}

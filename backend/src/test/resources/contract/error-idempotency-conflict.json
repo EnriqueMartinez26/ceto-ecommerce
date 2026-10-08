@@ -1,0 +1,7 @@
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "The idempotency key was already used for a different order.",
+  "instance": "/api/checkout/orders",
+  "code": "IDEMPOTENCY_CONFLICT"
+}

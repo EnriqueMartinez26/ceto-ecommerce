@@ -1,0 +1,17 @@
+{
+  "orderNumber": "CETO-000001",
+  "status": "PAGO_PENDIENTE",
+  "zone": "RESTO_DEL_PAIS",
+  "total": "30.00",
+  "reservedUntil": "2026-03-12T12:00:00Z",
+  "replayed": false,
+  "lines": [
+    {
+      "productId": 3,
+      "name": "Whole price",
+      "quantity": 3,
+      "unitPrice": "10.00",
+      "lineTotal": "30.00"
+    }
+  ]
+}

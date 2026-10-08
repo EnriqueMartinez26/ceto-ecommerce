@@ -68,8 +68,24 @@ class CheckoutHttpIT extends AbstractHttpIT {
         assertMatchesGolden(response, "checkout-201.json");
     }
 
+    /** A price stored as a whole number must still be reported with two decimals end to end. */
     @Test
-    void theResponseIsNeverCachedAndHasNoLocationHeader() throws Exception {
+    void aWholeNumberPriceIsReportedWithTwoDecimalsAndNoOrderId() throws Exception {
+        long whole = catalog.createBase(product("Whole price", "10")).id();
+        inventory.createStock(whole, 10);
+
+        MockHttpServletResponse response = send(checkout(UUID.randomUUID().toString(), """
+                {"buyer":{"name":"Maria Perez","phone":"+5493515550000","address":"Calle Falsa 123",
+                          "zone":"RESTO_DEL_PAIS"},
+                 "lines":[{"productId":%d,"quantity":3}]}
+                """.formatted(whole)));
+
+        assertThat(response.getStatus()).isEqualTo(201);
+        assertMatchesGolden(response, "checkout-201-whole-price.json");
+    }
+
+    @Test
+    void theResponseIsNeverCachedAndHasNoLocationHeader()throws Exception {
         MockHttpServletResponse response = send(checkout(UUID.randomUUID().toString(), BODY));
 
         assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");

@@ -1,0 +1,7 @@
+{
+  "title": "Unsupported Media Type",
+  "status": 415,
+  "detail": "The content type is not supported.",
+  "instance": "/api/checkout/orders",
+  "code": "UNSUPPORTED_MEDIA_TYPE"
+}

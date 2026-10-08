@@ -1,0 +1,8 @@
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "One or more products are not available.",
+  "instance": "/api/checkout/orders",
+  "code": "PRODUCT_UNAVAILABLE",
+  "productIds": [2]
+}
