@@ -3,6 +3,11 @@ server:
   # The "framework" strategy must not be used here (REQ-ABU-03). Only peers matching internal-proxies are believed.
   forward-headers-strategy: native
   tomcat:
+    # Bodies Tomcat handles by itself, outside the application byte counter (BodySizeLimitFilter): the unread body it
+    # swallows to reuse a connection, and form parameters (getParameter). No route consumes a form, so the form limit
+    # is tied to the application body limit.
+    max-swallow-size: 64KB
+    max-http-form-post-size: ${ceto.web.max-body-bytes}B
     remoteip:
       remote-ip-header: X-Forwarded-For
       internal-proxies: "${ceto.web.trusted-proxies}"
