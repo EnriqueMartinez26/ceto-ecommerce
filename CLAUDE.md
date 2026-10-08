@@ -345,6 +345,13 @@ estático. Una instrucción en lenguaje natural no es una garantía.
     (D-20261007-24, `OrderPendingCapIT`). El 429 se registra en DEBUG. Los ITs
     que colocan muchos pedidos usan `BuyerFixtures.freshBuyer()` (un teléfono
     por pedido), si no el tope y el lock los serializan.
+    **Límite por IP** (D-20261007-17, D-20261007-22): `POST /api/checkout/orders` gasta
+    un intento del cubo de la IP antes de leer el cuerpo (`CheckoutRateLimitInterceptor`,
+    10 de golpe y uno cada 6 minutos, `ceto.web.checkout-rate-limit`); el 11.º es 429
+    `RATE_LIMITED` con `Retry-After` (`RateLimitIT`, golden `contract/error-rate-limited.json`),
+    en DEBUG y sin la IP. La clave sale solo de `getRemoteAddr()`; detrás del proxy de confianza
+    (`TRUSTED_PROXIES`, `RemoteIpValve`) es el cliente real y la cabecera de un par no
+    confiable se ignora (`ClientIpHttpIT`, puerto aleatorio). Los GET de la tienda no se limitan.
 
 ### Checkout, WhatsApp y envío
 
@@ -423,7 +430,10 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   defecto en el repo, CORS sin `*`, docs de la API apagados. Un proceso con
   configuración inválida no arranca. Hecho para `OrderProperties`
   (`OrderPropertiesValidationTest`: valores fuera de rango, ausentes o en blanco,
-  incluido el bloque `expiry` entero, frenan el arranque); el resto de la configuración **[guarda pendiente]**
+  incluido el bloque `expiry` entero, frenan el arranque) y para `WebProperties`
+  (`WebPropertiesValidationTest`: rangos, `TRUSTED_PROXIES` ausente, vacío, ilegible o que
+  confíe en direcciones públicas como `0.0.0.0/0` o `.*`; `WebConfigTest`: lo mismo sobre el
+  valor que Tomcat usa de verdad, y estrategia `native`); el resto de la configuración **[guarda pendiente]**
 - **Todo parámetro numérico de la API lleva mínimo Y máximo**
   (`@Min`/`@Max`, cantidades, paginado, estrellas). Un solo lado deja un 500
   alcanzable. Las propiedades de `ceto.orders.*` ya cumplen la regla
@@ -507,7 +517,9 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   puerto aleatorio (`AbstractServerIT`), `CheckoutBurstHttpIT` (última unidad:
   1 × 201, N−1 × 409 `INSUFFICIENT_STOCK`; misma clave: 1 × 201, N−1 × 200
   `replayed:true`, cero 5xx); el pool de Hikari del perfil `test` es
-  mayor que los hilos para que la contención sea de locks y no del pool.
+  mayor que los hilos para que la contención sea de locks y no del pool. Cada
+  pedido de `AbstractServerIT.post` manda su propia `X-Forwarded-For` (el perfil `test` confía
+  solo en `127.0.0.1`), si no las ráfagas toparían con el límite por IP.
 - **Un bug de producción se reproduce con un test antes de arreglarse**, con
   fecha y síntoma en el comentario.
 - **Un pipe a `tail` esconde el exit code.** `./mvnw clean verify | tail -5` da el
