@@ -9,6 +9,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
 import org.springframework.core.env.StandardEnvironment;
@@ -128,6 +129,95 @@ class AdminSessionGuardTest {
 
         assertThatThrownBy(() -> new AdminSessionGuard(withEnvironmentVariables(variables)))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    private static final String DOMAIN = "server.servlet.session.cookie.domain";
+    private static final String NAME = "server.servlet.session.cookie.name";
+
+    @ParameterizedTest
+    @ValueSource(strings = {"example.com", ".example.com", "localhost", "a"})
+    void aCookieDomainStopsTheStartupBecauseItWidensTheCookieToEverySubdomain(String value) {
+        MockEnvironment environment = valid();
+        environment.setProperty(DOMAIN, value);
+
+        assertThatThrownBy(() -> new AdminSessionGuard(environment)).isInstanceOf(IllegalStateException.class)
+                .hasMessage(DOMAIN + " must be unset");
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "  "})
+    void anUnsetOrBlankCookieDomainPasses(String value) {
+        MockEnvironment environment = valid();
+        if (value != null) {
+            environment.setProperty(DOMAIN, value);
+        }
+
+        assertThatCode(() -> new AdminSessionGuard(environment)).doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SESSION", "jsessionid", "JSESSIONID2", "ADMINSESSION", "__Host-session", "", " "})
+    void aCookieNameOtherThanJsessionidStopsTheStartupBecauseLogoutExpiresThatNameOnly(String value) {
+        MockEnvironment environment = valid();
+        environment.setProperty(NAME, value);
+
+        assertThatThrownBy(() -> new AdminSessionGuard(environment)).isInstanceOf(IllegalStateException.class)
+                .hasMessage(NAME + " must be JSESSIONID");
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"JSESSIONID"})
+    void anUnsetOrJsessionidCookieNamePasses(String value) {
+        MockEnvironment environment = valid();
+        if (value != null) {
+            environment.setProperty(NAME, value);
+        }
+
+        assertThatCode(() -> new AdminSessionGuard(environment)).doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SERVER_SERVLET_SESSION_COOKIE_DOMAIN", "SERVER_SERVLET_SESSION_COOKIE_NAME"})
+    void aDomainOrNameFromAnEnvironmentVariableStopsTheStartupToo(String variable) {
+        Map<String, Object> variables = validVariables();
+        variables.put(variable, variable.endsWith("DOMAIN") ? "example.com" : "SESSION");
+
+        assertThatThrownBy(() -> new AdminSessionGuard(withEnvironmentVariables(variables)))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void theIndexedFormOfTheTrackingModesIsReadLikeBootReadsIt() {
+        MockEnvironment ok = with(TRACKING, null);
+        ok.setProperty(TRACKING + "[0]", "cookie");
+        MockEnvironment weak = with(TRACKING, null);
+        weak.setProperty(TRACKING + "[0]", "cookie");
+        weak.setProperty(TRACKING + "[1]", "url");
+
+        assertThatCode(() -> new AdminSessionGuard(ok)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> new AdminSessionGuard(weak)).isInstanceOf(IllegalStateException.class)
+                .hasMessage(TRACKING + " must be cookie");
+    }
+
+    @Test
+    void theUnderscoreSpellingOfAHyphenatedVariableIsSeenToo() {
+        Map<String, Object> variables = validVariables();
+        variables.remove("SERVER_SERVLET_SESSION_COOKIE_HTTPONLY");
+        variables.put("SERVER_SERVLET_SESSION_COOKIE_HTTP_ONLY", "false");
+
+        assertThatThrownBy(() -> new AdminSessionGuard(withEnvironmentVariables(variables)))
+                .isInstanceOf(IllegalStateException.class).hasMessage(HTTP_ONLY + " must be true");
+    }
+
+    private static Map<String, Object> validVariables() {
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("SERVER_SERVLET_SESSION_COOKIE_SECURE", "true");
+        variables.put("SERVER_SERVLET_SESSION_COOKIE_HTTPONLY", "true");
+        variables.put("SERVER_SERVLET_SESSION_COOKIE_SAMESITE", "strict");
+        variables.put("SERVER_SERVLET_SESSION_TRACKINGMODES", "cookie");
+        return variables;
     }
 
     /** The valid settings with one property replaced by the value, or absent when the value is null. */
