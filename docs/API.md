@@ -2,8 +2,9 @@
 
 Referencia escrita a mano de las 3 rutas públicas del backend, para quien arma
 el frontend y para Mateo (D-20261007-18). Todo lo que figura acá bajo un
-encabezado `Golden:` es copia exacta de un archivo de referencia que los tests
-comparan contra la respuesta real; si cambia el contrato, el test falla y este
+encabezado `Golden:` es semánticamente igual (mismo JSON; el formato y el orden
+de las claves no cuentan) a un archivo de referencia que los tests comparan
+contra la respuesta real; si cambia el contrato, el test falla y este
 documento se corrige en el mismo cambio.
 
 **No exponer el backend sin Caddy adelante** (ver [Despliegue](#despliegue)).
@@ -503,8 +504,9 @@ clienta; este documento no lo redacta.
 
 Un reintento de la misma clave que llega mientras el primer pedido todavía se
 está creando recibe 503 (`Retry-After: 1`); uno posterior recibe 200. Un
-reintento con un pedido ya creado nunca es 429, ni siquiera con el teléfono en
-el tope.
+reintento con un pedido ya creado nunca es 429 `TOO_MANY_PENDING_ORDERS`, ni
+siquiera con el teléfono en el tope; el límite por IP (429 `RATE_LIMITED`) se
+evalúa antes y sí puede aplicarse.
 
 ### Riesgo residual
 
@@ -527,7 +529,7 @@ en la red interna de Docker Compose.
 | `TRUSTED_PROXIES` | **Obligatoria, sin valor por defecto**: si falta, la aplicación no arranca. Lista CIDR separada por comas, sin regex, con cada entrada dentro de rangos privados (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `fc00::/7`, `fe80::/10`, `::1/128`). Ejemplos válidos: `172.18.0.5/32`, `172.18.0.0/16`. Rechazados: `0.0.0.0/0`, `::/0`, `.*`, rangos públicos, entradas vacías. Preferir el `/32` o la subred de la red de Compose donde vive Caddy: confiar en `127.0.0.0/8` o `169.254.0.0/16` confía en todo el host o todo el enlace. Si el valor es incorrecto, todas las IPs parecen la del proxy y el límite por IP deja de distinguir compradoras. |
 | Caddy | Debe descartar el `X-Forwarded-For` que mande el cliente y fijar la IP real. No declarar `trusted_proxies` en Caddy salvo que haya otro proxy adelante, y verificar el despliegue con una petición con un `X-Forwarded-For` falso: no debe cambiar la IP que ve la aplicación. Agrega `Strict-Transport-Security` y es el lugar para un límite de borde. |
 | Variables `ORDER_*` | `ORDER_RESERVATION_HOURS` (48; 1 a 168), `ORDER_MAX_UNITS_PER_LINE` (30; 1 a 100), `ORDER_MAX_PENDING_PER_PHONE` (3; 1 a 20). Un valor fuera de rango detiene el arranque. |
-| Propiedades `ceto.web.*` | `max-body-bytes` (16384; 1024 a 262144), `storefront-max-products` (200; 1 a 500) y `checkout-rate-limit.{burst, refill-interval-seconds, max-tracked-clients, overflow-burst, overflow-refill-per-hour}`. Se cambian en `application.yml` o con variables de entorno en la forma canónica de Spring Boot (mayúsculas, puntos a guion bajo y sin guiones: `CETO_WEB_MAXBODYBYTES`). Todas se validan con mínimo y máximo. |
+| Propiedades `ceto.web.*` | `max-body-bytes` (16384; 1024 a 262144), `storefront-max-products` (200; 1 a 500) y `checkout-rate-limit.{burst, refill-interval-seconds, max-tracked-clients, overflow-burst, overflow-refill-per-hour}`. Se cambian en `application.yml` o con variables de entorno en la forma canónica de Spring Boot (mayúsculas, puntos a guion bajo y sin guiones: `CETO_WEB_MAXBODYBYTES`). Todas se validan con mínimo y máximo, salvo `trusted-proxies`, que se valida con la regla CIDR de `TRUSTED_PROXIES`. |
 | Pool de conexiones | 10 por instancia, 3 s de espera por una conexión; sin conexión, 503 `SERVICE_BUSY`. Postgres permite 100: no subir el pool sin revisar ese techo. |
 | `lock_timeout` | 5 s en cada conexión: una espera de lock más larga termina en 503 `SERVICE_BUSY` con `Retry-After: 5`. Las migraciones usan `SET LOCAL`. |
 | `idle_in_transaction_session_timeout` | 30 s en cada conexión: respaldo contra una transacción que retiene locks y dejó de hablar con la base. |
@@ -543,7 +545,7 @@ pruebas unitarias, integración con Postgres real y reglas de arquitectura).
   `StorefrontHttpIT`, `CheckoutHttpIT`, `CheckoutErrorsHttpIT`, `RateLimitIT`,
   `LockTimeoutIT`, `PoolExhaustionIT` y `BodySizeLimitHttpIT`.
 - Este documento se verifica con `ApiDocConsistencyTest`: cada bloque marcado
-  con `Golden:` es idéntico al archivo citado, todo golden está citado, todo
+  con `Golden:` es igual como JSON al archivo citado, todo golden está citado, todo
   `code` del catálogo de errores y todo `reason` del código figuran acá.
 - Decisiones: `docs/DECISIONES.md`. Reglas duras y guardas: `CLAUDE.md` (§4
   reglas 3 y 10, §5).
