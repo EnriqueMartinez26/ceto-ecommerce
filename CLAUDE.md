@@ -463,13 +463,23 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `BodySizeLimitServerIT` (socket real, chunked de 100 KB, largo mentido) lo
   fijan, y `ApiExceptionHandlerTest` fija que `BodyTooLargeException` en la
   cadena de causas es 413 y no 400. El filtro corre antes del interceptor del
-  rate limit: una petición demasiado grande no gasta un token. Límite conocido:
-  si algún código llamara a `getParameter` sobre un formulario, Tomcat lo leería
-  por su cuenta (tope `maxPostSize`), fuera del contador; hoy ninguna ruta lo hace.
+  rate limit: una petición demasiado grande no gasta un token. El 413 que arma el
+  advice también envía `Connection: close`. Lo que Tomcat lee por su cuenta queda
+  fuera del contador y se acota por configuración (`BodyLimitContainerConfigIT`):
+  `server.tomcat.max-swallow-size: 64KB` y `max-http-form-post-size` igual a
+  `ceto.web.max-body-bytes` (ninguna ruta lee formularios con `getParameter`).
+  `LimitedBodyRequest` respeta el contrato servlet (`getReader` y `getInputStream`
+  son excluyentes; un charset inválido es `UnsupportedEncodingException`, 4xx).
+  El contador solo cubre la lectura bloqueante: no se usa IO asíncrono
+  (`startAsync` + `ReadListener`), que lo esquivaría; quien lo introduzca debe
+  contar los bytes también ahí.
   `SecurityHeadersFilter` agrega `X-Content-Type-Options`, `Referrer-Policy` y
   `Content-Security-Policy` a toda respuesta, incluidos los errores de filtros
   e interceptor, y nunca hay `Access-Control-Allow-Origin`
-  (`SecurityHeadersHttpIT`, `SecurityHeadersServerErrorIT`).
+  (`SecurityHeadersHttpIT`, `SecurityHeadersServerErrorIT`). Los errores del
+  contenedor que ocurren antes de la cadena de filtros (400 por request line
+  inválida, 414, 431) no llevan estas cabeceras. `Strict-Transport-Security` no
+  se fija en la aplicación: lo agrega el proxy (Caddy), que es quien termina TLS.
 - **Errores neutros hacia afuera**: violación de restricción → 409 genérico;
   sin stack traces ni mensajes crudos de validación al usuario final. Guardas:
   un único `@RestControllerAdvice` (`ApiExceptionHandler`, tabla en
