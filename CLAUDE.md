@@ -836,17 +836,6 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   rotado, llamada con cookie y cabecera, 403 sin cabecera, logout y 401 con la cookie vieja).
   `AdminLoginPiiServerIT` cubre además una sesión desplazada y una expirada: ni la salida ni los
   cuerpos contienen ids de sesión ni tokens.
-- **Comando de aprovisionamiento del hash** (`AdminPasswordHashCommand`, X5.4, AUTH-14). Lee la
-  contraseña sin eco desde la terminal (dos veces) o, con la entrada redirigida, la primera línea
-  de la entrada estándar; **nunca** como argumento (cualquier argumento es código de salida 2 sin
-  leer nada); rechaza menos de 14 caracteres o más de 72 bytes UTF-8; imprime solo `{bcrypt}` más el
-  hash de costo 12, en una línea con LF, y borra los buffers que tuvieron la contraseña. No usa
-  logging. `AdminPasswordHashCommandTest` (reglas, centinela fuera de salida y error, buffers
-  borrados, el valor pasa `AdminCredentials.parse`) y `AdminPasswordHashCommandProcessTest` (JVM aparte:
-  códigos de salida y flujos). Cómo se invoca (`PropertiesLauncher`), el `$$` de compose y que cambiar la
-  contraseña es un hash nuevo más un despliegue: `docs/operacion-admin.md`. `BCryptPasswordEncoder`
-  convierte la contraseña a `String` por dentro, que no se puede borrar: la garantía es sobre los
-  buffers propios y sobre la salida, no sobre la memoria del proceso.
 - **Credencial de administración** (`ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, sin
   valor por defecto; el login y la política de sesión están en los dos puntos siguientes). Se
   valida en `AdminCredentials.parse` con mensajes fijos, no con Bean Validation:
