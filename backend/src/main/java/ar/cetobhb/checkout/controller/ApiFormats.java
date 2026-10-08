@@ -1,6 +1,7 @@
 package ar.cetobhb.checkout.controller;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -12,7 +13,7 @@ final class ApiFormats {
     }
 
     static String money(BigDecimal amount) {
-        return amount == null ? null : amount.setScale(2).toPlainString();
+        return amount == null ? null : amount.setScale(2, RoundingMode.UNNECESSARY).toPlainString();
     }
 
     static String instant(Instant instant) {

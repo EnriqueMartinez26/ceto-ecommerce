@@ -47,7 +47,9 @@ class ArchitectureRulesTest {
     @Test
     void layeringRuleFailsWhenNoLayerHasAnyClassSoARenameCannotEmptyIt() {
         assertThatThrownBy(() -> ArchitectureRules.LAYERS.check(fixtures("clean.domain")))
-                .isInstanceOf(AssertionError.class);
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("Layer '")
+                .hasMessageContaining("' is empty");
     }
 
     @Test
