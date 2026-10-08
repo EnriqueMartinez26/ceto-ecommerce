@@ -19,6 +19,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.MockMvcPrint;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -29,9 +31,16 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Error contract of the checkout endpoint (REQ-CHK-01, REQ-CHK-03, REQ-ERR-01/03): one golden file per error code,
  * the core reasons passed through, and no side effect behind a rejected request. Error bodies carry no {@code type}
- * member (verification U-14) and never an order id or number.
+ * member (verification U-14) and never an order id or number. Every error body is also {@code no-store}, enforced
+ * in the shared {@link #problem} helper.
+ *
+ * <p>Scope: these are the responses the {@code @RestControllerAdvice} produces. Container-level {@code /error}
+ * responses (a failure outside the dispatcher servlet, D-20261007-23) get neither {@code no-store} nor the advice
+ * shape, and are not covered here. MockMvc echo is silenced ({@code print = NONE}) so the captured output holds
+ * only what the server itself logs.
  */
 @ExtendWith(OutputCaptureExtension.class)
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 class CheckoutErrorsHttpIT extends AbstractHttpIT {
 
     private static final String PATH = "/api/checkout/orders";
@@ -79,18 +88,18 @@ class CheckoutErrorsHttpIT extends AbstractHttpIT {
         JsonNode body = json.readTree(stripRequestId(response));
         assertThat(body.get("code").asString()).isEqualTo(code);
         assertThat(body.has("type")).isFalse();
+        assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
         assertThat(response.getContentAsString(StandardCharsets.UTF_8))
                 .doesNotContain("orderNumber", "CETO-", "Maria", "5550000", "Calle Falsa");
         return response;
     }
 
-    /**
-     * Only the application's own log lines. The captured output also holds what MockMvc prints for every exchange
-     * (including the request body), which is test output and not something the server logs.
-     */
-    private static String applicationLog(CapturedOutput output) {
-        return output.getAll().lines().filter(l -> l.matches("^\\d{4}-\\d{2}-\\d{2}T\\S+ +[A-Z]+ .*"))
-                .collect(java.util.stream.Collectors.joining("\n"));
+    /** A rejected request leaves no order, no reservation and no consumed order number: the next one is number 1. */
+    private void assertNothingPersistedAndSequenceNotAdvanced() throws Exception {
+        assertThat(orderCount()).isZero();
+        assertThat(reserved()).isZero();
+        MockHttpServletResponse next = send(checkout(freshKey(), BODY));
+        assertThat(bodyOf(next).get("orderNumber").asString()).isEqualTo("CETO-000001");
     }
 
     private JsonNode bodyOf(MockHttpServletResponse response) throws Exception {
@@ -130,6 +139,7 @@ class CheckoutErrorsHttpIT extends AbstractHttpIT {
 
         problem(response, 415, "UNSUPPORTED_MEDIA_TYPE");
         assertMatchesGolden(response, "error-unsupported-media-type.json");
+        assertNothingPersistedAndSequenceNotAdvanced();
     }
 
     @Test
@@ -251,8 +261,7 @@ class CheckoutErrorsHttpIT extends AbstractHttpIT {
                 .content("buyer=x&lines=y".getBytes(StandardCharsets.UTF_8)));
 
         problem(response, 415, "UNSUPPORTED_MEDIA_TYPE");
-        assertThat(orderCount()).isZero();
-        assertThat(reserved()).isZero();
+        assertNothingPersistedAndSequenceNotAdvanced();
     }
 
     @Test
@@ -261,18 +270,16 @@ class CheckoutErrorsHttpIT extends AbstractHttpIT {
                 .header("Idempotency-Key", freshKey()).content(BODY.getBytes(StandardCharsets.UTF_8)));
 
         problem(response, 415, "UNSUPPORTED_MEDIA_TYPE");
-        assertThat(orderCount()).isZero();
+        assertNothingPersistedAndSequenceNotAdvanced();
     }
 
     @Test
-    void aTextPlainBodyNeverReachesThePlacementService() throws Exception {
-        send(post(PATH).contentType(MediaType.TEXT_PLAIN).accept(MediaType.APPLICATION_JSON)
-                .header("Idempotency-Key", freshKey()).content(BODY));
+    void aTextPlainBodyIsRejectedWith415AndNeverReachesThePlacementService() throws Exception {
+        MockHttpServletResponse response = send(post(PATH).contentType(MediaType.TEXT_PLAIN)
+                .accept(MediaType.APPLICATION_JSON).header("Idempotency-Key", freshKey()).content(BODY));
 
-        // Not even the order number sequence moved: the next valid order is number 1.
-        MockHttpServletResponse next = send(checkout(freshKey(), BODY));
-        assertThat(json.readTree(next.getContentAsString(StandardCharsets.UTF_8)).get("orderNumber").asString())
-                .isEqualTo("CETO-000001");
+        problem(response, 415, "UNSUPPORTED_MEDIA_TYPE");
+        assertNothingPersistedAndSequenceNotAdvanced();
     }
 
     // ---- malformed and structurally invalid bodies ----
@@ -347,8 +354,15 @@ class CheckoutErrorsHttpIT extends AbstractHttpIT {
             assertThat(response.getContentAsString(StandardCharsets.UTF_8))
                     .doesNotContain("SentinelNameZXQ", "9998877", "SentinelAddressZXQ", "SentinelPriceZXQ", "MARS");
         }
-        assertThat(applicationLog(output)).doesNotContain("SentinelNameZXQ", "9998877", "SentinelAddressZXQ",
-                "SentinelPriceZXQ");
+        // A logged exchange carrying the same sentinel data, so the assertion below cannot pass on an empty log:
+        // the 400s above log at DEBUG, an idempotency conflict logs its code at INFO.
+        String valid = invalidZone.replace("MARS", "RESTO_DEL_PAIS");
+        String key = freshKey();
+        assertThat(send(checkout(key, valid)).getStatus()).isEqualTo(201);
+        assertThat(send(checkout(key, valid.replace("\"quantity\":1", "\"quantity\":2"))).getStatus()).isEqualTo(409);
+
+        assertThat(output.getAll()).contains("IDEMPOTENCY_CONFLICT").doesNotContain("SentinelNameZXQ", "9998877", "SentinelAddressZXQ",
+                "SentinelPriceZXQ", "MARS");
     }
 
     // ---- Cache-Control on errors (REQ-CHK-02) ----
@@ -381,8 +395,8 @@ class CheckoutErrorsHttpIT extends AbstractHttpIT {
         // Only the requested product over the unconfigured base is listed, not the healthy line (id 2).
         assertThat(parsed.get("productIds")).hasSize(1);
         assertThat(parsed.get("productIds").get(0).asLong()).isEqualTo(unconfigured);
-        assertThat(applicationLog(output)).contains("ERROR")
-                .contains("StockNotConfiguredException baseProductId=" + unconfigured)
+        assertThat(output.getAll()).contains("ERROR")
+                .contains("StockNotConfiguredException baseProductIds=[" + unconfigured + "]")
                 .doesNotContain("5550000", "Maria", "Calle Falsa");
         assertThat(orderCount()).isZero();
         assertThat(reserved()).isZero();
