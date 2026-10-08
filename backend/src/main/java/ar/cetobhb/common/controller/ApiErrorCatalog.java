@@ -7,6 +7,7 @@ import ar.cetobhb.common.domain.RateLimitedException;
 import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
+import ar.cetobhb.inventory.domain.StockNotAdjustableException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
 import ar.cetobhb.orders.domain.CheckoutInProgressException;
 import ar.cetobhb.orders.domain.IdempotencyConflictException;
@@ -71,6 +72,8 @@ final class ApiErrorCatalog {
             // No public endpoint reaches these three yet; explicit rows keep a future endpoint from returning 500.
             Map.entry(IllegalOrderTransitionException.class, CONFLICT),
             Map.entry(StockAlreadyConfiguredException.class, CONFLICT),
+            // Admin stock adjustment of a combo or of a product without a stock row (AINV-04): WARN via CONFLICT.
+            Map.entry(StockNotAdjustableException.class, CONFLICT),
             Map.entry(OrderNotFoundException.class, NOT_FOUND),
             Map.entry(ProductNotFoundException.class, NOT_FOUND),
             Map.entry(ReservationNotExpiredException.class, INTERNAL));

@@ -18,6 +18,7 @@ import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.common.web.BodyTooLargeException;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
+import ar.cetobhb.inventory.domain.StockNotAdjustableException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
 import ar.cetobhb.orders.domain.CheckoutInProgressException;
 import ar.cetobhb.orders.domain.IdempotencyConflictException;
@@ -113,6 +114,7 @@ class ApiExceptionHandlerTest {
                 Arguments.of(new IllegalOrderTransitionException(OrderStatus.PAGADO, OrderStatus.PAGO_PENDIENTE), 409,
                         "CONFLICT"),
                 Arguments.of(new StockAlreadyConfiguredException(7L), 409, "CONFLICT"),
+                Arguments.of(new StockNotAdjustableException(7L), 409, "CONFLICT"),
                 Arguments.of(new OrderNotFoundException(9L), 404, "NOT_FOUND"),
                 Arguments.of(new ProductNotFoundException(9L), 404, "NOT_FOUND"),
                 Arguments.of(new ReservationNotExpiredException(), 500, "INTERNAL_ERROR"),
