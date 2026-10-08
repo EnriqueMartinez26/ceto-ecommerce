@@ -23,7 +23,11 @@ public enum SecurityProblem {
     FORBIDDEN(HttpStatus.FORBIDDEN, "FORBIDDEN", "The request is not allowed."),
 
     /** The Security firewall refused the spelling of the path. Same row as an unreadable body (400 MALFORMED_REQUEST). */
-    REJECTED_REQUEST(HttpStatus.BAD_REQUEST, "MALFORMED_REQUEST", "The request could not be read.");
+    REJECTED_REQUEST(HttpStatus.BAD_REQUEST, "MALFORMED_REQUEST", "The request could not be read."),
+
+    /** The login body is not form-urlencoded. Same row as the advice's 415 for an unsupported {@code Content-Type}. */
+    UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE",
+            "The content type is not supported.");
 
     private final HttpStatus status;
     private final String code;
