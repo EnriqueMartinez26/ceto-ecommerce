@@ -12,7 +12,6 @@ import ar.cetobhb.support.AbstractHttpIT;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -354,7 +353,6 @@ class CheckoutErrorsHttpIT extends AbstractHttpIT {
 
     // ---- Cache-Control on errors (REQ-CHK-02) ----
 
-    @Disabled("enabled by the S3b-1 review fix: no-store on error responses")
     @Test
     void errorResponsesOfTheCheckoutEndpointAreNeverCached() throws Exception {
         MockHttpServletResponse badRequest = send(checkout(null, BODY));
@@ -380,9 +378,9 @@ class CheckoutErrorsHttpIT extends AbstractHttpIT {
 
         problem(response, 409, "PRODUCT_UNAVAILABLE");
         JsonNode parsed = json.readTree(response.getContentAsString(StandardCharsets.UTF_8));
-        assertThat(parsed.get("productIds")).hasSize(2);
-        assertThat(parsed.get("productIds").get(0).asLong()).isEqualTo(2L);
-        assertThat(parsed.get("productIds").get(1).asLong()).isEqualTo(unconfigured);
+        // Only the requested product over the unconfigured base is listed, not the healthy line (id 2).
+        assertThat(parsed.get("productIds")).hasSize(1);
+        assertThat(parsed.get("productIds").get(0).asLong()).isEqualTo(unconfigured);
         assertThat(applicationLog(output)).contains("ERROR")
                 .contains("StockNotConfiguredException baseProductId=" + unconfigured)
                 .doesNotContain("5550000", "Maria", "Calle Falsa");
