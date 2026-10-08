@@ -29,6 +29,6 @@ class BodyLimitContainerConfigIT extends AbstractHttpIT {
 
     @Test
     void tomcatParsesNoMoreFormBytesThanTheApplicationBodyLimit() {
-        assertThat(tomcat.getMaxHttpFormPostSize().toBytes()).isLessThanOrEqualTo(web.maxBodyBytes());
+        assertThat(tomcat.getMaxHttpFormPostSize().toBytes()).isEqualTo(web.maxBodyBytes());
     }
 }
