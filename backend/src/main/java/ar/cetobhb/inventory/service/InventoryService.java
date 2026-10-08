@@ -152,7 +152,7 @@ public class InventoryService {
      */
     @Transactional
     public StockAdjustment adjustBy(long productId, int delta) {
-        if (catalog.findAny(productId).isCombo()) {
+        if (catalog.findAnyIncludingInactive(productId).isCombo()) {
             throw new StockNotAdjustableException(productId);
         }
         InventoryStock row = stock.lockByProductId(productId)

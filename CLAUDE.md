@@ -197,10 +197,12 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    `reserved`, y un combo o un producto sin fila de stock no se ajusta
    (`StockNotAdjustableException`, nunca se crea la fila). Guardas:
    `InventoryStockAdjustByTest`, `InventoryServiceAdjustByIT`; evidencia por
-   mutación (2026-10-08): quitar el chequeo de Java hizo fallar ambos con una
-   violación de `inventory_stock_rule1_ck` en lugar de `InsufficientStockException`.
-   Nadie fuera de `InventoryService` puede llamar al ajuste absoluto `adjust`
-   (`AbsoluteAdjustNotReachableTest`).
+   mutación (2026-10-08): quitar el chequeo de Java hizo fallar
+   `InventoryServiceAdjustByIT` con una violación de `inventory_stock_rule1_ck`
+   (la base frena, pero no con `InsufficientStockException`) y fallar el test
+   unitario `InventoryStockAdjustByTest` porque no se lanzó ninguna excepción.
+   Nadie fuera de `InventoryService` puede llamar al ajuste absoluto `adjust`,
+   ni directamente ni con una referencia a método (`AbsoluteAdjustNotReachableTest`).
 2. **Un combo no tiene stock propio.** Es un producto con precio propio y una
    relación "N unidades del producto base". Su disponible se deriva:
    `⌊(on_hand − reserved) / N⌋`. "Agotado" se calcula, no se guarda como

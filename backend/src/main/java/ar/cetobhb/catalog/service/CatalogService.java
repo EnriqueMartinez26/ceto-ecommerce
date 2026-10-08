@@ -68,7 +68,7 @@ public class CatalogService {
 
     /** Any product by id, active or not (admin use); a missing id is a {@link ProductNotFoundException}. */
     @Transactional(readOnly = true)
-    public ProductSnapshot findAny(long id) {
+    public ProductSnapshot findAnyIncludingInactive(long id) {
         return products.findById(id).map(Product::toSnapshot).orElseThrow(() -> new ProductNotFoundException(id));
     }
 
