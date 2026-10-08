@@ -12,13 +12,13 @@ import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Test-only wiring for the admin probe contexts: registers {@link AdminProbeController} and stamps every request that
+ * Test-only wiring for the admin probe contexts: registers {@link AdminProbeController} and {@link AdminProbeAnyMethodController} and stamps every request that
  * enters the administration chain with a marker, so "this request went through the admin chain" no longer depends on
  * an attribute that some other filter happens to leave behind. The marker filter is put first in the chain by wrapping
  * the chain bean, so production code carries no test seam.
  */
 @TestConfiguration(proxyBeanMethods = false)
-@Import(AdminProbeController.class)
+@Import({AdminProbeController.class, AdminProbeAnyMethodController.class})
 public class AdminProbeTestConfig {
 
     /** Request attribute set by the first filter of the administration chain. */

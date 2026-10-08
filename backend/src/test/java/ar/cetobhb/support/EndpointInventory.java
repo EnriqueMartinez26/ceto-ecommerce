@@ -33,6 +33,12 @@ public final class EndpointInventory {
 
     public static final String ADMIN_PREFIX = "/api/admin/";
 
+    /** What a mapping with no method answers to, in the order the generated test tries them. */
+    private static final List<String> ANY_METHODS = List.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
+
+    /** Methods a CSRF filter does not check, so the generated call carries no token. */
+    private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS");
+
     private EndpointInventory() {
     }
 
@@ -87,17 +93,16 @@ public final class EndpointInventory {
 
     /**
      * An anonymous call to a mapped route: path variables become {@code 1}, and a mutating method carries a VALID
-     * CSRF token, so the only thing that can stop it is the missing login. A mapping with no method is tried with the
-     * methods a client could use.
+     * CSRF token, so the only thing that can stop it is the missing login. A mapping with no method answers every
+     * method, so it is tried with all the ones a client could use, HEAD and OPTIONS included.
      */
     public static List<MockHttpServletRequestBuilder> anonymousCalls(Mapped route) {
         String path = concretePath(route);
-        List<String> methods = route.method().equals("ANY") ? List.of("GET", "POST", "PUT", "DELETE")
-                : List.of(route.method());
+        List<String> methods = route.method().equals("ANY") ? ANY_METHODS : List.of(route.method());
         List<MockHttpServletRequestBuilder> calls = new ArrayList<>();
         for (String method : methods) {
             MockHttpServletRequestBuilder call = MockMvcRequestBuilders.request(HttpMethod.valueOf(method), path);
-            if (!method.equals("GET") && !method.equals("HEAD")) {
+            if (!SAFE_METHODS.contains(method)) {
                 call = call.with(csrf());
             }
             calls.add(call);
@@ -105,8 +110,43 @@ public final class EndpointInventory {
         return calls;
     }
 
-    /** The concrete path used for a route (what {@code instance} must equal in the 401 body). */
+    /**
+     * The concrete path used for a route (what {@code instance} must equal in the 401 body): every path variable, with
+     * or without a regex ({@code {id}}, {@code {id:\d{3}}}), becomes {@code 1}. A pattern with a wildcard ({@code *},
+     * {@code **}, {@code ?}, {@code {*rest}}), an empty or unclosed variable cannot be turned into one path, so it
+     * fails loudly instead of producing a path that would make the generated test check nothing.
+     */
     public static String concretePath(Mapped route) {
-        return route.pattern().replaceAll("\\{[^/}]+}", "1");
+        String pattern = route.pattern();
+        StringBuilder path = new StringBuilder();
+        int i = 0;
+        while (i < pattern.length()) {
+            char c = pattern.charAt(i);
+            if (c == '*' || c == '?') {
+                throw new AssertionError("Unsupported wildcard in the route pattern: " + pattern);
+            }
+            if (c != '{') {
+                path.append(c);
+                i++;
+                continue;
+            }
+            int depth = 0;
+            int end = -1;
+            for (int j = i; j < pattern.length(); j++) {
+                if (pattern.charAt(j) == '{') {
+                    depth++;
+                } else if (pattern.charAt(j) == '}' && --depth == 0) {
+                    end = j;
+                    break;
+                }
+            }
+            String variable = end < 0 ? "" : pattern.substring(i + 1, end);
+            if (end < 0 || variable.isEmpty() || variable.startsWith("*") || variable.startsWith(":")) {
+                throw new AssertionError("Unsupported or malformed path variable in the route pattern: " + pattern);
+            }
+            path.append('1');
+            i = end + 1;
+        }
+        return path.toString();
     }
 }

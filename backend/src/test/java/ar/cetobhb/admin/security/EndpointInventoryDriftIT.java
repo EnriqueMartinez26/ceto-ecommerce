@@ -29,13 +29,14 @@ class EndpointInventoryDriftIT extends AbstractAdminProbeHttpIT {
         assertThat(EndpointInventory.unexpected(context)).containsExactlyInAnyOrder(
                 "GET /api/admin/probe", "POST /api/admin/probe", "PUT /api/admin/probe", "PATCH /api/admin/probe",
                 "DELETE /api/admin/probe", "GET /api/admin/probe/{x}", "POST /api/admin/probe/{x}",
-                "PUT /api/admin/probe/{x}", "PATCH /api/admin/probe/{x}", "DELETE /api/admin/probe/{x}");
+                "PUT /api/admin/probe/{x}", "PATCH /api/admin/probe/{x}", "DELETE /api/admin/probe/{x}",
+                "ANY /api/admin/probe-any/{id:\\d+}");
     }
 
     @Test
     void everyGeneratedAnonymousCallToAMappedNonPublicRouteIsThe401Golden() throws Exception {
         List<EndpointInventory.Mapped> routes = EndpointInventory.nonPublicRoutes(context);
-        assertThat(routes).as("the fixture maps routes").hasSize(10);
+        assertThat(routes).as("the fixture maps routes").hasSize(11);
 
         for (EndpointInventory.Mapped route : routes) {
             for (MockHttpServletRequestBuilder call : EndpointInventory.anonymousCalls(route)) {
@@ -47,6 +48,33 @@ class EndpointInventoryDriftIT extends AbstractAdminProbeHttpIT {
                         EndpointInventory.concretePath(route));
             }
         }
+    }
+
+    /**
+     * A mapping with no declared method answers every method, so the generator must try all of them: GET, POST, PUT,
+     * PATCH, DELETE, HEAD and OPTIONS each give the 401 and none reaches the handler. MockMvc does not strip the body of
+     * a HEAD response the way a real container does, so the "no body on HEAD" fact is pinned on the real server in
+     * {@code AdminAnonymousMethodsServerIT}.
+     */
+    @Test
+    void aRouteWithNoDeclaredMethodGetsA401ForEveryMethodIncludingHeadAndOptions() throws Exception {
+        EndpointInventory.Mapped any = EndpointInventory.nonPublicRoutes(context).stream()
+                .filter(route -> route.method().equals("ANY")).findFirst().orElseThrow();
+
+        List<MockHttpServletRequestBuilder> calls = EndpointInventory.anonymousCalls(any);
+        assertThat(calls).hasSize(7);
+        List<String> methods = new java.util.ArrayList<>();
+        for (MockHttpServletRequestBuilder call : calls) {
+            MockHttpServletResponse response = send(call);
+            String method = call.buildRequest(new org.springframework.mock.web.MockServletContext()).getMethod();
+            methods.add(method);
+
+            assertThat(response.getStatus()).as(method).isEqualTo(401);
+            assertThat(response.getContentAsString()).as(method).doesNotContain(AdminProbeController.SENTINEL);
+            assertThat(response.getHeader("Allow")).as("%s must not advertise methods", method).isNull();
+            assertThat(response.getHeader("Access-Control-Allow-Origin")).as(method).isNull();
+        }
+        assertThat(methods).containsExactly("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
     }
 
     @Test
