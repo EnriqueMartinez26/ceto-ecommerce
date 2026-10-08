@@ -207,7 +207,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    `InventoryService.levels` (contadores por producto, `InventoryServiceLevelsIT`)
    y `InventoryService.reservationMismatches` (una sola sentencia de solo lectura
    que compara `reserved` con las líneas de pedidos `PAGO_PENDIENTE`, con
-   `reserved` nulo si falta la fila de stock, `ReservationMismatchIT`).
+   `reserved` nulo si falta la fila de stock, `ReservationMismatchIT`, que fija
+   la foto del combo, la exclusión de pagados y cancelados, el vencido aún no
+   cancelado y el orden por id). Ambas rechazan entradas sin cota con
+   `IllegalArgumentException` (límite de 1 a 500; hasta 1000 ids,
+   `InventoryServiceBoundsTest`).
 2. **Un combo no tiene stock propio.** Es un producto con precio propio y una
    relación "N unidades del producto base". Su disponible se deriva:
    `⌊(on_hand − reserved) / N⌋`. "Agotado" se calcula, no se guarda como
