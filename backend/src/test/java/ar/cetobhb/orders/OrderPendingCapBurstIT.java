@@ -6,12 +6,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.domain.Buyer;
+import ar.cetobhb.orders.domain.IdempotencyConflictException;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
 import ar.cetobhb.orders.domain.ShippingZone;
 import ar.cetobhb.orders.domain.TooManyPendingOrdersException;
+import ar.cetobhb.orders.repository.OrderRepository;
 import ar.cetobhb.orders.service.OrderPlacementService;
 import ar.cetobhb.orders.service.PlacedOrder;
 import ar.cetobhb.support.AbstractPostgresIT;
+import ar.cetobhb.support.BuyerFixtures;
 import ar.cetobhb.support.BurstRunner;
 import ar.cetobhb.support.BurstRunner.Outcome;
 import ar.cetobhb.support.BurstRunner.Report;
@@ -21,12 +24,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Concurrency proof of the pending-orders cap (REQ-ABU-01, design AD-H9) with real commits and no @Transactional on
@@ -51,6 +60,12 @@ class OrderPendingCapBurstIT extends AbstractPostgresIT {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private OrderRepository orders;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private long base;
 
@@ -159,5 +174,49 @@ class OrderPendingCapBurstIT extends AbstractPostgresIT {
 
         assertThat(outcomes).allMatch(Outcome::succeeded);
         assertThat(orderCount()).isEqualTo(THREADS);
+    }
+
+    @Test
+    void aReplayNeverWaitsForTheLockOfItsPhone() {
+        UUID key = UUID.randomUUID();
+        PlacedOrder first = placement.placeOrder(command(key, PHONE));
+        TransactionTemplate holder = new TransactionTemplate(transactionManager);
+
+        PlacedOrder replay = holder.execute(status -> {
+            orders.lockBuyerPhone(PHONE);
+            try {
+                // Another thread: this one holds the phone lock until the lambda returns.
+                return CompletableFuture.supplyAsync(() -> placement.placeOrder(command(key, PHONE)))
+                        .get(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            } catch (ExecutionException | TimeoutException e) {
+                throw new AssertionError("the replay waited for (or failed on) the phone lock", e);
+            }
+        });
+
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.orderId()).isEqualTo(first.orderId());
+    }
+
+    @RepeatedTest(5)
+    void oneKeyAcrossManyPhonesInABurstCreatesOneOrderAndConflictsTheRest() {
+        UUID key = UUID.randomUUID();
+        List<Callable<PlacedOrder>> tasks = new ArrayList<>();
+        for (int i = 0; i < THREADS; i++) {
+            PlaceOrderCommand command = command(key, BuyerFixtures.freshPhone());
+            tasks.add(() -> placement.placeOrder(command));
+        }
+
+        Report<PlacedOrder> report = BurstRunner.runMeasured(tasks);
+        List<Outcome<PlacedOrder>> outcomes = report.outcomes();
+
+        assertThat(report.maxInFlight()).isGreaterThan(1);
+        assertThat(outcomes.stream().filter(Outcome::succeeded)).hasSize(1);
+        assertThat(outcomes.stream().filter(o -> !o.succeeded()).map(Outcome::error))
+                .hasSize(THREADS - 1).allMatch(e -> e instanceof IdempotencyConflictException);
+        assertThat(orderCount()).isEqualTo(1);
+        assertThat(reserved()).isEqualTo(1);
     }
 }
