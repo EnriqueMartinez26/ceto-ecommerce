@@ -20,9 +20,12 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerMapping;
+import org.springframework.web.servlet.function.RouterFunction;
+import org.springframework.web.servlet.function.support.RouterFunctionMapping;
 import org.springframework.web.servlet.handler.AbstractUrlHandlerMapping;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfoHandlerMapping;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -73,7 +76,7 @@ class EndpointInventoryIT extends AbstractHttpIT {
     @Test
     void theApiRoutesAreExactlyTheThreePublicOnes() {
         Set<String> routes = new TreeSet<>();
-        mappings().stream().filter(m -> !BasicErrorController.class.isAssignableFrom(m.handler()))
+        mappings().stream().filter(m -> m.handler() != BasicErrorController.class)
                 .forEach(m -> routes.add(m.route()));
 
         assertThat(routes).containsExactlyInAnyOrderElementsOf(API_ROUTES);
@@ -82,20 +85,44 @@ class EndpointInventoryIT extends AbstractHttpIT {
     @Test
     void theOnlyOtherMappingIsBootsErrorEndpointAndNothingElseSharesItsHandler() {
         List<Mapped> boot = mappings().stream()
-                .filter(m -> BasicErrorController.class.isAssignableFrom(m.handler())).toList();
+                .filter(m -> m.handler() == BasicErrorController.class).toList();
 
         // BasicErrorController maps /error twice (text/html and everything else), for any HTTP method.
         assertThat(boot).isNotEmpty().allSatisfy(m -> assertThat(m.route()).isEqualTo("ANY /error"));
         assertThat(boot).extracting(Mapped::handler).containsOnly(BasicErrorController.class);
     }
 
+    /** The URL-based mappings Boot and Spring register by default; each must have nothing mapped. */
+    private static final Set<String> EMPTY_URL_MAPPINGS = Set.of(
+            "org.springframework.web.servlet.handler.BeanNameUrlHandlerMapping",
+            "org.springframework.web.servlet.handler.SimpleUrlHandlerMapping",
+            "org.springframework.boot.webmvc.autoconfigure.WelcomePageHandlerMapping",
+            "org.springframework.boot.webmvc.autoconfigure.WelcomePageNotAcceptableHandlerMapping");
+
     @Test
-    void thereAreNoUrlBasedMappingsSuchAsStaticResourcesOrAWelcomePage() {
-        for (HandlerMapping mapping : context.getBeansOfType(HandlerMapping.class).values()) {
-            if (mapping instanceof AbstractUrlHandlerMapping urlMapping) {
-                assertThat(urlMapping.getHandlerMap()).as(mapping.getClass().getSimpleName()).isEmpty();
+    void everyHandlerMappingBeanIsOfAnAllowlistedTypeAndTheOthersAreEmpty() {
+        Map<String, HandlerMapping> all = context.getBeansOfType(HandlerMapping.class);
+        assertThat(all).isNotEmpty();
+        all.forEach((name, mapping) -> {
+            Class<?> type = mapping.getClass();
+            if (type == RequestMappingHandlerMapping.class) {
+                return;
             }
-        }
+            if (type == RouterFunctionMapping.class) {
+                assertThat(((RouterFunctionMapping) mapping).getRouterFunction())
+                        .as("%s has no router function", name).isNull();
+                return;
+            }
+            assertThat(type.getName()).as("handler mapping bean '%s'", name).isIn(EMPTY_URL_MAPPINGS);
+            AbstractUrlHandlerMapping urlMapping = (AbstractUrlHandlerMapping) mapping;
+            assertThat(urlMapping.getHandlerMap()).as("%s handler map", name).isEmpty();
+            assertThat(urlMapping.getRootHandler()).as("%s welcome page / root handler", name).isNull();
+        });
+    }
+
+    @Test
+    void thereIsNoFunctionalRouterFunctionBean() {
+        assertThat(context.getBeanNamesForType(RouterFunction.class)).isEmpty();
     }
 
     @Test
