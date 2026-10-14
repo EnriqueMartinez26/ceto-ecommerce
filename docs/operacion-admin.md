@@ -215,4 +215,6 @@ próximo intento permitido; con el cubo vacío, 90) y no calcula ningún hash.
 Los valores están en `ceto.admin.login-rate-limit` (`burst` 1 a 20, `refill-interval-seconds`
 30 a 3600, `max-tracked-clients`, `overflow-burst`, `overflow-refill-per-hour`; un valor
 fuera de rango detiene el arranque) y se cambian en `application.yml`. Los 429 se
-registran solo en DEBUG y sin la IP ni el usuario.
+registran solo en DEBUG y sin la IP ni el usuario. Los logs de Spring Security
+quedan en WARN: a nivel DEBUG imprimen la cuenta, la IP y el id de sesión
+(D-20261008-44); no subir esa categoría en producción.

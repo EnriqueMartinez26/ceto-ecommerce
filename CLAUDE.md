@@ -819,7 +819,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   dos ITs; ponerlo después del CSRF, 3; después del guard de forma, 2; después del filtro que autentica, 9. Residual
   aceptado: con `TRUSTED_PROXIES` mal puesto todas las IPs son la del proxy y comparten UN cubo (incluida
   la dueña), y con la tabla de 10000 clientes llena las IPs nuevas comparten el cubo de desborde.
-  Este límite ya no impide desplegar; el nivel de log de Security (X6.4) sigue pendiente. Siguen siendo
+  Lo que ya no impide desplegar: este límite y el nivel de log de Security (siguiente punto). Siguen siendo
   requisitos de despliegue `TRUSTED_PROXIES`, Caddy (`docs/API.md`, Despliegue) y el rol de la base con el que conecta la
   aplicación (límite del trigger de auditoría, §3).
 - **Cierre de sesión, fijación y registros del login.** `POST /api/admin/logout` exige token
@@ -841,7 +841,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   2026-10-08). Hallazgo: con `org.springframework.security` en DEBUG Spring Security imprime el
   nombre de la cuenta autenticada, la dirección del cliente y el id de la sesión (`Set
   SecurityContextHolder to ...`, `Invalidated session ...`); un control positivo del mismo IT lo
-  fija. Lo que lo apaga es dejar esa categoría en WARN (tarea X6.4, pendiente en este corte).
+  fija. Lo apaga `logging.level.org.springframework.security: WARN` en `application.yml` (X6.4): el nivel
+  efectivo y heredado por las subcategorías lo fija `AdminLoginPiiServerIT`, que además sube el logger raíz
+  a DEBUG y exige que no aparezcan la cuenta, `RemoteIpAddress=` ni el id de sesión, y recorre un login
+  limitado (el 429 y su línea de DEBUG no contienen la IP, la cuenta ni la clave). Mutación (2026-10-14): sin la
+  línea de `application.yml` fallan esos dos tests.
 - **Política de la sesión de administración** (X5). *Cookie*: `AdminSessionGuard` (lee el
   `Environment` efectivo, como `WebConfig`) detiene el arranque, en cualquier perfil, si
   `server.servlet.session.cookie.secure` o `http-only` no son `true`, `same-site` no es `strict` o
