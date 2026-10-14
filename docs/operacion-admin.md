@@ -274,3 +274,14 @@ en la aplicación en marcha. Esa vía no existe hoy: la aplicación no tiene act
 (`/loggers`) ni otra ruta que cambie un nivel. Tampoco lee un archivo propio de logback
 (el proyecto no trae ninguno). Un nombre de nivel que Spring Boot no conoce lo rechaza
 Boot mismo al arrancar.
+
+### El arranque se niega si se silencian de menos los logs con datos de la compradora
+
+`PiiLogLevelGuard` (D-20261008-47) hace lo mismo para las categorías que imprimen nombre,
+teléfono o dirección: el SQL y los valores enlazados de Hibernate (`org.hibernate.SQL`,
+`org.hibernate.orm.jdbc.bind`, `.extract`), las entidades que Hibernate lista en cada flush
+(`org.hibernate.orm.core`), la línea de la petición de `DispatcherServlet`, los valores
+rechazados de Spring MVC y los escritores de cuerpos. Cada una queda en el nivel de
+`application.yml` o más alto; subir una categoría padre (`org.hibernate`, `org.springframework.web`,
+la raíz) no las levanta. Tampoco arranca con `SERVER_TOMCAT_ACCESSLOG_ENABLED=true`: el access
+log por defecto imprime la query string de la petición (`?q=<teléfono>`).

@@ -571,7 +571,7 @@ Golden: `backend/src/test/resources/contract/admin-error-not-found.json`
 
 Todo error es `application/problem+json` con esta forma: `title`, `status`,
 `detail` (texto fijo en inglés, nunca un valor de la petición), `instance` (la
-ruta pedida; ver la excepción de `/api/admin/*` más abajo), `code` (estable, para decidir qué mostrar) y `requestId`. Se suma
+ruta pedida, hasta 256 caracteres: una más larga vale `/api/admin` bajo `/api/admin/` y `/` en el resto, para que el cuerpo no crezca con la petición; un id numérico de la ruta no es dato personal; ver la excepción de `/api/admin/*` más abajo), `code` (estable, para decidir qué mostrar) y `requestId`. Se suma
 `reason` (solo en `VALIDATION_ERROR`) o `productIds` (solo en
 `PRODUCT_UNAVAILABLE`). Nunca hay `type`, stack trace ni mensajes de excepción.
 Los goldens de abajo no incluyen `requestId` porque el test lo compara aparte

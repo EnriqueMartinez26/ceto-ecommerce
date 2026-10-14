@@ -22,4 +22,9 @@ public record StockEntry(long productId, String name, boolean active, Long combo
     public boolean isCombo() {
         return comboBaseProductId != null;
     }
+
+    @Override
+    public String toString() {
+        return "StockEntry[productId=" + productId + ", configured=" + configured + "]";
+    }
 }

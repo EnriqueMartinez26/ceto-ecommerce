@@ -362,6 +362,26 @@ class ApiExceptionHandlerTest {
                 .andExpect(jsonPath("$.code").value("NOT_ACCEPTABLE"));
     }
 
+    /** Review fix batch 9: the echoed path is bounded like the Security problems (256), so the body does not grow with the request. */
+    @Test
+    void instanceIsBoundedTo256CharactersAndLongerPathsFallBackToRoot() throws Exception {
+        String atTheCap = "/" + "a".repeat(255);
+        String overTheCap = "/" + "a".repeat(256);
+
+        mvc.perform(get("/boom").with(request -> {
+            request.setRequestURI(atTheCap);
+            return request;
+        })).andExpect(status().isNotFound()).andExpect(jsonPath("$.instance").value(atTheCap));
+        mvc.perform(get("/boom").with(request -> {
+            request.setRequestURI(overTheCap);
+            return request;
+        })).andExpect(status().isNotFound()).andExpect(jsonPath("$.instance").value("/"));
+        mvc.perform(get("/boom").with(request -> {
+            request.setRequestURI("/api/admin/" + "a".repeat(300));
+            return request;
+        })).andExpect(status().isNotFound()).andExpect(jsonPath("$.instance").value("/api/admin"));
+    }
+
     @Test
     void problemBodyHasNoTypeMember() throws Exception {
         THROWN.set(new RuntimeException(SECRET));

@@ -4,6 +4,7 @@ import static ar.cetobhb.support.CatalogFixtures.product;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ar.cetobhb.catalog.service.CatalogService;
+import ar.cetobhb.common.config.PiiLogLevelGuard;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.domain.Buyer;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
@@ -28,7 +29,8 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 
 /**
  * The HTTP read paths of the order list and detail never write buyer data or the search text to the log (AOR-08,
- * AUTH-12), with the application and web loggers on DEBUG. The detail BODY carries the buyer's data by design; every
+ * AUTH-12), with the application, web and Hibernate loggers on DEBUG and then on TRACE (a PARENT category at TRACE must not
+ * lift a silenced child: the child keeps its own explicit level). The detail BODY carries the buyer's data by design; every
  * error body and every list row must not carry the address, and no error body repeats the search text, the status
  * or the id that was sent.
  */
@@ -39,7 +41,7 @@ class AdminOrdersPiiServerIT extends AbstractAdminServerIT {
     private static final String PHONE = "+5493515557777";
     private static final String ADDRESS = "SentinelReadStreetZ 7777";
     private static final String SEARCH_SENTINEL = "SentinelSearchTextZ";
-    private static final String[] CATEGORIES = {"ar.cetobhb", "org.springframework.web"};
+    private static final String[] CATEGORIES = {"ar.cetobhb", "org.springframework.web", "org.hibernate"};
 
     @Autowired
     private CatalogService catalog;
@@ -52,6 +54,16 @@ class AdminOrdersPiiServerIT extends AbstractAdminServerIT {
 
     @Autowired
     private LoggingSystem loggingSystem;
+
+    /** Every silenced child of those parents (PiiLogLevelGuard.SHIPPED_LEVELS) keeps its own explicit level. */
+    private void assertSilencedChildrenKeepTheirLevel() {
+        PiiLogLevelGuard.SHIPPED_LEVELS.forEach((category, level) -> {
+            assertThat(loggingSystem.getLoggerConfiguration(category).getConfiguredLevel()).as(category)
+                    .isEqualTo(LogLevel.valueOf(level));
+            assertThat(org.slf4j.LoggerFactory.getLogger(category).isTraceEnabled()).as(category + " trace").isFalse();
+            assertThat(org.slf4j.LoggerFactory.getLogger(category).isDebugEnabled()).as(category + " debug").isFalse();
+        });
+    }
 
     private final List<LogLevel> configured = new ArrayList<>();
 
@@ -94,6 +106,20 @@ class AdminOrdersPiiServerIT extends AbstractAdminServerIT {
     @Test
     void listAndDetailReadsLeaveNoBuyerDataOrSearchTextInTheLogOrInAnyErrorBody(CapturedOutput output)
             throws Exception {
+        readsLeaveNoTrace(output, false);
+    }
+
+    /** The same flows with the parents at TRACE: bound SQL values and message bodies print only if a child is lifted. */
+    @Test
+    void theSameReadsWithTheParentsAtTraceLeaveNoBuyerDataEither(CapturedOutput output) throws Exception {
+        for (String category : CATEGORIES) {
+            loggingSystem.setLogLevel(category, LogLevel.TRACE);
+        }
+        readsLeaveNoTrace(output, true);
+    }
+
+    private void readsLeaveNoTrace(CapturedOutput output, boolean trace) throws Exception {
+        assertSilencedChildrenKeepTheirLevel();
         long base = catalog.createBase(product("Frasco", "100.00")).id();
         inventory.createStock(base, 10);
         long id = placement.placeOrder(new PlaceOrderCommand(UUID.randomUUID().toString(),
@@ -131,6 +157,11 @@ class AdminOrdersPiiServerIT extends AbstractAdminServerIT {
 
         assertThat(output.getAll()).as("positive control: the DEBUG lines are in the capture")
                 .contains("VALIDATION_ERROR");
+        if (trace) {
+            assertThat(output.getAll()).as("positive control: TRACE lines of the parents are in the capture")
+                    .contains("TRACE");
+        }
+        assertSilencedChildrenKeepTheirLevel();
         assertThat(output.getAll()).doesNotContain(NAME).doesNotContain(PHONE).doesNotContain("5557777")
                 .doesNotContain(ADDRESS).doesNotContain(SEARCH_SENTINEL).doesNotContain("SentinelRead");
     }

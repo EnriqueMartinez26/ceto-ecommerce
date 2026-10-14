@@ -19,4 +19,11 @@ public record NewOrderLine(
         BigDecimal unitPrice,
         int quantity,
         long baseProductId,
-        int baseUnitsPerUnit) {}
+        int baseUnitsPerUnit) {
+
+    /** The product name is not printed (CLAUDE.md section 5: no product or buyer data in logs). */
+    @Override
+    public String toString() {
+        return "NewOrderLine[productId=" + productId + ", quantity=" + quantity + "]";
+    }
+}

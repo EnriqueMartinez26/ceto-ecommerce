@@ -374,6 +374,30 @@ class ArchitectureRulesTest {
                 "org.springframework.web.servlet.ModelAndView");
     }
 
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "LeakyRecords$NoOverride|prints its component 'buyerName' in toString()",
+            "LeakyRecords$OverrideThatLeaks|prints its component 'phone' in toString()",
+            "LeakyRecords$Outer$Line|prints its component 'productName' in toString()"})
+    void toStringRuleBitesOnRecordsThatPrintPersonalComponents(String where, String reason) {
+        assertViolation(violations(ArchitectureRules.RECORDS_WITH_PERSONAL_COMPONENTS_HIDE_THEM_IN_TO_STRING, "pii"),
+                where, reason);
+    }
+
+    @Test
+    void toStringRuleDoesNotFlagTheOuterRecordThatHidesItsValues() {
+        List<String> lines = violations(ArchitectureRules.RECORDS_WITH_PERSONAL_COMPONENTS_HIDE_THEM_IN_TO_STRING,
+                "pii");
+
+        assertThat(lines).noneMatch(line -> line.contains("LeakyRecords$Outer ") || line.contains("LeakyRecords$Outer'"));
+    }
+
+    @Test
+    void toStringRuleAcceptsRecordsThatHideTheirPersonalComponentsNestedOnesIncluded() {
+        assertThatCode(() -> ArchitectureRules.RECORDS_WITH_PERSONAL_COMPONENTS_HIDE_THEM_IN_TO_STRING
+                .check(fixtures("clean.admin"))).doesNotThrowAnyException();
+    }
+
     @Test
     void compliantCodeSatisfiesEveryRule() {
         JavaClasses clean = fixtures("clean");
@@ -391,7 +415,8 @@ class ArchitectureRulesTest {
                 ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED,
                 ArchitectureRules.NO_FUNCTIONAL_ENDPOINTS,
                 ArchitectureRules.ADMIN_HANDLER_PATHS_ARE_UNDER_THE_ADMIN_PREFIX,
-                ArchitectureRules.NO_FORWARD_OR_INCLUDE);
+                ArchitectureRules.NO_FORWARD_OR_INCLUDE,
+                ArchitectureRules.RECORDS_WITH_PERSONAL_COMPONENTS_HIDE_THEM_IN_TO_STRING);
         for (ArchRule rule : rules) {
             assertThatCode(() -> rule.check(clean)).doesNotThrowAnyException();
         }

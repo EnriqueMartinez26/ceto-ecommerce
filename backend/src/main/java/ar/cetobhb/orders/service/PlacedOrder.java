@@ -25,5 +25,10 @@ public record PlacedOrder(long orderId, String orderNumber, OrderStatus status, 
     /** One snapshot line: what was ordered and the unit price and line total charged at placement. */
     public record PlacedLine(long productId, String productName, int quantity, BigDecimal unitPrice,
             BigDecimal lineTotal) {
+
+        @Override
+        public String toString() {
+            return "PlacedLine[productId=" + productId + ", quantity=" + quantity + "]";
+        }
     }
 }

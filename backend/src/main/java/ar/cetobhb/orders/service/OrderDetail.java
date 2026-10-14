@@ -26,6 +26,11 @@ public record OrderDetail(long id, String orderNumber, OrderStatus status, Cance
     /** One snapshot line, as charged at placement. */
     public record Line(int lineNo, long productId, String productName, boolean combo, BigDecimal unitPrice,
             int quantity, int baseUnitsPerUnit, int baseUnitsTotal, BigDecimal lineTotal) {
+
+        @Override
+        public String toString() {
+            return "Line[lineNo=" + lineNo + ", productId=" + productId + "]";
+        }
     }
 
     @Override

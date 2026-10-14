@@ -39,6 +39,12 @@ public record OrderSearchKey(String number, String phone) {
         }
     }
 
+    /** The phone is a buyer phone: it is never printed. */
+    @Override
+    public String toString() {
+        return "OrderSearchKey[number=" + number + ", phone=" + (phone == null ? "none" : "hidden") + "]";
+    }
+
     public static Optional<OrderSearchKey> parse(String q, PhoneNumberNormalizer normalizer) {
         if (q == null || q.length() > MAX_QUERY_LENGTH) {
             return Optional.empty();
