@@ -818,6 +818,188 @@ Golden: `backend/src/test/resources/contract/admin-reconciliation.json`
 ```
 
 
+## Administración: productos (`/api/admin/products`)
+
+Todas las rutas de esta sección exigen sesión de administración (sin ella, el 401 `UNAUTHENTICATED` de arriba), las que
+cambian algo exigen el token CSRF (sin él, el 403 `FORBIDDEN` y no cambia nada) y todas responden con
+`Cache-Control: no-store`. No hay ruta para borrar un producto: sale de la venta desactivándolo. Cada cambio confirmado deja
+su fila en el registro de auditoría, en la misma transacción.
+
+### `GET /api/admin/products`
+
+Todos los productos, activos o no, bases y combos, por id ascendente, hasta `ceto.admin.max-listed-products` (1 a 500).
+`truncated` es verdadero solo si había más productos que el tope. Un producto inactivo está acá y no en la lista pública.
+Cada producto trae `type` (`BASE` o `COMBO`), el precio y el precio tachado como texto de dos decimales (`compareAtPrice`
+es `null` si no hay oferta), `active`, el vínculo del combo (`comboBaseProductId` y `comboBaseUnits`, `null` en una base)
+y `version`, el valor que se manda de vuelta al editar. No trae cifras de stock (están en `/api/admin/stock`).
+
+Golden: `backend/src/test/resources/contract/admin-products-list.json`
+
+```json
+{
+  "products": [
+    {
+      "id": 1,
+      "type": "BASE",
+      "name": "Frasco",
+      "price": "100.00",
+      "compareAtPrice": "150.00",
+      "active": true,
+      "comboBaseProductId": null,
+      "comboBaseUnits": null,
+      "version": 0
+    },
+    {
+      "id": 2,
+      "type": "COMBO",
+      "name": "Combo x3",
+      "price": "270.00",
+      "compareAtPrice": null,
+      "active": true,
+      "comboBaseProductId": 1,
+      "comboBaseUnits": 3,
+      "version": 0
+    },
+    {
+      "id": 3,
+      "type": "BASE",
+      "name": "Retirado",
+      "price": "50.00",
+      "compareAtPrice": null,
+      "active": false,
+      "comboBaseProductId": null,
+      "comboBaseUnits": null,
+      "version": 1
+    }
+  ],
+  "truncated": false
+}
+```
+
+### `POST /api/admin/products`
+
+Cuerpo `{"type": "BASE" | "COMBO", "name", "price", "compareAtPrice"?, "baseProductId"?, "units"?}`. Responde 201 con el producto
+creado (activo, `version` 0). Una propiedad desconocida (`active`, `id`, `version`) es 400 `MALFORMED_REQUEST`.
+
+- **Base** (`type: BASE`, sin `baseProductId` ni `units`): se crea junto con su fila de stock en 0 y 0, en la misma
+  transacción, así que la tienda lo muestra `SOLD_OUT` hasta el primer ajuste de stock. Si falla la fila de stock, no queda
+  ni el producto ni la auditoría.
+- **Combo** (`type: COMBO`, con `baseProductId` y `units`): `units` va de 2 a 100 y la base tiene que existir, estar
+  activa y ser un producto base. No tiene fila de stock: su disponible se deriva del de la base. El vínculo y `units` no se
+  pueden cambiar después.
+- `price`: más de 0, hasta 9999999999.99 y como mucho 2 decimales (texto o número JSON); `compareAtPrice`, si viene, tiene
+  que ser mayor que `price`. `name`: de 1 a 200 caracteres sin contar los espacios de los extremos, con al menos un carácter
+  visible y sin caracteres de control, de formato, separadores de línea o párrafo, de uso privado ni sin asignar. El nombre se
+  guarda tal cual, sin escapar: escapar es cosa de quien lo muestra.
+
+Golden: `backend/src/test/resources/contract/admin-product-created.json`
+
+```json
+{
+  "id": 1,
+  "type": "BASE",
+  "name": "Frasco",
+  "price": "100.00",
+  "compareAtPrice": "150.00",
+  "active": true,
+  "comboBaseProductId": null,
+  "comboBaseUnits": null,
+  "version": 0
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-product-created-combo.json`
+
+```json
+{
+  "id": 2,
+  "type": "COMBO",
+  "name": "Combo x3",
+  "price": "270.00",
+  "compareAtPrice": null,
+  "active": true,
+  "comboBaseProductId": 1,
+  "comboBaseUnits": 3,
+  "version": 0
+}
+```
+
+| Caso | Respuesta |
+|---|---|
+| `price` en 0, negativo, de más de 9999999999.99 o con más de 2 decimales; `compareAtPrice` que no supera a `price` | 400 `VALIDATION_ERROR` con `reason: INVALID_PRICE_PAIR` |
+| `name` vacío, solo espacios o de más de 200 caracteres | 400 `VALIDATION_ERROR` con `reason: INVALID_PRODUCT_NAME` |
+| `name` con caracteres de control o de formato | 400 `VALIDATION_ERROR` con `reason: INVALID_CHARACTERS` |
+| Combo con `units` fuera de 2 a 100, sin base o sin `units`, sobre una base inexistente, inactiva o que es otro combo; base con `baseProductId` o `units` | 400 `VALIDATION_ERROR` con `reason: INVALID_COMBO_LINK` |
+| `type`, `name` o `price` ausentes o `null`; `baseProductId` fuera de 1 a 9007199254740991; `units` fuera de 1 a 1000; `name` de más de 1000 caracteres | 400 `VALIDATION_ERROR` |
+| `type` desconocido, número o texto donde va otro tipo, JSON roto, propiedad repetida o desconocida | 400 `MALFORMED_REQUEST` |
+| Otro `Content-Type` | 415 `UNSUPPORTED_MEDIA_TYPE` |
+
+En todos los rechazos no se guarda nada: ni el producto, ni la fila de stock, ni la auditoría.
+
+### `PUT /api/admin/products/{id}`
+
+Cuerpo `{"name", "price", "compareAtPrice"?, "version"}`. Edita **solo** el nombre, el precio y el precio tachado, y es un
+**reemplazo completo** (D-20261008-21): si `compareAtPrice` falta o es `null`, la oferta se borra; no significa "dejar la
+que había". `version` es el que trajo la última lectura. Cualquier otra propiedad (`type`, `baseProductId`, `units`,
+`active`, `id`) es 400 `MALFORMED_REQUEST` y el producto queda igual: el vínculo del combo no cambia. Las reglas de
+`price`, `compareAtPrice` y `name` son las de la creación. Responde 200 con el producto ya editado y su `version` nueva.
+
+- Una edición que no cambia nada responde 200, no escribe auditoría y no sube `version`.
+- Las filas de auditoría siguen los grupos de campos que cambiaron: `PRICE_CHANGED` (con el precio antes y después) y
+  `PRODUCT_UPDATED` (nombre u oferta).
+- Una `version` que ya no es la actual es 409 `CONFLICT` y no cambia nada; con varias ediciones simultáneas de la misma
+  versión se aplica una y las demás son 409: ninguna pisa a otra en silencio.
+- Un pedido ya hecho conserva el precio y el total con que se cobró; un pedido nuevo usa el precio nuevo.
+- `id` fuera de 1 a 9007199254740991 o no numérico es 400 `VALIDATION_ERROR`; un producto inexistente es 404 `NOT_FOUND`.
+
+Golden: `backend/src/test/resources/contract/admin-product-updated.json`
+
+```json
+{
+  "id": 1,
+  "type": "BASE",
+  "name": "Frasco 60",
+  "price": "120.00",
+  "compareAtPrice": null,
+  "active": true,
+  "comboBaseProductId": null,
+  "comboBaseUnits": null,
+  "version": 1
+}
+```
+
+### `POST /api/admin/products/{id}/activate` y `POST /api/admin/products/{id}/deactivate`
+
+Sin cuerpo y sin versión. Son idempotentes: sobre un producto que ya está en ese estado responden 200 con `changed: false` y
+no escriben auditoría; si cambió, `changed: true` y una fila `PRODUCT_ACTIVATED` o `PRODUCT_DEACTIVATED`. Si dos
+cambios se superponen, alguno puede ser 409.
+
+Desactivar saca el producto de la tienda y no toca nada más: los pedidos pendientes siguen pagables y cancelables, el stock
+y la reserva quedan como están (y concilian), y el reintento de una clave de idempotencia ya usada sigue devolviendo el pedido
+original; un pedido nuevo con ese producto es 409 `PRODUCT_UNAVAILABLE`. Activar un combo cuya base está inactiva es 400
+`VALIDATION_ERROR` con `reason: INVALID_COMBO_LINK`. `id` inexistente es 404 y fuera de rango o no numérico, 400.
+
+Golden: `backend/src/test/resources/contract/admin-product-activated.json`
+
+```json
+{
+  "id": 1,
+  "active": true,
+  "changed": true
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-product-deactivated-noop.json`
+
+```json
+{
+  "id": 1,
+  "active": false,
+  "changed": false
+}
+```
+
+
 ## Cabeceras
 
 | Cabecera | Dirección | Dónde | Detalle |
@@ -851,14 +1033,14 @@ contra `X-Request-Id`.
 | 401 | `UNAUTHENTICATED` | Solo en `/api/admin/*`: no hay sesión de administración. Nunca dice por qué ni nombra al usuario. | | Sí, después de iniciar sesión. |
 | 401 | `INVALID_CREDENTIALS` | Solo en `POST /api/admin/login`: usuario inexistente, contraseña incorrecta o un campo de más de 128 caracteres. Es siempre el mismo cuerpo: no dice cuál fue el motivo ni nombra al usuario. | | Sí, con otros datos. |
 | 403 | `FORBIDDEN` | Solo en `/api/admin/*`: falta el token CSRF o es inválido, o la sesión no puede hacer esto. | | No: pedir un token nuevo. |
-| 404 | `NOT_FOUND` | Ruta inexistente (incluidas variantes como barra final o `//`) o producto inexistente, inactivo u oculto o, en `/api/admin/orders/{id}` y sus acciones, pedido inexistente o, en `POST /api/admin/stock/{productId}/adjust`, producto inexistente. | | No. |
+| 404 | `NOT_FOUND` | Ruta inexistente (incluidas variantes como barra final o `//`) o producto inexistente, inactivo u oculto o, en `/api/admin/orders/{id}` y sus acciones, pedido inexistente o, en `POST /api/admin/stock/{productId}/adjust` y en `/api/admin/products/{id}` (editar, activar, desactivar), producto inexistente. | | No. |
 | 405 | `METHOD_NOT_ALLOWED` | Método no permitido para la ruta (por ejemplo `POST` a la lista). | `Allow` | No. |
 | 406 | `NOT_ACCEPTABLE` | `Accept` no admite JSON. | | No. |
 | 409 | `PRODUCT_UNAVAILABLE` | Un producto del carrito está inactivo, oculto o sin fila de stock. | `productIds`: ids **pedidos** afectados | No: sacar esos productos. |
 | 409 | `INSUFFICIENT_STOCK` | No alcanza el stock. No dice cuál producto ni cuánto queda. En `POST /api/admin/stock/{productId}/adjust`: el ajuste dejaría `on_hand` por debajo de `reserved` o de 0. | | Solo si el carrito cambia. |
 | 409 | `IDEMPOTENCY_CONFLICT` | La clave ya se usó con otro contenido. No nombra ningún pedido. | | No: usar una clave nueva si es otro pedido. |
 | 409 | `ILLEGAL_TRANSITION` | Solo en `POST /api/admin/orders/{id}/<acción>`: la arista no está en el grafo de estados del pedido (incluye el segundo toque de la misma acción). No nombra estados ni pedido. | | No: recargar el pedido y ver su estado. |
-| 409 | `CONFLICT` | Una restricción de la base o un conflicto de versión que la lógica no previó; en el ajuste de stock, un combo o un producto base sin fila de stock. | | Una vez, con la misma clave. |
+| 409 | `CONFLICT` | Una restricción de la base o un conflicto de versión que la lógica no previó; en el ajuste de stock, un combo o un producto base sin fila de stock; en `PUT /api/admin/products/{id}`, una `version` que ya no es la actual. | | Una vez, con la misma clave. |
 | 413 | `PAYLOAD_TOO_LARGE` | El cuerpo supera `ceto.web.max-body-bytes` (16 KB por defecto). | | No. |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` distinto de `application/json` (en `POST /api/admin/login`, distinto de `application/x-www-form-urlencoded`). | | No. |
 | 429 | `RATE_LIMITED` | La IP agotó sus intentos de checkout o, en `POST /api/admin/login`, sus intentos de login. Mismo código y texto en ambos. | `Retry-After` | Sí, después de esa espera. |

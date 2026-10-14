@@ -34,7 +34,9 @@ public final class EndpointInventory {
             "POST /api/admin/orders/{id}/dispatch", "POST /api/admin/orders/{id}/deliver",
             "POST /api/admin/orders/{id}/cancel",
             "GET /api/admin/stock", "POST /api/admin/stock/{productId}/adjust",
-            "GET /api/admin/inventory/reconciliation");
+            "GET /api/admin/inventory/reconciliation",
+            "GET /api/admin/products", "POST /api/admin/products", "PUT /api/admin/products/{id}",
+            "POST /api/admin/products/{id}/activate", "POST /api/admin/products/{id}/deactivate");
 
     /**
      * The administration routes an anonymous client may call, and only with the method listed: the session bootstrap.

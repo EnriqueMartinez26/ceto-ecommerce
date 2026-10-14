@@ -1,0 +1,11 @@
+{
+  "id": 1,
+  "type": "BASE",
+  "name": "Frasco 60",
+  "price": "120.00",
+  "compareAtPrice": null,
+  "active": true,
+  "comboBaseProductId": null,
+  "comboBaseUnits": null,
+  "version": 1
+}

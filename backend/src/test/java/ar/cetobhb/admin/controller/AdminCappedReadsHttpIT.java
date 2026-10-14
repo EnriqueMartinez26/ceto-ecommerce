@@ -67,6 +67,31 @@ class AdminCappedReadsHttpIT extends AbstractAdminHttpIT {
     }
 
     @Test
+    void theProductListOfThreeProductsAtCapTwoIsTruncatedAndHoldsTheFirstTwoById() throws Exception {
+        long first = baseWithStock("Uno");
+        long second = baseWithStock("Dos");
+        baseWithStock("Tres");
+
+        JsonNode list = body("/api/admin/products");
+
+        assertThat(list.get("truncated").asBoolean()).isTrue();
+        assertThat(list.get("products")).hasSize(2);
+        assertThat(list.get("products").get(0).get("id").asLong()).isEqualTo(first);
+        assertThat(list.get("products").get(1).get("id").asLong()).isEqualTo(second);
+    }
+
+    @Test
+    void theProductListOfExactlyTwoProductsAtCapTwoIsNotTruncated() throws Exception {
+        baseWithStock("Uno");
+        baseWithStock("Dos");
+
+        JsonNode list = body("/api/admin/products");
+
+        assertThat(list.get("truncated").asBoolean()).isFalse();
+        assertThat(list.get("products")).hasSize(2);
+    }
+
+    @Test
     void threeMismatchesAtCapTwoAreTruncatedAndTheFirstTwoByIdAreListed() throws Exception {
         long first = baseWithStock("Uno");
         long second = baseWithStock("Dos");

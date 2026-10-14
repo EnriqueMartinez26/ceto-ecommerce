@@ -1,0 +1,38 @@
+{
+  "products": [
+    {
+      "id": 1,
+      "type": "BASE",
+      "name": "Frasco",
+      "price": "100.00",
+      "compareAtPrice": "150.00",
+      "active": true,
+      "comboBaseProductId": null,
+      "comboBaseUnits": null,
+      "version": 0
+    },
+    {
+      "id": 2,
+      "type": "COMBO",
+      "name": "Combo x3",
+      "price": "270.00",
+      "compareAtPrice": null,
+      "active": true,
+      "comboBaseProductId": 1,
+      "comboBaseUnits": 3,
+      "version": 0
+    },
+    {
+      "id": 3,
+      "type": "BASE",
+      "name": "Retirado",
+      "price": "50.00",
+      "compareAtPrice": null,
+      "active": false,
+      "comboBaseProductId": null,
+      "comboBaseUnits": null,
+      "version": 1
+    }
+  ],
+  "truncated": false
+}

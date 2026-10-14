@@ -1,0 +1,11 @@
+{
+  "id": 2,
+  "type": "COMBO",
+  "name": "Combo x3",
+  "price": "270.00",
+  "compareAtPrice": null,
+  "active": true,
+  "comboBaseProductId": 1,
+  "comboBaseUnits": 3,
+  "version": 0
+}
