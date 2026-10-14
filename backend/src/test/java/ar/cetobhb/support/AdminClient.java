@@ -91,7 +91,9 @@ public final class AdminClient {
     }
 
     public String xsrf() {
-        return jar.get(CSRF_COOKIE);
+        synchronized (jar) {
+            return jar.get(CSRF_COOKIE);
+        }
     }
 
     public Reply get(String path) throws IOException, InterruptedException {
@@ -108,10 +110,13 @@ public final class AdminClient {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
                 .timeout(Duration.ofSeconds(30)).header("Accept", "application/json")
                 .header("X-Forwarded-For", forwardedFor);
-        if (!jar.isEmpty()) {
-            StringBuilder cookie = new StringBuilder();
-            jar.forEach((name, value) -> cookie.append(cookie.isEmpty() ? "" : "; ").append(name).append('=').append(value));
-            request.header("Cookie", cookie.toString());
+        synchronized (jar) {
+            if (!jar.isEmpty()) {
+                StringBuilder cookie = new StringBuilder();
+                jar.forEach((name, value) -> cookie.append(cookie.isEmpty() ? "" : "; ").append(name).append('=')
+                        .append(value));
+                request.header("Cookie", cookie.toString());
+            }
         }
         headers.forEach(request::header);
         if (body == null) {
@@ -165,7 +170,14 @@ public final class AdminClient {
                 + "&password=" + URLEncoder.encode(password, StandardCharsets.UTF_8);
     }
 
+    /** The jar is shared by the threads of a burst (a double tap of one browser): every access holds its monitor. */
     private void absorb(List<String> setCookies) {
+        synchronized (jar) {
+            absorbLocked(setCookies);
+        }
+    }
+
+    private void absorbLocked(List<String> setCookies) {
         for (String line : setCookies) {
             String pair = line.split(";", 2)[0];
             int eq = pair.indexOf('=');

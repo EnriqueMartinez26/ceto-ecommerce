@@ -117,7 +117,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   ejemplo deja de ser idéntico a su golden, si un golden no está citado o si un
   `code` o `reason` del código no figura en el documento. `EndpointInventoryIT` fija el
   inventario: las 3 rutas públicas, las de administración (`EndpointInventory.ADMIN_ROUTES`,
-  hoy `GET /api/admin/session`, la única anónima, y las dos lecturas de pedidos: cada ruta protegida se llama sin sesión y
+  hoy `GET /api/admin/session`, la única anónima, y las rutas de pedidos (lista, detalle y las cuatro acciones): cada ruta protegida se llama sin sesión y
   debe dar el golden 401, generado desde los mapeos, y de la anónima se llaman los otros seis
   métodos, también 401) más `ANY /error` de `BasicErrorController`
   (permitido por tipo de handler, no por ruta), todos los `HandlerMapping` por
@@ -216,8 +216,32 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   quitar la línea de `DispatcherServlet` hizo fallar los 2 tests de `AdminOrdersPiiServerIT`;
   quitar `requestCache(disable)` de la cadena de administración hizo fallar el 401 anónimo de
   `AdminOrderListHttpIT` (abre una sesión).
-- **Acciones de administración sobre pedidos** (`AdminOrderService`, solo
-  servicio, todavía sin rutas): pagar, despachar, entregar y cancelar llaman a
+- **Rutas de acción sobre pedidos** (mismo `AdminOrderController`, D-20261008-13): una
+  ruta por acción, sin cuerpo (se ignora si llega), `id` 1..2^53-1, 200 con el detalle ya
+  actualizado. Sin token CSRF es el 403 de la cadena (nada cambia, `AdminOrderActionsHttpIT`),
+  sin sesión el 401, un GET sobre la ruta el 405. Una arista fuera del grafo (despachar un
+  pendiente, repetir un pago, cualquier acción sobre un terminal) es 409 `ILLEGAL_TRANSITION`,
+  código propio (antes caía en el `CONFLICT` genérico, D-20261008-25; fila de `ApiErrorCatalog` con
+  nivel INFO, golden `admin-error-illegal-transition.json`, `ApiErrorCatalogTest`,
+  `ApiExceptionHandlerTest`): el cuerpo no nombra estados ni pedido, y no cambia el estado, el
+  stock ni la auditoría. Un id desconocido es 404 `NOT_FOUND` y no escribe auditoría. Pruebas:
+  `AdminOrderActionsHttpIT` (goldens `admin-order-detail-paid.json` y `admin-order-cancelled.json`;
+  stock de pagar y de cancelar un pendiente o un pagado, pedido vencido sin cancelar aún pagable,
+  los cuatro terminales, ids fuera de rango, 403/401/405), `AdminOrderActionsServerIT` (servidor
+  real, sesión y token reales: dos pagos simultáneos dan un 200 y un 409 en 8 iteraciones, seis
+  cancelaciones simultáneas un 200 y cinco 409, el stock se mueve una vez y hay una sola fila de
+  auditoría) y `AdminOrderActionsPiiServerIT` (todas las rutas de acción con `ar.cetobhb` y
+  `org.springframework.web` en DEBUG y centinelas de nombre y dirección, incluida la acción que
+  se revierte porque falla el insert de auditoría: ni el log ni ningún cuerpo de error los
+  contienen). Las pruebas MockMvc firman el token a mano con cookie y cabecera: el post
+  processor `csrf()` cambia para siempre el repositorio de tokens del filtro compartido y
+  dejaría sin cookie `__Host-XSRF-TOKEN` a las pruebas posteriores del mismo contexto. Evidencia por
+  mutación (2026-10-14): leer el pedido con `findById` en vez de `FOR UPDATE` en
+  `OrderLifecycleService.lock` hizo fallar `AdminOrderActionsServerIT` (el perdedor responde
+  `CONFLICT` por la versión, no `ILLEGAL_TRANSITION`); quitar la llamada a `record` de `pay` hizo
+  fallar 8 tests de las tres clases.
+- **Acciones de administración sobre pedidos** (`AdminOrderService`, expuesta por
+  `POST /api/admin/orders/{id}/pay|dispatch|deliver|cancel`, ver más abajo): pagar, despachar, entregar y cancelar llaman a
   `OrderLifecycleService` (la máquina de estados y el stock siguen ahí), escriben
   una fila de auditoría y devuelven el detalle, todo en una transacción: el
   motivo de cancelación es `CANCELLED_BY_ADMIN`. La fila solo existe si la
