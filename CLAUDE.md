@@ -204,14 +204,32 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   rutas en `ADMIN_ROUTES` (el 401 generado ya no es vacío) y las fixtures `adminbounds` y
   `clean.admin` de `ArchitectureRulesTest` para `REQUEST_INPUTS_ARE_BOUNDED` en un
   controller de administración. Registros: `AdminOrdersPiiServerIT` (servidor real, con
-  `ar.cetobhb` y `org.springframework.web` en DEBUG y textos centinela en el pedido y en
-  `q`, `status`, `size`, `after`) encontró que a nivel DEBUG `DispatcherServlet` imprime la
-  línea de la petición con su query string (el `q` es un teléfono) y `HandlerMethod` y
-  `ExceptionHandlerExceptionResolver` repiten el valor que no se pudo convertir; por eso
-  `application.yml` fija `DispatcherServlet` en INFO y las otras dos en OFF, y el test fija
-  los niveles configurados. Límite: un operador que ponga esas categorías en DEBUG con un
-  argumento o una variable de entorno las vuelve a prender (a diferencia de Security, no hay
-  guarda de arranque). Evidencia por mutación (2026-10-14): quitar el `@Max` de `size` hizo
+  `ar.cetobhb`, `org.springframework.web` y `org.hibernate` en DEBUG y en TRACE, y textos centinela en el
+  pedido y en `q`, `status`, `size`, `after`) encontró que a nivel DEBUG `DispatcherServlet` imprime la
+  línea de la petición con su query string (el `q` es un teléfono), que `HandlerMethod` y
+  `ExceptionHandlerExceptionResolver` repiten el valor que no se pudo convertir y, con `org.hibernate` en
+  DEBUG, que `org.hibernate.orm.core` lista cada entidad gestionada con todos sus valores en cada flush
+  (`Order{buyerPhoneE164=..., buyerName=..., shippingAddress=...}`); con TRACE se suman los valores
+  enlazados y extraídos de `org.hibernate.orm.jdbc.bind` y `.extract`. Por eso `application.yml` fija
+  cada una en su propia categoría (la lista única es `PiiLogLevelGuard.SHIPPED_LEVELS`: las del log de
+  Hibernate, `DispatcherServlet` en INFO, `org.hibernate.orm.core` en INFO, el resto en OFF, incluidos los
+  escritores de cuerpos `RequestResponseBodyMethodProcessor`, `HttpEntityMethodProcessor` y las dos bases
+  abstractas) y el test comprueba que una categoría padre en TRACE no levanta ninguna hija. En Logback una
+  categoría con nivel propio ignora el de sus ancestros. `PiiLogLevelGuard` (`@Lazy(false)`, `Binder`,
+  mensaje fijo sin el valor) detiene el arranque, en cualquier perfil, si un argumento, una variable de
+  entorno o el yml dejan una de esas categorías sin definir o por debajo de su nivel, una subcategoría
+  suya por debajo, o un grupo de `logging.group.*` que la lista; un padre más verboso no lo dispara
+  porque no lo levanta. También lo detiene `server.tomcat.accesslog.enabled=true`: el patrón por defecto
+  imprime la query string (`?q=<teléfono>`); si algún día hace falta un access log, se agrega con un
+  patrón sin query string y se relaja esa comprobación en el mismo cambio (límite aceptado). Guardas:
+  `PiiLogLevelGuardStartupTest` (`SpringApplication` real con el yml real: argumento, variable de
+  entorno, subcategoría, grupo, padre en TRACE, `--debug`, access log, perfiles, inicialización perezosa,
+  sin eco del valor) y `PiiLogLevelGuardWiringIT`. Límite: la guarda mira la configuración al arrancar,
+  no un cambio posterior del nivel por el sistema de logging (las pruebas lo hacen para probar su
+  control); no hay actuator. Evidencia por mutación (2026-10-14): sin el cuerpo de la guarda fallan 40
+  de 66 tests de arranque; sin las líneas `bind` y `extract` del yml, el pase TRACE de
+  `AdminOrdersPiiServerIT` imprime `binding parameter` y falla; sin la línea de
+  `org.hibernate.orm.core` el pase DEBUG imprime las entidades y falla. Evidencia por mutación (2026-10-14): quitar el `@Max` de `size` hizo
   fallar `ArchitectureTest.requestInputsAreBounded` y `size=51` de `AdminOrderListHttpIT`;
   quitar la línea de `DispatcherServlet` hizo fallar los 2 tests de `AdminOrdersPiiServerIT`;
   quitar `requestCache(disable)` de la cadena de administración hizo fallar el 401 anónimo de
@@ -1192,6 +1210,17 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   y los filtros escriben errores con `ProblemResponses`. El parseo JSON es
   estricto (`JacksonConfigTest`: propiedad extra, `"2"` por `2`, clave
   duplicada, profundidad > 8, strings y nombres largos).
+- **`toString` de los records con datos de la compradora** (`ArchitectureRules.RECORDS_WITH_PERSONAL_COMPONENTS_HIDE_THEM_IN_TO_STRING`,
+  `ArchitectureTest`): todo record de `..admin.controller..`, `..admin.service..`, `..admin.domain..`,
+  `..orders.service..`, `..orders.repository..` u `..orders.domain..` con un componente cuyo nombre contiene
+  name, phone, address o buyer no imprime ese valor en `toString`. La regla es de comportamiento, no de
+  sintaxis (javac genera un `toString` para el record que no declara ninguno): construye el record con un
+  centinela distinto en cada componente de texto personal y falla si el centinela aparece, también en los
+  records anidados. Fixtures `pii` (sin override, override que filtra, record anidado) y `clean.admin` en
+  `ArchitectureRulesTest`. Al introducirla encontró siete records sin override (`OrderSearchKey` con el
+  teléfono de búsqueda, nombres de producto en líneas, `StockEntry`). Límite: solo prueba componentes de
+  texto, y el alcance es la lista de paquetes de arriba. Evidencia por mutación (2026-10-14): quitar el
+  override de `AdminOrderRow` hizo fallar `ArchitectureTest` con `buyerName` y `buyerPhone`.
 - **Recursos acotados** (agotamiento de recursos): el pool de
   Hikari tiene 10 conexiones y espera 3 s por una (`connection-timeout`); sin
   conexión el request termina en 503 `SERVICE_BUSY` + `Retry-After`, escrituras

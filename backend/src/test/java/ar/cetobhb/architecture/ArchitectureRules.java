@@ -575,7 +575,107 @@ final class ArchitectureRules {
         return annotations.stream().anyMatch(a -> a.getRawType().getName().equals(name));
     }
 
-    private static final Pattern LAYER_PACKAGE = Pattern.compile("^(.*?)\\.(service|repository|controller|domain)(\\..*)?$");
+    /** Component names that can hold personal data of a buyer (name, phone, address, anything "buyer"). */
+    private static final Pattern PERSONAL_COMPONENT = Pattern.compile("(?i).*(name|phone|address|buyer).*");
+    private static final String SENTINEL = "PII-SENTINEL-";
+
+    /**
+     * Review fix batch 9, item 1. A record's default {@code toString} prints every component, so a log line or an
+     * exception message that mentions a response, a command or a row would print the buyer's name, phone and address.
+     * Every record of the admin HTTP layer ({@code ..admin.controller..}), the admin services and domain, and the order
+     * read models ({@code ..orders.service..}, {@code ..orders.repository..}, {@code ..orders.domain..}) that has a
+     * component named like name, phone, address or buyer* must therefore hide its personal values in
+     * {@code toString}. The check is behavioural, not syntactic: javac also emits a {@code toString} for a record that
+     * declares none, so "has a method" proves nothing. The rule builds the record with a distinct sentinel in each
+     * personal text component and fails when the sentinel shows up in {@code toString()}. Nested records are classes of
+     * their own and are checked the same way. Limit: only text (String) components are probed; a personal value held
+     * inside a nested object is covered only through that object's own record when it is in scope.
+     */
+    static final ArchRule RECORDS_WITH_PERSONAL_COMPONENTS_HIDE_THEM_IN_TO_STRING = classes()
+            .that().areRecords()
+            .and().resideInAnyPackage("..admin.controller..", "..admin.service..", "..admin.domain..",
+                    "..orders.service..", "..orders.repository..", "..orders.domain..")
+            .should(new ArchCondition<JavaClass>("not print a name, phone, address or buyer component in toString") {
+                @Override
+                public void check(JavaClass type, ConditionEvents events) {
+                    Class<?> record = type.reflect();
+                    java.lang.reflect.RecordComponent[] components = record.getRecordComponents();
+                    boolean personal = false;
+                    for (java.lang.reflect.RecordComponent component : components) {
+                        personal |= PERSONAL_COMPONENT.matcher(component.getName()).matches();
+                    }
+                    if (!personal) {
+                        return;
+                    }
+                    try {
+                        Object[] values = new Object[components.length];
+                        Class<?>[] types = new Class<?>[components.length];
+                        for (int i = 0; i < components.length; i++) {
+                            types[i] = components[i].getType();
+                            boolean text = types[i] == String.class;
+                            boolean mark = text && PERSONAL_COMPONENT.matcher(components[i].getName()).matches();
+                            values[i] = mark ? SENTINEL + components[i].getName() : defaultValue(types[i]);
+                        }
+                        java.lang.reflect.Constructor<?> constructor = record.getDeclaredConstructor(types);
+                        constructor.setAccessible(true);
+                        String text = constructor.newInstance(values).toString();
+                        for (java.lang.reflect.RecordComponent component : components) {
+                            if (text.contains(SENTINEL + component.getName())) {
+                                events.add(SimpleConditionEvent.violated(type, type.getName() + " prints its component '"
+                                        + component.getName() + "' in toString() in " + type.getSourceCodeLocation()));
+                            }
+                        }
+                    } catch (ReflectiveOperationException | RuntimeException e) {
+                        events.add(SimpleConditionEvent.violated(type, type.getName() + " could not be built by the rule"
+                                + " to probe its toString() (" + e.getClass().getSimpleName() + "); teach"
+                                + " defaultValue() about its component types in " + type.getSourceCodeLocation()));
+                    }
+                }
+            });
+
+    /** A harmless value for a record component the rule does not probe. */
+    private static Object defaultValue(Class<?> type) {
+        if (type == boolean.class) {
+            return false;
+        } else if (type == byte.class) {
+            return (byte) 0;
+        } else if (type == short.class) {
+            return (short) 0;
+        } else if (type == int.class) {
+            return 0;
+        } else if (type == long.class) {
+            return 0L;
+        } else if (type == float.class) {
+            return 0f;
+        } else if (type == double.class) {
+            return 0d;
+        } else if (type == char.class) {
+            return 'x';
+        } else if (type == String.class) {
+            return "x";
+        } else if (type == Integer.class) {
+            return 0;
+        } else if (type == Long.class) {
+            return 0L;
+        } else if (type == java.math.BigDecimal.class) {
+            return java.math.BigDecimal.ZERO;
+        } else if (type == java.time.Instant.class) {
+            return java.time.Instant.EPOCH;
+        } else if (type == List.class || type == Collection.class) {
+            return List.of();
+        } else if (type == Set.class) {
+            return Set.of();
+        } else if (type == Map.class) {
+            return Map.of();
+        } else if (type == Optional.class) {
+            return Optional.empty();
+        } else if (type.isEnum()) {
+            return type.getEnumConstants()[0];
+        }
+        return null;
+    }
+
+    private static final Pattern LAYER_PACKAGE =Pattern.compile("^(.*?)\\.(service|repository|controller|domain)(\\..*)?$");
 
     /** Package prefix before the first layer segment, or the whole package when it has none. */
     private static String featureOf(String packageName) {

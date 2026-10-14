@@ -17,6 +17,11 @@ record AdminOrderDetailResponse(long id, String orderNumber, String status, Stri
     record Line(int lineNo, long productId, String productName, boolean combo, String unitPrice, int quantity,
             int baseUnitsPerUnit, int baseUnitsTotal, String lineTotal) {
 
+        @Override
+        public String toString() {
+            return "Line[lineNo=" + lineNo + ", productId=" + productId + "]";
+        }
+
         static Line from(OrderDetail.Line line) {
             return new Line(line.lineNo(), line.productId(), line.productName(), line.combo(),
                     ApiFormats.money(line.unitPrice()), line.quantity(), line.baseUnitsPerUnit(),

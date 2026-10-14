@@ -51,6 +51,10 @@ class ArchitectureTest {
     static final ArchRule noForwardOrInclude = ArchitectureRules.NO_FORWARD_OR_INCLUDE;
 
     @ArchTest
+    static final ArchRule recordsWithPersonalComponentsHideThemInToString =
+            ArchitectureRules.RECORDS_WITH_PERSONAL_COMPONENTS_HIDE_THEM_IN_TO_STRING;
+
+    @ArchTest
     static final ArchRule repositoryOnlyFromOwnFeatureService =
             ArchitectureRules.REPOSITORY_ONLY_FROM_OWN_FEATURE_SERVICE;
 }

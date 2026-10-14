@@ -6,6 +6,7 @@ import ar.cetobhb.common.domain.RateLimitedException;
 import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.common.web.BodyTooLargeException;
+import ar.cetobhb.common.web.ProblemResponses;
 import ar.cetobhb.common.web.SafeErrors;
 import ar.cetobhb.orders.domain.CheckoutInProgressException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -297,10 +298,19 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(problem, responseHeaders, error.status());
     }
 
-    /** Always non-null: Spring would call {@code URI.create} itself on a null instance and could throw. */
+    /**
+     * Always non-null: Spring would call {@code URI.create} itself on a null instance and could throw. The path is
+     * echoed up to {@link ProblemResponses#MAX_INSTANCE_LENGTH} characters, like the Security problems, so the body
+     * does not grow with the request; a longer one is replaced by {@code /api/admin} under the admin prefix and by
+     * {@code /} elsewhere.
+     */
     private static URI instance(HttpServletRequest request) {
         try {
-            return URI.create(request == null ? "/" : request.getRequestURI());
+            String path = request == null ? "/" : request.getRequestURI();
+            if (path != null && path.length() > ProblemResponses.MAX_INSTANCE_LENGTH) {
+                return URI.create(path.startsWith("/api/admin") ? "/api/admin" : "/");
+            }
+            return URI.create(path);
         } catch (IllegalArgumentException unparsablePath) {
             return URI.create("/");
         }

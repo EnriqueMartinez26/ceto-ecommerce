@@ -42,6 +42,18 @@ logging:
     # (name, phone, address). Silencing SqlExceptionHelper does nothing in Hibernate 7 (verification U-8).
     org.hibernate.orm.jdbc.error: "OFF"
     org.hibernate.orm.jdbc.warn: "OFF"
+    # Bound parameter values ("binding parameter (1:VARCHAR) <- [<phone>]") and extracted column values, at TRACE, and the
+    # SQL text at DEBUG. Each is silenced on its own category so a broader org.hibernate TRACE cannot print them: Logback
+    # gives a logger its own explicit level before the one it inherits. PiiLogLevelGuard keeps this whole block from
+    # being lowered at startup (one list, PiiLogLevelGuard.SHIPPED_LEVELS).
+    org.hibernate.orm.jdbc.bind: "OFF"
+    org.hibernate.orm.jdbc.extract: "OFF"
+    org.hibernate.SQL: "OFF"
+    # At DEBUG, on every flush, Hibernate lists the managed entities with ALL their values ("Listing entities:", then
+    # "Order{buyerPhoneE164=..., buyerName=..., shippingAddress=...}"). INFO keeps that out when org.hibernate or
+    # org.hibernate.orm is raised, and still lets Hibernate's own INFO, WARN and ERROR messages through. Found by the TRACE
+    # pass of AdminOrdersPiiServerIT (review fix batch 9).
+    org.hibernate.orm.core: "INFO"
     # Spring MVC logs the exception message of malformed requests, and that message echoes the rejected value.
     org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver: "OFF"
     org.springframework.web.servlet.PageNotFound: "OFF"
@@ -60,6 +72,14 @@ logging:
     # type 'String' to 'int' for value '<text>'", "For input string: ..."): the query text of the order list is a buyer phone.
     org.springframework.web.method.HandlerMethod: "OFF"
     org.springframework.web.servlet.mvc.method.annotation.ExceptionHandlerExceptionResolver: "OFF"
+    # At DEBUG/TRACE the argument resolver and the return value handlers print the request body ("Read ... to [...]") and
+    # the response body ("Writing [...]"); the order detail response carries name, phone and address. The logger of both
+    # is created from the concrete class (RequestResponseBodyMethodProcessor for @RestController, HttpEntityMethodProcessor
+    # for ResponseEntity), so each concrete class and the two abstract bases are silenced.
+    org.springframework.web.servlet.mvc.method.annotation.AbstractMessageConverterMethodProcessor: "OFF"
+    org.springframework.web.servlet.mvc.method.annotation.AbstractMessageConverterMethodArgumentResolver: "OFF"
+    org.springframework.web.servlet.mvc.method.annotation.RequestResponseBodyMethodProcessor: "OFF"
+    org.springframework.web.servlet.mvc.method.annotation.HttpEntityMethodProcessor: "OFF"
 
 spring:
   datasource:
