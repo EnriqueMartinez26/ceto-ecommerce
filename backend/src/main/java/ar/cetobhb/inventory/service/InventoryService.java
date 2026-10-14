@@ -11,6 +11,7 @@ import ar.cetobhb.inventory.domain.ReservationMismatch;
 import ar.cetobhb.inventory.domain.StockAdjustment;
 import ar.cetobhb.inventory.domain.StockCounts;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
+import ar.cetobhb.inventory.domain.StaleStockException;
 import ar.cetobhb.inventory.domain.StockNotAdjustableException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
 import ar.cetobhb.inventory.repository.InventoryStock;
@@ -159,16 +160,21 @@ public class InventoryService {
      * Admin correction of the physical count by a delta (INV-A1). The product must exist (any state, so a deactivated
      * one can still be corrected) and must be a base product that already has a stock row: a combo has no stock of its
      * own and a missing row is never auto-created. The row lock is the first read of the stock row, so the figures
-     * returned are the committed ones, and the Java check in {@link InventoryStock#adjustBy} runs before the CHECK
+     * returned are the committed ones. The row is then compared with {@code expectedOnHand}, the count the caller saw
+     * (compare-and-set, D-20261008-48): a mismatch is a {@link StaleStockException}, so a retried or out-of-date
+     * adjustment changes nothing. The Java check in {@link InventoryStock#adjustBy} runs before the CHECK
      * constraint that backs it.
      */
     @Transactional
-    public StockAdjustment adjustBy(long productId, int delta) {
+    public StockAdjustment adjustBy(long productId, int delta, int expectedOnHand) {
         if (catalog.findAnyIncludingInactive(productId).isCombo()) {
             throw new StockNotAdjustableException(productId);
         }
         InventoryStock row = stock.lockByProductId(productId)
                 .orElseThrow(() -> new StockNotAdjustableException(productId));
+        if (row.onHand() != expectedOnHand) {
+            throw new StaleStockException(productId);
+        }
         int before = row.onHand();
         row.adjustBy(delta, clock.instant());
         return new StockAdjustment(productId, before, row.onHand(), row.reserved());

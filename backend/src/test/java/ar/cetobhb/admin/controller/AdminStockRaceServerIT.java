@@ -21,12 +21,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * Adjustments racing buyer purchases over real HTTP (AINV-05): stock (5, 0), twenty buyers of one unit each and ten
- * adjustments (five +2, five -1) released together through Tomcat, JSON binding, the advice and the response. A buyer may
- * be served (201), refused for stock (409) or told to retry (503); an adjustment may apply (200), be refused because it
- * would leave {@code on_hand} below {@code reserved} (409) or be told to retry (503); nothing else, and never a 5xx
- * other than that 503. The final counters are exactly the sum of what succeeded: {@code on_hand = 5 + 2a - b} and
- * {@code reserved = purchases}, one audit row per applied adjustment, and the reconciliation is clean. The invariant of
- * the table (reserved never above on_hand) is also enforced by its CHECK, so a violation would show as a 500.
+ * adjustments (five +2, five -1), all sent with {@code expectedOnHand} 5 (D-20261008-48), released together through Tomcat,
+ * JSON binding, the advice and the response. Purchases never move `on_hand`, so exactly ONE adjustment can apply (the
+ * first to take the row lock, unless a -1 is refused for going below `reserved`, in which case the next one tries); every
+ * other one is a 409, CONFLICT (stale) or INSUFFICIENT_STOCK (a -1 below `reserved`). A buyer is served (201) or refused
+ * for stock (409 INSUFFICIENT_STOCK). There is no 503: the test pool (30) is not smaller than the threads, so a 503 would
+ * mean a lock wait or a deadlock that the race must not hide (D-20261008-49). The final counters are exactly the sum of
+ * what succeeded, one audit row per applied adjustment, and the reconciliation is clean.
  */
 class AdminStockRaceServerIT extends AbstractAdminServerIT {
 
@@ -68,10 +69,10 @@ class AdminStockRaceServerIT extends AbstractAdminServerIT {
             });
         }
         for (int i = 0; i < PLUS; i++) {
-            tasks.add(() -> adjust(client, base, "{\"delta\":2,\"reason\":\"RESTOCK\"}", "plus"));
+            tasks.add(() -> adjust(client, base, "{\"expectedOnHand\":5,\"delta\":2,\"reason\":\"RESTOCK\"}", "plus"));
         }
         for (int i = 0; i < MINUS; i++) {
-            tasks.add(() -> adjust(client, base, "{\"delta\":-1,\"reason\":\"DAMAGED_OR_LOST\"}", "minus"));
+            tasks.add(() -> adjust(client, base, "{\"expectedOnHand\":5,\"delta\":-1,\"reason\":\"DAMAGED_OR_LOST\"}", "minus"));
         }
 
         Report<Result> report = BurstRunner.runMeasured(tasks);
@@ -80,9 +81,16 @@ class AdminStockRaceServerIT extends AbstractAdminServerIT {
         assertThat(report.outcomes()).allMatch(Outcome::succeeded);
         List<Result> results = report.outcomes().stream().map(Outcome::value).toList();
         // A 409 is only ever the business refusal: a version conflict or a CHECK violation would be CONFLICT, which is a bug here.
-        assertThat(results).allMatch(r -> r.status() == 200 || r.status() == 201 || r.status() == 503
-                || (r.status() == 409 && r.body().contains("\"code\":\"INSUFFICIENT_STOCK\"")
-                        && !r.kind().equals("plus")), "statuses");
+        assertThat(results).extracting(Result::status).as("no 503: a lock wait or a deadlock must not hide in a retry")
+                .doesNotContain(503);
+        assertThat(results).allMatch(r -> r.status() == 200 || r.status() == 201 || (r.status() == 409
+                && (r.body().contains("\"code\":\"CONFLICT\"") && !r.kind().equals("buy")
+                        || r.body().contains("\"code\":\"INSUFFICIENT_STOCK\"") && !r.kind().equals("plus"))), "statuses");
+        assertThat(count(results, "plus", 200) + count(results, "minus", 200))
+                .as("exactly one adjustment applies, all of them expected on_hand 5").isEqualTo(1);
+        assertThat(results.stream().filter(r -> r.kind().equals("plus") || r.kind().equals("minus"))
+                .filter(r -> r.status() == 409 && r.body().contains("\"code\":\"CONFLICT\"")).count())
+                .as("at least one stale adjustment answered CONFLICT").isGreaterThanOrEqualTo(1);
         long purchases = count(results, "buy", 201);
         long applied = count(results, "plus", 200) * 2 - count(results, "minus", 200);
         long onHand = jdbc.queryForObject("SELECT on_hand FROM inventory_stock WHERE product_id = ?", Long.class, base);
@@ -95,6 +103,31 @@ class AdminStockRaceServerIT extends AbstractAdminServerIT {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM admin_audit_log", Long.class))
                 .isEqualTo(count(results, "plus", 200) + count(results, "minus", 200));
         assertThat(StockReconciliation.stockDrift(jdbc)).isEmpty();
+    }
+
+    /**
+     * The deterministic pair (D-20261008-48): the same body twice at once, as a double tap or a retry would send it.
+     * The row lock serialises them and the compare decides: one applies, the other is a 409 CONFLICT.
+     */
+    @RepeatedTest(5)
+    void twoIdenticalAdjustmentsAtOnceApplyOnceAndTheOtherIsAConflict() throws Exception {
+        long base = catalog.createBase(product("Pair base", "100.00")).id();
+        inventory.createStock(base, 5);
+        AdminClient client = loggedInClient();
+        List<Callable<Result>> tasks = List.of(
+                () -> adjust(client, base, "{\"expectedOnHand\":5,\"delta\":100,\"reason\":\"RESTOCK\"}", "pair"),
+                () -> adjust(client, base, "{\"expectedOnHand\":5,\"delta\":100,\"reason\":\"RESTOCK\"}", "pair"));
+
+        Report<Result> report = BurstRunner.runMeasured(tasks);
+
+        assertThat(report.outcomes()).allMatch(Outcome::succeeded);
+        List<Result> results = report.outcomes().stream().map(Outcome::value).toList();
+        assertThat(results).extracting(Result::status).containsExactlyInAnyOrder(200, 409);
+        assertThat(results.stream().filter(r -> r.status() == 409).findFirst().orElseThrow().body())
+                .contains("\"code\":\"CONFLICT\"");
+        assertThat(jdbc.queryForObject("SELECT on_hand FROM inventory_stock WHERE product_id = ?", Integer.class, base))
+                .as("the stock moved once").isEqualTo(105);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM admin_audit_log", Integer.class)).isEqualTo(1);
     }
 
     private Result adjust(AdminClient client, long productId, String payload, String kind) throws Exception {

@@ -58,7 +58,7 @@ class AdminCatalogPiiLoggingIT extends AbstractPostgresIT {
     @Test
     void everyCatalogPathLeavesNoBuyerDataOrProductNameInTheLog(CapturedOutput output) {
         long base = admin.createBase(data(PRODUCT, "100.00")).id();
-        adminInventory.adjust(base, 10, StockAdjustmentReason.RESTOCK);
+        adminInventory.adjust(base, 10, 0, StockAdjustmentReason.RESTOCK);
         placement.placeOrder(new PlaceOrderCommand(UUID.randomUUID().toString(),
                 new Buyer(NAME, PHONE, ADDRESS, ShippingZone.CORDOBA_CAPITAL),
                 List.of(new PlaceOrderCommand.Line(base, 1))));

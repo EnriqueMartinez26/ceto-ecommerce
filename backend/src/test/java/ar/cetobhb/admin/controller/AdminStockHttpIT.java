@@ -100,9 +100,9 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
 
         MockHttpServletResponse view = send(get("/api/admin/stock"));
         MockHttpServletResponse anonymousAdjust = send(post(adjustPath(id)).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"delta\":1,\"reason\":\"RESTOCK\"}"));
+                .content("{\"expectedOnHand\":10,\"delta\":1,\"reason\":\"RESTOCK\"}"));
         MockHttpServletResponse noToken = send(post(adjustPath(id)).with(user("admin"))
-                .contentType(MediaType.APPLICATION_JSON).content("{\"delta\":1,\"reason\":\"RESTOCK\"}"));
+                .contentType(MediaType.APPLICATION_JSON).content("{\"expectedOnHand\":10,\"delta\":1,\"reason\":\"RESTOCK\"}"));
 
         assertThat(view.getStatus()).isEqualTo(401);
         ContractAssertions.assertMatchesGoldenForPath(view, "admin-error-unauthenticated.json", "/api/admin/stock");
@@ -120,7 +120,7 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
         long id = base("Frasco", 5);
         reserve(id, 2);
 
-        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"delta\":20,\"reason\":\"RESTOCK\"}"));
+        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"expectedOnHand\":5,\"delta\":20,\"reason\":\"RESTOCK\"}"));
 
         assertThat(response.getStatus()).isEqualTo(200);
         ContractAssertions.assertMatchesGolden(response, "admin-stock-adjusted.json");
@@ -139,7 +139,7 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
         reserve(id, 8);
 
         MockHttpServletResponse response = send(
-                adminPostJson(adjustPath(id), "{\"delta\":-2,\"reason\":\"DAMAGED_OR_LOST\"}"));
+                adminPostJson(adjustPath(id), "{\"expectedOnHand\":10,\"delta\":-2,\"reason\":\"DAMAGED_OR_LOST\"}"));
 
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat(counts(id)).containsExactly(8, 8);
@@ -149,8 +149,10 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
     void everyReasonOfTheClosedSetIsAccepted() throws Exception {
         long id = base("Frasco", 10);
 
+        int seen = 10;
         for (String reason : List.of("COUNT_CORRECTION", "RESTOCK", "DAMAGED_OR_LOST", "RETURN", "OTHER")) {
-            assertThat(send(adminPostJson(adjustPath(id), "{\"delta\":1,\"reason\":\"" + reason + "\"}")).getStatus())
+            assertThat(send(adminPostJson(adjustPath(id),
+                    "{\"expectedOnHand\":" + seen++ + ",\"delta\":1,\"reason\":\"" + reason + "\"}")).getStatus())
                     .as(reason).isEqualTo(200);
         }
         assertThat(counts(id)).containsExactly(15, 0);
@@ -159,13 +161,16 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "{\"delta\":10001,\"reason\":\"RESTOCK\"}",
-            "{\"delta\":-10001,\"reason\":\"RESTOCK\"}",
-            "{\"delta\":2147483647,\"reason\":\"RESTOCK\"}",
-            "{\"reason\":\"RESTOCK\"}",
-            "{\"delta\":null,\"reason\":\"RESTOCK\"}",
-            "{\"delta\":5}",
-            "{\"delta\":5,\"reason\":null}"})
+            "{\"expectedOnHand\":10,\"delta\":10001,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":10,\"delta\":-10001,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":10,\"delta\":2147483647,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":10,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":10,\"delta\":null,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":10,\"delta\":5}",
+            "{\"expectedOnHand\":10,\"delta\":5,\"reason\":null}",
+            "{\"delta\":1,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":null,\"delta\":1,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":-1,\"delta\":1,\"reason\":\"RESTOCK\"}"})
     void aDeltaOutsideTheBoundsOrAMissingFieldIsA400ValidationErrorWithNoChangeAndNoAuditRow(String body)
             throws Exception {
         long id = base("Frasco", 10);
@@ -182,7 +187,7 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
     void aZeroDeltaIsA400ValidationErrorWithTheStockDeltaReasonAndNoChange() throws Exception {
         long id = base("Frasco", 10);
 
-        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"delta\":0,\"reason\":\"RESTOCK\"}"));
+        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"expectedOnHand\":10,\"delta\":0,\"reason\":\"RESTOCK\"}"));
 
         assertThat(response.getStatus()).isEqualTo(400);
         ContractAssertions.assertMatchesGoldenForPath(response, "admin-error-invalid-stock-delta.json", adjustPath(id));
@@ -192,17 +197,21 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "{\"delta\":1.5,\"reason\":\"RESTOCK\"}",
-            "{\"delta\":\"x\",\"reason\":\"RESTOCK\"}",
-            "{\"delta\":\"5\",\"reason\":\"RESTOCK\"}",
-            "{\"delta\":1,\"reason\":\"FOO\"}",
-            "{\"delta\":1,\"reason\":\"restock\"}",
-            "{\"delta\":1,\"reason\":7}",
-            "{\"delta\":1,\"reason\":\"RESTOCK\",\"note\":\"SentinelNoteText\"}",
-            "{\"delta\":1,\"reason\":\"RESTOCK\",\"productId\":9}",
-            "{\"delta\":1,\"delta\":2,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":10,\"delta\":1.5,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":10,\"delta\":\"x\",\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":10,\"delta\":\"5\",\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":10,\"delta\":1,\"reason\":\"FOO\"}",
+            "{\"expectedOnHand\":10,\"delta\":1,\"reason\":\"restock\"}",
+            "{\"expectedOnHand\":10,\"delta\":1,\"reason\":7}",
+            "{\"expectedOnHand\":10,\"delta\":1,\"reason\":\"RESTOCK\",\"note\":\"SentinelNoteText\"}",
+            "{\"expectedOnHand\":10,\"delta\":1,\"reason\":\"RESTOCK\",\"productId\":9}",
+            "{\"expectedOnHand\":10,\"delta\":1,\"delta\":2,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":10,\"expectedOnHand\":11,\"delta\":1,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":\"10\",\"delta\":1,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":10.5,\"delta\":1,\"reason\":\"RESTOCK\"}",
+            "{\"expectedOnHand\":2147483648,\"delta\":1,\"reason\":\"RESTOCK\"}",
             "[]",
-            "{\"delta\":1,\"reason\":\"RESTOCK\"",
+            "{\"expectedOnHand\":10,\"delta\":1,\"reason\":\"RESTOCK\"",
             ""})
     void aTypeErrorAnUnknownReasonANoteAnUnknownPropertyOrBrokenJsonIsA400MalformedRequestWithNoChange(String body)
             throws Exception {
@@ -222,7 +231,7 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
         long id = base("Frasco", 10);
 
         MockHttpServletResponse response = send(adminPost(adjustPath(id)).contentType(MediaType.TEXT_PLAIN)
-                .content("{\"delta\":1,\"reason\":\"RESTOCK\"}"));
+                .content("{\"expectedOnHand\":10,\"delta\":1,\"reason\":\"RESTOCK\"}"));
 
         assertThat(response.getStatus()).isEqualTo(415);
         assertThat(counts(id)).containsExactly(10, 0);
@@ -234,7 +243,7 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
         base("Frasco", 10);
 
         MockHttpServletResponse response = send(
-                adminPostJson("/api/admin/stock/" + id + "/adjust", "{\"delta\":1,\"reason\":\"RESTOCK\"}"));
+                adminPostJson("/api/admin/stock/" + id + "/adjust", "{\"expectedOnHand\":10,\"delta\":1,\"reason\":\"RESTOCK\"}"));
 
         assertThat(response.getStatus()).as(id).isEqualTo(400);
         ContractAssertions.assertMatchesGoldenForPath(response, "admin-error-validation.json",
@@ -247,7 +256,7 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
         long id = base("Frasco", 10);
         reserve(id, 8);
 
-        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"delta\":-3,\"reason\":\"OTHER\"}"));
+        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"expectedOnHand\":10,\"delta\":-3,\"reason\":\"OTHER\"}"));
 
         assertThat(response.getStatus()).isEqualTo(409);
         ContractAssertions.assertMatchesGoldenForPath(response, "admin-error-insufficient-stock.json", adjustPath(id));
@@ -259,7 +268,7 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
     void goingBelowZeroIsA409AndLeavesTheRowUnchanged() throws Exception {
         long id = base("Frasco", 3);
 
-        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"delta\":-4,\"reason\":\"OTHER\"}"));
+        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"expectedOnHand\":3,\"delta\":-4,\"reason\":\"OTHER\"}"));
 
         assertThat(response.getStatus()).isEqualTo(409);
         ContractAssertions.assertMatchesGoldenForPath(response, "admin-error-insufficient-stock.json", adjustPath(id));
@@ -271,7 +280,7 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
     void adjustingTheSumPastTheIntegerRangeIsA400WithTheRangeReason() throws Exception {
         long id = base("Frasco", Integer.MAX_VALUE - 5);
 
-        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"delta\":10,\"reason\":\"RESTOCK\"}"));
+        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"expectedOnHand\":" + (Integer.MAX_VALUE - 5) + ",\"delta\":10,\"reason\":\"RESTOCK\"}"));
 
         assertThat(response.getStatus()).isEqualTo(400);
         assertThat(response.getContentAsString()).contains("\"reason\":\"STOCK_OUT_OF_RANGE\"");
@@ -284,7 +293,7 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
         long frasco = base("Frasco", 10);
         long combo = catalog.createCombo(product("Combo x2", "180.00"), frasco, 2).id();
 
-        MockHttpServletResponse response = send(adminPostJson(adjustPath(combo), "{\"delta\":1,\"reason\":\"RESTOCK\"}"));
+        MockHttpServletResponse response = send(adminPostJson(adjustPath(combo), "{\"expectedOnHand\":10,\"delta\":1,\"reason\":\"RESTOCK\"}"));
 
         assertThat(response.getStatus()).isEqualTo(409);
         ContractAssertions.assertMatchesGoldenForPath(response, "admin-error-conflict.json", adjustPath(combo));
@@ -298,7 +307,7 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
     void aBaseProductWithoutAStockRowIsA409ConflictAndNeverGetsOne() throws Exception {
         long id = catalog.createBase(product("Sin stock", "90.00")).id();
 
-        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"delta\":5,\"reason\":\"RESTOCK\"}"));
+        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"expectedOnHand\":0,\"delta\":5,\"reason\":\"RESTOCK\"}"));
 
         assertThat(response.getStatus()).isEqualTo(409);
         ContractAssertions.assertMatchesGoldenForPath(response, "admin-error-conflict.json", adjustPath(id));
@@ -310,7 +319,7 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
     @Test
     void anUnknownProductIsA404NotFoundWithNoAuditRow() throws Exception {
         MockHttpServletResponse response = send(adminPostJson(adjustPath(987654),
-                "{\"delta\":5,\"reason\":\"RESTOCK\"}"));
+                "{\"expectedOnHand\":0,\"delta\":5,\"reason\":\"RESTOCK\"}"));
 
         assertThat(response.getStatus()).isEqualTo(404);
         ContractAssertions.assertMatchesGoldenForPath(response, "admin-error-not-found.json", adjustPath(987654));
@@ -322,7 +331,7 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
         long id = base("Retirado", 4);
         catalog.setActive(id, false);
 
-        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"delta\":6,\"reason\":\"RETURN\"}"));
+        MockHttpServletResponse response = send(adminPostJson(adjustPath(id), "{\"expectedOnHand\":4,\"delta\":6,\"reason\":\"RETURN\"}"));
 
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat(counts(id)).containsExactly(10, 0);
@@ -337,5 +346,62 @@ class AdminStockHttpIT extends AbstractAdminHttpIT {
         assertThat(send(adminPostJson("/api/admin/stock/" + id + "/set", "{\"onHand\":99}")).getStatus())
                 .isEqualTo(404);
         assertThat(counts(id)).containsExactly(10, 0);
+    }
+
+    // ---- compare-and-set on expectedOnHand (D-20261008-48) ----------------------------------------------------
+
+    @Test
+    void aRetryOfTheSameBodyAfterTheFirstCommittedIsA409ConflictAndTheStockMovedOnce() throws Exception {
+        long id = base("Frasco", 10);
+        String body = "{\"expectedOnHand\":10,\"delta\":100,\"reason\":\"RESTOCK\"}";
+
+        MockHttpServletResponse first = send(adminPostJson(adjustPath(id), body));
+        MockHttpServletResponse retry = send(adminPostJson(adjustPath(id), body));
+
+        assertThat(first.getStatus()).isEqualTo(200);
+        assertThat(retry.getStatus()).isEqualTo(409);
+        ContractAssertions.assertMatchesGoldenForPath(retry, "admin-error-conflict.json", adjustPath(id));
+        assertThat(counts(id)).containsExactly(110, 0);
+        assertThat(auditRows()).isEqualTo(1);
+    }
+
+    @Test
+    void anExpectedOnHandThatIsNotTheCommittedOneIsA409ConflictWithNoChangeAndNoAuditRow() throws Exception {
+        long id = base("Frasco", 10);
+
+        for (String expected : List.of("0", "9", "11", "2147483647")) {
+            MockHttpServletResponse response = send(adminPostJson(adjustPath(id),
+                    "{\"expectedOnHand\":" + expected + ",\"delta\":1,\"reason\":\"RESTOCK\"}"));
+            assertThat(response.getStatus()).as(expected).isEqualTo(409);
+            ContractAssertions.assertMatchesGoldenForPath(response, "admin-error-conflict.json", adjustPath(id));
+        }
+        assertThat(counts(id)).containsExactly(10, 0);
+        assertThat(auditRows()).isZero();
+    }
+
+    @Test
+    void anExpectedOnHandOfZeroIsAcceptedWhenTheRowIsAtZero() throws Exception {
+        long id = base("Vacio", 0);
+
+        MockHttpServletResponse response = send(
+                adminPostJson(adjustPath(id), "{\"expectedOnHand\":0,\"delta\":3,\"reason\":\"RESTOCK\"}"));
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(counts(id)).containsExactly(3, 0);
+    }
+
+    @Test
+    void theBoundDeltasOfPlusAndMinusTenThousandAreAccepted() throws Exception {
+        long id = base("Frasco", 10);
+
+        MockHttpServletResponse up = send(adminPostJson(adjustPath(id),
+                "{\"expectedOnHand\":10,\"delta\":10000,\"reason\":\"RESTOCK\"}"));
+        MockHttpServletResponse down = send(adminPostJson(adjustPath(id),
+                "{\"expectedOnHand\":10010,\"delta\":-10000,\"reason\":\"DAMAGED_OR_LOST\"}"));
+
+        assertThat(up.getStatus()).isEqualTo(200);
+        assertThat(down.getStatus()).isEqualTo(200);
+        assertThat(counts(id)).containsExactly(10, 0);
+        assertThat(auditRows()).isEqualTo(2);
     }
 }

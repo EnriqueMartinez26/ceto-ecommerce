@@ -43,7 +43,7 @@ class AdminCatalogCreateComboIT extends AbstractPostgresIT {
     @BeforeEach
     void setUp() {
         base = admin.createBase(product("Frasco", "100.00")).id();
-        adminInventory.adjust(base, 10, StockAdjustmentReason.RESTOCK);
+        adminInventory.adjust(base, 10, 0, StockAdjustmentReason.RESTOCK);
     }
 
     private int count(String table) {

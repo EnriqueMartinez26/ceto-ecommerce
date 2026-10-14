@@ -113,18 +113,21 @@ class AdminStockPiiServerIT extends AbstractAdminServerIT {
 
         List<AdminClient.Reply> successes = List.of(client.get("/api/admin/stock"),
                 client.get("/api/admin/inventory/reconciliation"),
-                adjust(client, String.valueOf(base), "{\"delta\":5,\"reason\":\"RESTOCK\"}"));
+                adjust(client, String.valueOf(base), "{\"expectedOnHand\":10,\"delta\":5,\"reason\":\"RESTOCK\"}"));
         List<AdminClient.Reply> errors = List.of(
-                adjust(client, String.valueOf(base), "{\"delta\":-9999,\"reason\":\"OTHER\"}"),
-                adjust(client, String.valueOf(combo), "{\"delta\":1,\"reason\":\"RESTOCK\"}"),
-                adjust(client, "987654", "{\"delta\":1,\"reason\":\"RESTOCK\"}"),
-                adjust(client, String.valueOf(base), "{\"delta\":1,\"reason\":\"RESTOCK\",\"note\":\"" + NOTE + "\"}"),
-                adjust(client, String.valueOf(base), "{\"delta\":1,\"reason\":\"" + REASON + "\"}"),
-                adjust(client, String.valueOf(base), "{\"delta\":\"" + NOTE + "\",\"reason\":\"RESTOCK\"}"),
-                adjust(client, "notanumber", "{\"delta\":1,\"reason\":\"RESTOCK\"}"));
+                adjust(client, String.valueOf(base), "{\"expectedOnHand\":15,\"delta\":-9999,\"reason\":\"OTHER\"}"),
+                adjust(client, String.valueOf(combo), "{\"expectedOnHand\":15,\"delta\":1,\"reason\":\"RESTOCK\"}"),
+                adjust(client, "987654", "{\"expectedOnHand\":15,\"delta\":1,\"reason\":\"RESTOCK\"}"),
+                adjust(client, String.valueOf(base), "{\"expectedOnHand\":15,\"delta\":1,\"reason\":\"RESTOCK\",\"note\":\"" + NOTE + "\"}"),
+                adjust(client, String.valueOf(base), "{\"expectedOnHand\":15,\"delta\":1,\"reason\":\"" + REASON + "\"}"),
+                adjust(client, String.valueOf(base), "{\"expectedOnHand\":15,\"delta\":\"" + NOTE + "\",\"reason\":\"RESTOCK\"}"),
+                adjust(client, "notanumber", "{\"expectedOnHand\":15,\"delta\":1,\"reason\":\"RESTOCK\"}"),
+                adjust(client, String.valueOf(base), "{\"expectedOnHand\":10,\"delta\":1,\"reason\":\"RESTOCK\"}"),
+                adjust(client, String.valueOf(base),
+                        "{\"expectedOnHand\":\"" + NOTE + "\",\"delta\":1,\"reason\":\"RESTOCK\"}"));
 
         assertThat(successes).extracting(AdminClient.Reply::status).containsOnly(200);
-        assertThat(errors).extracting(AdminClient.Reply::status).containsExactly(409, 409, 404, 400, 400, 400, 400);
+        assertThat(errors).extracting(AdminClient.Reply::status).containsExactly(409, 409, 404, 400, 400, 400, 400, 409, 400);
         for (AdminClient.Reply reply : successes) {
             assertThat(reply.body()).doesNotContain(NAME).doesNotContain("6666").doesNotContain(ADDRESS);
         }

@@ -8,6 +8,7 @@ import ar.cetobhb.admin.domain.StockAdjustmentReason;
 import ar.cetobhb.admin.service.AdminInventoryService;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
+import ar.cetobhb.inventory.domain.StaleStockException;
 import ar.cetobhb.inventory.domain.StockNotAdjustableException;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.domain.Buyer;
@@ -63,13 +64,15 @@ class AdminStockPiiLoggingIT extends AbstractPostgresIT {
                 new Buyer(NAME, PHONE, ADDRESS, ShippingZone.CORDOBA_CAPITAL),
                 List.of(new PlaceOrderCommand.Line(base, 3))));
 
-        admin.adjust(base, 10, StockAdjustmentReason.RESTOCK);
-        assertThatThrownBy(() -> admin.adjust(base, -100, StockAdjustmentReason.OTHER))
+        admin.adjust(base, 10, 5, StockAdjustmentReason.RESTOCK);
+        assertThatThrownBy(() -> admin.adjust(base, -100, 15, StockAdjustmentReason.OTHER))
                 .isInstanceOf(InsufficientStockException.class);
-        assertThatThrownBy(() -> admin.adjust(combo, 1, StockAdjustmentReason.OTHER))
+        assertThatThrownBy(() -> admin.adjust(combo, 1, 15, StockAdjustmentReason.OTHER))
                 .isInstanceOf(StockNotAdjustableException.class);
-        assertThatThrownBy(() -> admin.adjust(unconfigured, 1, StockAdjustmentReason.OTHER))
+        assertThatThrownBy(() -> admin.adjust(unconfigured, 1, 0, StockAdjustmentReason.OTHER))
                 .isInstanceOf(StockNotAdjustableException.class);
+        assertThatThrownBy(() -> admin.adjust(base, 1, 14, StockAdjustmentReason.OTHER))
+                .isInstanceOf(StaleStockException.class);
         admin.stockView();
         jdbc.update("UPDATE inventory_stock SET reserved = 1 WHERE product_id = ?", base);
         assertThat(admin.reconciliation().rows()).hasSize(1);
@@ -79,7 +82,7 @@ class AdminStockPiiLoggingIT extends AbstractPostgresIT {
                     + " RAISE EXCEPTION 'audit refused' USING ERRCODE = '23514'; END $$ LANGUAGE plpgsql");
             jdbc.execute("CREATE TRIGGER fail_audit_stock_pii_for_test BEFORE INSERT ON admin_audit_log FOR EACH ROW"
                     + " EXECUTE FUNCTION fail_audit_stock_pii_for_test()");
-            assertThatThrownBy(() -> admin.adjust(base, 1, StockAdjustmentReason.COUNT_CORRECTION))
+            assertThatThrownBy(() -> admin.adjust(base, 1, 15, StockAdjustmentReason.COUNT_CORRECTION))
                     .isInstanceOf(DataIntegrityViolationException.class);
         } finally {
             jdbc.execute("DROP TRIGGER IF EXISTS fail_audit_stock_pii_for_test ON admin_audit_log");

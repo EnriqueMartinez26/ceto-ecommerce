@@ -58,12 +58,12 @@ public class AdminInventoryService {
      * @throws ar.cetobhb.catalog.domain.ProductNotFoundException            for an unknown product
      */
     @Transactional
-    public AdjustedStock adjust(long productId, int delta, StockAdjustmentReason reason) {
+    public AdjustedStock adjust(long productId, int delta, int expectedOnHand, StockAdjustmentReason reason) {
         Objects.requireNonNull(reason, "reason");
         if (delta == 0 || delta < -MAX_DELTA || delta > MAX_DELTA) {
             throw new ValidationException(ReasonCode.INVALID_STOCK_DELTA);
         }
-        StockAdjustment change = inventory.adjustBy(productId, delta);
+        StockAdjustment change = inventory.adjustBy(productId, delta, expectedOnHand);
         audit.record(AuditEntry.stockAdjusted(productId, reason, change.onHandBefore(), change.onHandAfter()));
         return AdjustedStock.of(productId, change.onHandAfter(), change.reserved());
     }

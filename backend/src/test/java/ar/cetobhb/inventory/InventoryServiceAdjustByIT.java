@@ -10,6 +10,7 @@ import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.common.domain.ReasonCode;
 import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
+import ar.cetobhb.inventory.domain.StaleStockException;
 import ar.cetobhb.inventory.domain.StockAdjustment;
 import ar.cetobhb.inventory.domain.StockNotAdjustableException;
 import ar.cetobhb.inventory.service.InventoryService;
@@ -53,7 +54,7 @@ class InventoryServiceAdjustByIT extends AbstractPostgresIT {
     void aRestockReturnsTheBeforeAfterAndReservedCounts() {
         long id = baseWithStock(5, 2);
 
-        StockAdjustment result = inventory.adjustBy(id, 20);
+        StockAdjustment result = inventory.adjustBy(id, 20, 5);
 
         assertThat(result).isEqualTo(new StockAdjustment(id, 5, 25, 2));
         assertCounts(id, 25, 2);
@@ -63,7 +64,7 @@ class InventoryServiceAdjustByIT extends AbstractPostgresIT {
     void aDeltaBelowReservedIsRejectedAndTheRowIsUnchanged() {
         long id = baseWithStock(5, 2);
 
-        assertThatThrownBy(() -> inventory.adjustBy(id, -4)).isInstanceOf(InsufficientStockException.class);
+        assertThatThrownBy(() -> inventory.adjustBy(id, -4, 5)).isInstanceOf(InsufficientStockException.class);
 
         assertCounts(id, 5, 2);
     }
@@ -72,7 +73,7 @@ class InventoryServiceAdjustByIT extends AbstractPostgresIT {
     void aDeltaDownExactlyToReservedSucceeds() {
         long id = baseWithStock(5, 2);
 
-        assertThat(inventory.adjustBy(id, -3)).isEqualTo(new StockAdjustment(id, 5, 2, 2));
+        assertThat(inventory.adjustBy(id, -3, 5)).isEqualTo(new StockAdjustment(id, 5, 2, 2));
 
         assertCounts(id, 2, 2);
     }
@@ -81,7 +82,7 @@ class InventoryServiceAdjustByIT extends AbstractPostgresIT {
     void aNegativeResultIsRejected() {
         long id = baseWithStock(5, 0);
 
-        assertThatThrownBy(() -> inventory.adjustBy(id, -6)).isInstanceOf(InsufficientStockException.class);
+        assertThatThrownBy(() -> inventory.adjustBy(id, -6, 5)).isInstanceOf(InsufficientStockException.class);
 
         assertCounts(id, 5, 0);
     }
@@ -90,9 +91,9 @@ class InventoryServiceAdjustByIT extends AbstractPostgresIT {
     void aZeroDeltaAndAnOutOfRangeResultAreValidationErrors() {
         long id = baseWithStock(5, 0);
 
-        assertThatThrownBy(() -> inventory.adjustBy(id, 0)).isInstanceOfSatisfying(ValidationException.class,
+        assertThatThrownBy(() -> inventory.adjustBy(id, 0, 5)).isInstanceOfSatisfying(ValidationException.class,
                 e -> assertThat(e.reason()).isEqualTo(ReasonCode.INVALID_STOCK_DELTA));
-        assertThatThrownBy(() -> inventory.adjustBy(id, Integer.MAX_VALUE)).isInstanceOfSatisfying(
+        assertThatThrownBy(() -> inventory.adjustBy(id, Integer.MAX_VALUE, 5)).isInstanceOfSatisfying(
                 ValidationException.class, e -> assertThat(e.reason()).isEqualTo(ReasonCode.STOCK_OUT_OF_RANGE));
 
         assertCounts(id, 5, 0);
@@ -100,7 +101,7 @@ class InventoryServiceAdjustByIT extends AbstractPostgresIT {
 
     @Test
     void anUnknownProductIsNotFound() {
-        assertThatThrownBy(() -> inventory.adjustBy(9999L, 5)).isInstanceOf(ProductNotFoundException.class);
+        assertThatThrownBy(() -> inventory.adjustBy(9999L, 5, 5)).isInstanceOf(ProductNotFoundException.class);
     }
 
     @Test
@@ -108,7 +109,7 @@ class InventoryServiceAdjustByIT extends AbstractPostgresIT {
         long baseId = baseWithStock(10, 0);
         ProductSnapshot combo = catalog.createCombo(product("Combo", "270.00"), baseId, 3);
 
-        assertThatThrownBy(() -> inventory.adjustBy(combo.id(), 5)).isInstanceOf(StockNotAdjustableException.class);
+        assertThatThrownBy(() -> inventory.adjustBy(combo.id(), 5, 5)).isInstanceOf(StockNotAdjustableException.class);
 
         assertThat(stockRows()).isEqualTo(1);
         assertCounts(baseId, 10, 0);
@@ -118,7 +119,7 @@ class InventoryServiceAdjustByIT extends AbstractPostgresIT {
     void aProductWithoutAStockRowIsNotAdjustableAndNoRowIsCreated() {
         ProductSnapshot base = catalog.createBase(product("No stock yet", "100.00"));
 
-        assertThatThrownBy(() -> inventory.adjustBy(base.id(), 5)).isInstanceOf(StockNotAdjustableException.class);
+        assertThatThrownBy(() -> inventory.adjustBy(base.id(), 5, 5)).isInstanceOf(StockNotAdjustableException.class);
 
         assertThat(stockRows()).isZero();
     }
@@ -128,6 +129,37 @@ class InventoryServiceAdjustByIT extends AbstractPostgresIT {
         long id = baseWithStock(5, 0);
         catalog.setActive(id, false);
 
-        assertThat(inventory.adjustBy(id, 1)).isEqualTo(new StockAdjustment(id, 5, 6, 0));
+        assertThat(inventory.adjustBy(id, 1, 5)).isEqualTo(new StockAdjustment(id, 5, 6, 0));
+    }
+
+    @Test
+    void anExpectedOnHandThatIsNotTheCommittedOneIsStaleAndTheRowIsUnchanged() {
+        long id = baseWithStock(5, 2);
+
+        assertThatThrownBy(() -> inventory.adjustBy(id, 20, 4)).isInstanceOf(StaleStockException.class);
+        assertThatThrownBy(() -> inventory.adjustBy(id, 20, 6)).isInstanceOf(StaleStockException.class);
+        assertThatThrownBy(() -> inventory.adjustBy(id, 20, -1)).isInstanceOf(StaleStockException.class);
+
+        assertCounts(id, 5, 2);
+    }
+
+    @Test
+    void theComparisonRunsBeforeTheShortageAndTheDeltaRules() {
+        long id = baseWithStock(5, 2);
+
+        assertThatThrownBy(() -> inventory.adjustBy(id, -4, 9)).isInstanceOf(StaleStockException.class);
+        assertThatThrownBy(() -> inventory.adjustBy(id, 0, 9)).isInstanceOf(StaleStockException.class);
+
+        assertCounts(id, 5, 2);
+    }
+
+    @Test
+    void aSecondCallWithTheSameExpectedOnHandIsStaleSoTheDeltaIsAppliedOnce() {
+        long id = baseWithStock(5, 0);
+
+        inventory.adjustBy(id, 100, 5);
+        assertThatThrownBy(() -> inventory.adjustBy(id, 100, 5)).isInstanceOf(StaleStockException.class);
+
+        assertCounts(id, 105, 0);
     }
 }

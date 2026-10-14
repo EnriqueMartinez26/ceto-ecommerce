@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
+import ar.cetobhb.inventory.domain.StaleStockException;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.domain.CancelReason;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
@@ -137,6 +138,21 @@ class OrderLockOrderingIT extends AbstractPostgresIT {
         assertThat(StockReconciliation.stockDrift(jdbc)).isEmpty();
     }
 
+    /**
+     * The adjustment sends the on_hand it read, as the panel does (D-20261008-48). A payment may move on_hand between
+     * the read and the lock; then the compare under the lock loses with a stale answer, which is a normal outcome here:
+     * the lock was taken first either way, so the lock order is exercised in both.
+     */
+    private String adjustingWhatItSaw(long product, int delta) {
+        int seen = jdbc.queryForObject("SELECT on_hand FROM inventory_stock WHERE product_id = ?", Integer.class,
+                product);
+        try {
+            return "adjusted:" + inventory.adjustBy(product, delta, seen).productId();
+        } catch (StaleStockException stale) {
+            return "stale:" + product;
+        }
+    }
+
     @Test
     void placementsPaymentsCancellationsAndExpiryOnSharedBaseProductsNeverDeadlock() {
         long x = base("X");
@@ -173,9 +189,9 @@ class OrderLockOrderingIT extends AbstractPostgresIT {
             // INV-A1: the admin delta adjustment (AINV-05) takes a single stock row lock and nothing else, so it adds no
             // lock-order edge. One per product, in the middle of the others: a version that held a second row (or
             // locked in another sequence) would deadlock with the ascending lockers and fail the iteration.
-            tasks.add(() -> "adjusted:" + inventory.adjustBy(z, 1).productId());
-            tasks.add(() -> "adjusted:" + inventory.adjustBy(y, -1).productId());
-            tasks.add(() -> "adjusted:" + inventory.adjustBy(x, 1).productId());
+            tasks.add(() -> adjustingWhatItSaw(z, 1));
+            tasks.add(() -> adjustingWhatItSaw(y, -1));
+            tasks.add(() -> adjustingWhatItSaw(x, 1));
 
             Report<String> report = BurstRunner.runMeasured(tasks);
 
