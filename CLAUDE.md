@@ -869,6 +869,19 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   a DEBUG y exige que no aparezcan la cuenta, `RemoteIpAddress=` ni el id de sesión, y recorre un login
   limitado (el 429 y su línea de DEBUG no contienen la IP, la cuenta ni la clave). Mutación (2026-10-14): sin la
   línea de `application.yml` fallan esos dos tests.
+  *Guarda de arranque* (D-20261008-46): `SecurityLogLevelGuard` (`Binder` sobre la configuración efectiva,
+  `@Lazy(false)`, mensaje fijo sin el valor, como `AdminSessionGuard`) detiene el arranque, en cualquier perfil, si
+  `logging.level.org.springframework.security` falta o está por debajo de WARN, si una subcategoría suya está por
+  debajo de WARN, si `...security.authentication.dao` no está en OFF o si un grupo de `logging.group.*` que la
+  contiene está por debajo de WARN. `SecurityLogLevelGuardStartupTest` (`SpringApplication` real con el yml real:
+  argumento `--logging.level...=DEBUG`, variable `LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY=DEBUG`, subcategoría,
+  grupo, dao, todos los perfiles, inicialización perezosa y el yml entregado arranca; con `--debug=true` el
+  WARN explícito sigue ganando) y `AdminSessionPolicyWiringIT` (la guarda está en el contexto real). Mutaciones
+  (2026-10-14): sin el cuerpo de la guarda fallan 15 de 23 tests de arranque; sin la guarda y sin la línea del yml,
+  16; sin `@Configuration` falla el test de cableado. Límite: mira la configuración al arrancar; un cambio
+  posterior por el sistema de logging queda fuera (los controles positivos de `AdminLoginPiiServerIT` y
+  `AdminAuthenticationLoggingIT` suben el nivel así, después de arrancar, y siguen funcionando). No hay actuator,
+  así que ninguna ruta HTTP cambia un nivel en la aplicación en marcha, y el proyecto no trae `logback.xml`.
 - **Política de la sesión de administración** (X5). *Cookie*: `AdminSessionGuard` (lee el
   `Environment` efectivo, como `WebConfig`) detiene el arranque, en cualquier perfil, si
   `server.servlet.session.cookie.secure` o `http-only` no son `true`, `same-site` no es `strict` o

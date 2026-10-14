@@ -256,3 +256,21 @@ fuera de rango detiene el arranque) y se cambian en `application.yml`. Los 429 s
 registran solo en DEBUG y sin la IP ni el usuario. Los logs de Spring Security
 quedan en WARN: a nivel DEBUG imprimen la cuenta, la IP y el id de sesión
 (D-20261008-44); no subir esa categoría en producción.
+
+### El arranque se niega si se sube el log de Spring Security
+
+`SecurityLogLevelGuard` (D-20261008-46) detiene el arranque, en cualquier perfil, si la
+configuración efectiva deja `logging.level.org.springframework.security` por debajo de WARN
+(DEBUG, TRACE o INFO) o sin definir, si una subcategoría suya (`...security.web`, por
+ejemplo) queda por debajo de WARN, si `...security.authentication.dao` no está en OFF, o si
+un grupo de logging (`logging.group.*`) que la contiene queda por debajo de WARN. Lo ve igual
+venga del `application.yml`, de un argumento o de una variable de entorno
+(`LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY=DEBUG`). El mensaje es fijo y no repite el valor.
+Si hace falta diagnosticar un problema de Security, no se sube el nivel en el despliegue:
+se reproduce en local con otra cuenta y otra clave.
+
+Qué no cubre: la guarda mira la configuración al arrancar, no un cambio posterior del nivel
+en la aplicación en marcha. Esa vía no existe hoy: la aplicación no tiene actuator
+(`/loggers`) ni otra ruta que cambie un nivel. Tampoco lee un archivo propio de logback
+(el proyecto no trae ninguno). Un nombre de nivel que Spring Boot no conoce lo rechaza
+Boot mismo al arrancar.
