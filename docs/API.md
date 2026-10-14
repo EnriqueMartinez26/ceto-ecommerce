@@ -710,10 +710,12 @@ Golden: `backend/src/test/resources/contract/admin-stock.json`
 
 ### `POST /api/admin/stock/{productId}/adjust`
 
-Cuerpo `{"delta": <entero>, "reason": "<motivo>"}`. `delta` va de -10000 a 10000 y no puede ser 0; `reason` es uno de
+Cuerpo `{"expectedOnHand": <entero>, "delta": <entero>, "reason": "<motivo>"}`. `expectedOnHand` es obligatorio, de 0 a 2147483647: el `on_hand` que la pantalla mostró (ver abajo). `delta` va de -10000 a 10000 y no puede ser 0; `reason` es uno de
 `COUNT_CORRECTION`, `RESTOCK`, `DAMAGED_OR_LOST`, `RETURN` u `OTHER` (conjunto propuesto, pendiente de OK de la clienta,
 D-20261008-18). **No hay nota**: una propiedad `note` (o cualquier otra desconocida) es 400 `MALFORMED_REQUEST`, para que
 ningún texto libre llegue al registro de auditoría (D-20261008-23). `productId` va de 1 a 9007199254740991.
+
+Es una compare-and-set (D-20261008-48): bajo el lock de la fila, si el `on_hand` confirmado no es `expectedOnHand` la respuesta es 409 `CONFLICT` y no cambia nada ni audita. Así un reintento del mismo cuerpo después de que el primero confirmó (doble toque, red lenta) no suma dos veces: el segundo ve otro `on_hand`. La comparación va antes que la regla de `reserved`. Tras un 409 `CONFLICT` la pantalla vuelve a leer `GET /api/admin/stock` y decide de nuevo.
 
 Suma `delta` al stock físico (`on_hand`) de un producto base, deja una fila `STOCK_ADJUSTED` con el stock antes y después y
 el motivo, todo en una transacción, y responde 200 con los contadores nuevos:
@@ -732,19 +734,20 @@ Golden: `backend/src/test/resources/contract/admin-stock-adjusted.json`
 | Caso | Respuesta |
 |---|---|
 | `delta` 0 | 400 `VALIDATION_ERROR` con `reason: INVALID_STOCK_DELTA` |
-| `delta` fuera de ±10000, ausente o `null`; `reason` ausente o `null` | 400 `VALIDATION_ERROR` |
-| `delta` decimal o texto, `reason` fuera del conjunto, JSON roto, propiedad repetida o desconocida (`note` incluida) | 400 `MALFORMED_REQUEST` |
+| `delta` fuera de ±10000, ausente o `null`; `expectedOnHand` ausente, `null`, negativo; `reason` ausente o `null` | 400 `VALIDATION_ERROR` |
+| `delta` o `expectedOnHand` decimal, texto o fuera del rango de un entero de 32 bits, `reason` fuera del conjunto, JSON roto, propiedad repetida o desconocida (`note` incluida) | 400 `MALFORMED_REQUEST` |
 | `productId` fuera de rango o no numérico | 400 `VALIDATION_ERROR` |
 | Otro `Content-Type` | 415 `UNSUPPORTED_MEDIA_TYPE` |
 | El resultado dejaría `on_hand` por debajo de `reserved` o de 0 | 409 `INSUFFICIENT_STOCK`, sin cifras; no cambia nada ni audita |
 | El resultado pasaría de 2147483647 | 400 `VALIDATION_ERROR` con `reason: STOCK_OUT_OF_RANGE` |
+| `expectedOnHand` distinto del `on_hand` confirmado (incluye el reintento del mismo cuerpo) | 409 `CONFLICT`, sin cifras; no cambia nada ni audita |
 | Un combo, o un producto base sin fila de stock | 409 `CONFLICT` (nunca se crea la fila) |
 | Producto inexistente | 404 `NOT_FOUND` |
 
 Bajar el stock hasta exactamente `reserved` es válido. Un producto desactivado se puede ajustar. El ajuste toma solo el lock
 de la fila de stock, igual que una compra, así que no agrega aristas al orden de locks; una compra y un ajuste simultáneos
-se serializan en esa fila y los contadores finales son la suma de lo que se confirmó (el 409 de un ajuste que no cabe es
-siempre `INSUFFICIENT_STOCK`, nunca un conflicto de versión).
+se serializan en esa fila y los contadores finales son la suma de lo que se confirmó (un 409 es `INSUFFICIENT_STOCK` si el resultado no cabe
+o `CONFLICT` si el `expectedOnHand` ya no es el confirmado).
 
 Golden: `backend/src/test/resources/contract/admin-error-invalid-stock-delta.json`
 
@@ -792,7 +795,8 @@ Golden: `backend/src/test/resources/contract/admin-error-conflict.json`
 ```
 
 El texto del 409 `INSUFFICIENT_STOCK` es el mismo que en el checkout ("...for this order"): en el ajuste significa que el
-resultado no cabe. Los cuerpos de error llevan `instance` (la ruta pedida) y `requestId`, que los goldens no incluyen.
+resultado no cabe. **Se acepta** que el texto diga "pedido": cambiarlo cambiaría un golden público, y la pantalla de administración
+distingue el caso por el `code` y la ruta, no por el `detail`. Los cuerpos de error llevan `instance` (la ruta pedida) y `requestId`, que los goldens no incluyen.
 
 ### `GET /api/admin/inventory/reconciliation`
 
@@ -1041,7 +1045,7 @@ contra `X-Request-Id`.
 | 409 | `INSUFFICIENT_STOCK` | No alcanza el stock. No dice cuál producto ni cuánto queda. En `POST /api/admin/stock/{productId}/adjust`: el ajuste dejaría `on_hand` por debajo de `reserved` o de 0. | | Solo si el carrito cambia. |
 | 409 | `IDEMPOTENCY_CONFLICT` | La clave ya se usó con otro contenido. No nombra ningún pedido. | | No: usar una clave nueva si es otro pedido. |
 | 409 | `ILLEGAL_TRANSITION` | Solo en `POST /api/admin/orders/{id}/<acción>`: la arista no está en el grafo de estados del pedido (incluye el segundo toque de la misma acción). No nombra estados ni pedido. | | No: recargar el pedido y ver su estado. |
-| 409 | `CONFLICT` | Una restricción de la base o un conflicto de versión que la lógica no previó; en el ajuste de stock, un combo o un producto base sin fila de stock; en `PUT /api/admin/products/{id}`, una `version` que ya no es la actual. | | Una vez, con la misma clave. |
+| 409 | `CONFLICT` | Una restricción de la base o un conflicto de versión que la lógica no previó; en el ajuste de stock, un combo, un producto base sin fila de stock o un `expectedOnHand` que ya no es el `on_hand` confirmado (releer el stock, no reintentar el mismo cuerpo); en `PUT /api/admin/products/{id}`, una `version` que ya no es la actual. | | Una vez, con la misma clave. |
 | 413 | `PAYLOAD_TOO_LARGE` | El cuerpo supera `ceto.web.max-body-bytes` (16 KB por defecto). | | No. |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` distinto de `application/json` (en `POST /api/admin/login`, distinto de `application/x-www-form-urlencoded`). | | No. |
 | 429 | `RATE_LIMITED` | La IP agotó sus intentos de checkout o, en `POST /api/admin/login`, sus intentos de login. Mismo código y texto en ambos. | `Retry-After` | Sí, después de esa espera. |

@@ -9,6 +9,7 @@ import ar.cetobhb.common.domain.ValidationException;
 import ar.cetobhb.common.web.SecurityProblem;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
 import ar.cetobhb.inventory.domain.StockAlreadyConfiguredException;
+import ar.cetobhb.inventory.domain.StaleStockException;
 import ar.cetobhb.inventory.domain.StockNotAdjustableException;
 import ar.cetobhb.inventory.domain.StockNotConfiguredException;
 import ar.cetobhb.orders.domain.CheckoutInProgressException;
@@ -82,6 +83,8 @@ final class ApiErrorCatalog {
             Map.entry(StockNotAdjustableException.class, CONFLICT),
             // Admin product edit based on a version that is no longer current (ACAT-04): a conflict with the current state.
             Map.entry(StaleProductVersionException.class, CONFLICT),
+            // Admin stock adjustment based on an on_hand that is no longer current (compare-and-set, D-20261008-48): a conflict.
+            Map.entry(StaleStockException.class, CONFLICT),
             Map.entry(OrderNotFoundException.class, NOT_FOUND),
             Map.entry(ProductNotFoundException.class, NOT_FOUND),
             Map.entry(ReservationNotExpiredException.class, INTERNAL));

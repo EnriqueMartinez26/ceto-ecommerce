@@ -61,7 +61,7 @@ class AdminCatalogUpdateIT extends AbstractPostgresIT {
     @BeforeEach
     void setUp() {
         id = admin.createBase(product("Frasco", "100.00")).id();
-        adminInventory.adjust(id, 20, StockAdjustmentReason.RESTOCK);
+        adminInventory.adjust(id, 20, 0, StockAdjustmentReason.RESTOCK);
     }
 
     @AfterEach

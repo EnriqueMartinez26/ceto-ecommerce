@@ -9,6 +9,7 @@ import ar.cetobhb.admin.domain.StockAdjustmentReason;
 import ar.cetobhb.admin.service.AdminInventoryService;
 import ar.cetobhb.catalog.service.CatalogService;
 import ar.cetobhb.inventory.domain.InsufficientStockException;
+import ar.cetobhb.inventory.domain.StaleStockException;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
 import ar.cetobhb.orders.service.OrderPlacementService;
@@ -121,7 +122,7 @@ class StockAdjustBurstIT extends AbstractPostgresIT {
         CompletableFuture<Void> placed = new CompletableFuture<>();
 
         new TransactionTemplate(txManager).executeWithoutResult(status -> {
-            admin.adjust(base, 10, StockAdjustmentReason.RESTOCK);
+            admin.adjust(base, 10, 5, StockAdjustmentReason.RESTOCK);
             CompletableFuture.runAsync(() -> {
                 try {
                     placeOrder(base, 1);
@@ -151,7 +152,7 @@ class StockAdjustBurstIT extends AbstractPostgresIT {
             jdbc.update("UPDATE inventory_stock SET reserved = 4 WHERE product_id = ?", base);
             CompletableFuture.runAsync(() -> {
                 try {
-                    adjusted.complete(admin.adjust(base, -3, StockAdjustmentReason.DAMAGED_OR_LOST));
+                    adjusted.complete(admin.adjust(base, -3, 5, StockAdjustmentReason.DAMAGED_OR_LOST));
                 } catch (Throwable e) {
                     adjusted.completeExceptionally(e);
                 }
@@ -181,7 +182,7 @@ class StockAdjustBurstIT extends AbstractPostgresIT {
             jdbc.update("UPDATE inventory_stock SET on_hand = 5 WHERE product_id = ?", base);
             CompletableFuture.runAsync(() -> {
                 try {
-                    adjusted.complete(admin.adjust(base, 3, StockAdjustmentReason.RESTOCK));
+                    adjusted.complete(admin.adjust(base, 3, 5, StockAdjustmentReason.RESTOCK));
                 } catch (Throwable e) {
                     adjusted.completeExceptionally(e);
                 }
@@ -215,7 +216,7 @@ class StockAdjustBurstIT extends AbstractPostgresIT {
             }
             for (int delta : new int[] {-4, -4, 2, 3}) {
                 tasks.add(() -> {
-                    admin.adjust(base, delta, StockAdjustmentReason.COUNT_CORRECTION);
+                    admin.adjust(base, delta, 5, StockAdjustmentReason.COUNT_CORRECTION);
                     return "adjusted:" + delta;
                 });
             }
@@ -224,10 +225,11 @@ class StockAdjustBurstIT extends AbstractPostgresIT {
 
             String context = "iteration " + i;
             assertThat(report.maxInFlight()).as(context).isGreaterThan(1);
-            // Only a shortage or a lock timeout may fail: no deadlock, no CHECK violation, no other error.
+            // Only a shortage, a stale expectation (the adjustments all expect on_hand 5, so at most one applies) or a lock timeout may fail: no deadlock, no CHECK violation, no other error.
             assertThat(report.outcomes().stream().filter(o -> !o.succeeded()).map(Outcome::error))
                     .as(context)
-                    .allMatch(e -> e instanceof InsufficientStockException || isLockTimeout(e));
+                    .allMatch(e -> e instanceof InsufficientStockException || e instanceof StaleStockException
+                            || isLockTimeout(e));
             int placed = 0;
             int delta = 0;
             int adjustments = 0;

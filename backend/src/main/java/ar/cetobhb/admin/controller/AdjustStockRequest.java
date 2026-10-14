@@ -14,5 +14,6 @@ import jakarta.validation.constraints.NotNull;
  */
 record AdjustStockRequest(
         @NotNull @Min(-AdminInventoryService.MAX_DELTA) @Max(AdminInventoryService.MAX_DELTA) Integer delta,
+        @NotNull @Min(0) @Max(Integer.MAX_VALUE) Integer expectedOnHand,
         @NotNull StockAdjustmentReason reason) {
 }

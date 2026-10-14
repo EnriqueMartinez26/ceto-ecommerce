@@ -213,7 +213,7 @@ class AdminProductUpdateHttpIT extends AbstractAdminHttpIT {
     @Test
     void aPastOrderKeepsItsPriceAndTotalAndANewOrderUsesTheNewPrice() throws Exception {
         long id = created();
-        inventory.adjustBy(id, 10);
+        inventory.adjustBy(id, 10, 0);
         long past = placement.placeOrder(order(id, 2)).orderId();
 
         assertThat(send(adminPutJson(path(id), "{\"name\":\"Frasco\",\"price\":\"150.00\",\"version\":0}")).getStatus())

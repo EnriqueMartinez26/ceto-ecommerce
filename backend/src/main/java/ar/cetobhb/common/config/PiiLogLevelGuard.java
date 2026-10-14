@@ -26,6 +26,8 @@ import org.springframework.core.env.Environment;
  *   <li>turns the Tomcat access log on ({@code server.tomcat.accesslog.enabled=true}): its default pattern prints the
  *       request line with the query string, for example {@code ?q=<phone>}. Accepted limit: if an access log is ever
  *       needed, add a pattern without the query string and relax this check in the same change.</li>
+ *   <li>turns on {@code spring.mvc.log-request-details}: the dispatcher would then log the request parameters and
+ *       headers at DEBUG.</li>
  * </ul>
  * A PARENT category set more verbose does not need a check: Logback gives a logger its own explicit level before the one
  * it inherits, so {@code org.springframework.web=TRACE}, {@code org.hibernate=TRACE} or the root at TRACE leave a
@@ -57,6 +59,9 @@ public class PiiLogLevelGuard {
     static final String ACCESS_LOG_PROPERTY = "server.tomcat.accesslog.enabled";
     static final String ACCESS_LOG_MESSAGE =
             ACCESS_LOG_PROPERTY + " must be false: the access log prints the query string of a request";
+    static final String REQUEST_DETAILS_PROPERTY = "spring.mvc.log-request-details";
+    static final String REQUEST_DETAILS_MESSAGE =
+            REQUEST_DETAILS_PROPERTY + " must be false: it makes the dispatcher log request parameters and headers";
     static final String SUB_CATEGORY_MESSAGE =
             "A logging.level entry under a category that keeps personal data out of the log is below its shipped level";
     static final String GROUP_MESSAGE =
@@ -77,6 +82,11 @@ public class PiiLogLevelGuard {
         levels.put("org.springframework.web.servlet.PageNotFound", "OFF");
         levels.put("org.springframework.web.servlet.DispatcherServlet", "INFO");
         levels.put("org.springframework.web.method.HandlerMethod", "OFF");
+        // The argument and return value loggers of a handler call (static logger of HandlerMethod in Spring 7; named too).
+        levels.put("org.springframework.web.method.support.InvocableHandlerMethod", "OFF");
+        levels.put("org.springframework.web.servlet.mvc.method.annotation.ServletInvocableHandlerMethod", "OFF");
+        // The hidden fallback category of the HTTP message converters (HttpLogging.forLog).
+        levels.put("org.springframework.web.HttpLogging", "OFF");
         levels.put("org.springframework.web.servlet.mvc.method.annotation.ExceptionHandlerExceptionResolver", "OFF");
         // Spring MVC: the request and response bodies ("Read ... to [...]", "Writing [...]").
         levels.put("org.springframework.web.servlet.mvc.method.annotation.AbstractMessageConverterMethodProcessor",
@@ -116,6 +126,9 @@ public class PiiLogLevelGuard {
                     throw new IllegalStateException(GROUP_MESSAGE);
                 }
             }
+        }
+        if (Boolean.TRUE.equals(binder.bind(REQUEST_DETAILS_PROPERTY, Boolean.class).orElse(false))) {
+            throw new IllegalStateException(REQUEST_DETAILS_MESSAGE);
         }
         if (Boolean.TRUE.equals(binder.bind(ACCESS_LOG_PROPERTY, Boolean.class).orElse(false))) {
             throw new IllegalStateException(ACCESS_LOG_MESSAGE);

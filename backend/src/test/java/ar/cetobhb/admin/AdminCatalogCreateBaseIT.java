@@ -99,7 +99,7 @@ class AdminCatalogCreateBaseIT extends AbstractPostgresIT {
                 .isInstanceOf(InsufficientStockException.class);
         assertThat(output.getAll()).doesNotContain("ERROR");
 
-        adminInventory.adjust(id, 5, StockAdjustmentReason.RESTOCK);
+        adminInventory.adjust(id, 5, 0, StockAdjustmentReason.RESTOCK);
 
         assertThat(storefront.product(id).availability()).isEqualTo(StockStatus.AVAILABLE);
     }

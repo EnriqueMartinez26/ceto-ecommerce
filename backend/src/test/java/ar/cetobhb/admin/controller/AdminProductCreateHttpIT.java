@@ -115,7 +115,7 @@ class AdminProductCreateHttpIT extends AbstractAdminHttpIT {
         assertThat(before.get("availability").asString()).isEqualTo("SOLD_OUT");
 
         assertThat(send(adminPostJson("/api/admin/stock/" + id + "/adjust",
-                "{\"delta\":5,\"reason\":\"RESTOCK\"}")).getStatus()).isEqualTo(200);
+                "{\"expectedOnHand\":0,\"delta\":5,\"reason\":\"RESTOCK\"}")).getStatus()).isEqualTo(200);
 
         JsonNode after = json.readTree(send(get("/api/store/products/" + id)).getContentAsString());
         assertThat(after.get("availability").asString()).isEqualTo("AVAILABLE");

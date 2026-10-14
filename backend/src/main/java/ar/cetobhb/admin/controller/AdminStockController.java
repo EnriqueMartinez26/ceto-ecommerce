@@ -39,7 +39,8 @@ class AdminStockController {
     @PostMapping(path = "/stock/{productId}/adjust", consumes = MediaType.APPLICATION_JSON_VALUE)
     AdjustedStockResponse adjust(@PathVariable @Min(1) @Max(MAX_ID) long productId,
             @Valid @RequestBody AdjustStockRequest request) {
-        return AdjustedStockResponse.from(inventory.adjust(productId, request.delta(), request.reason()));
+        return AdjustedStockResponse.from(inventory.adjust(productId, request.delta(), request.expectedOnHand(),
+                request.reason()));
     }
 
     @GetMapping("/inventory/reconciliation")

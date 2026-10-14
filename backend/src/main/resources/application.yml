@@ -71,6 +71,12 @@ logging:
     # At DEBUG these two echo the rejected request value of a parameter that cannot be converted ("Failed to convert value of
     # type 'String' to 'int' for value '<text>'", "For input string: ..."): the query text of the order list is a buyer phone.
     org.springframework.web.method.HandlerMethod: "OFF"
+    # The handler call loggers ("Arguments: [...]" at TRACE, the return value on a handling error). Spring 7 logs them through
+    # the static logger of HandlerMethod above; they are named too so a version that logs under its own class stays silenced.
+    # org.springframework.web.HttpLogging is the hidden fallback category of the HTTP message converters.
+    org.springframework.web.method.support.InvocableHandlerMethod: "OFF"
+    org.springframework.web.servlet.mvc.method.annotation.ServletInvocableHandlerMethod: "OFF"
+    org.springframework.web.HttpLogging: "OFF"
     org.springframework.web.servlet.mvc.method.annotation.ExceptionHandlerExceptionResolver: "OFF"
     # At DEBUG/TRACE the argument resolver and the return value handlers print the request body ("Read ... to [...]") and
     # the response body ("Writing [...]"); the order detail response carries name, phone and address. The logger of both
