@@ -239,6 +239,50 @@ class PiiLogLevelGuardStartupTest {
     }
 
     @Test
+    void theRequestDetailsFlagOfSpringMvcIsRefusedFromTheCommandLineAndTheEnvironment() {
+        Throwable fromArgument = catchThrowable(() -> run("--spring.mvc.log-request-details=true").close());
+        Throwable fromEnvironment = catchThrowable(() -> start(false,
+                Map.of("SPRING_MVC_LOGREQUESTDETAILS", "true"), new String[0]).close());
+        Throwable mixedCase = catchThrowable(() -> run("--spring.mvc.log-request-details=TrUe").close());
+
+        assertRefused(fromArgument, PiiLogLevelGuard.REQUEST_DETAILS_MESSAGE);
+        assertRefused(fromEnvironment, PiiLogLevelGuard.REQUEST_DETAILS_MESSAGE);
+        assertRefused(mixedCase, PiiLogLevelGuard.REQUEST_DETAILS_MESSAGE);
+        assertThat(messagesOf(mixedCase)).doesNotContain("TrUe");
+    }
+
+    @Test
+    void anExplicitlyDisabledRequestDetailsFlagStartsAndTheShippedConfigurationDoesNotSetIt() {
+        try (ConfigurableApplicationContext context = run("--spring.mvc.log-request-details=false")) {
+            assertThat(context.getBean(PiiLogLevelGuard.class)).isNotNull();
+        }
+        try (ConfigurableApplicationContext context = run()) {
+            assertThat(context.getEnvironment().getProperty("spring.mvc.log-request-details")).isNull();
+        }
+    }
+
+    /**
+     * The argument and body loggers. In Spring 7 {@code InvocableHandlerMethod} and {@code ServletInvocableHandlerMethod}
+     * log through the static logger of {@code HandlerMethod} ("Arguments: [...]" at TRACE, the return value on a handling
+     * error), which is already in the list; they are named too, so a future version that logs under its own class stays
+     * silenced. {@code org.springframework.web.HttpLogging} is the hidden fallback category of the HTTP message converters
+     * (they log through it when their own category is not enabled). {@code RequestMappingHandlerAdapter} logs only the
+     * names of the controller advice beans, so it is not listed.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"org.springframework.web.method.support.InvocableHandlerMethod",
+            "org.springframework.web.servlet.mvc.method.annotation.ServletInvocableHandlerMethod",
+            "org.springframework.web.HttpLogging", "org.springframework.web.method.HandlerMethod"})
+    void theArgumentAndBodyLoggersAreInTheListAtOffAndEffectivelySilenced(String category) {
+        assertThat(PiiLogLevelGuard.SHIPPED_LEVELS).containsEntry(category, "OFF");
+        try (ConfigurableApplicationContext context = run("--logging.level.org.springframework.web=TRACE")) {
+            assertThat(context.isActive()).isTrue();
+            assertThat(LoggerFactory.getLogger(category).isTraceEnabled()).as(category).isFalse();
+            assertThat(LoggerFactory.getLogger(category).isErrorEnabled()).as(category).isFalse();
+        }
+    }
+
+    @Test
     void theGuardRunsInEveryProfile() {
         for (String profile : new String[] {"prod", "test", "dev", "default"}) {
             Throwable failure = catchThrowable(() -> start(false, Map.of(), new String[] {profile},
