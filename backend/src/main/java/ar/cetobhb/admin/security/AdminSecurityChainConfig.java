@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -114,7 +115,8 @@ class AdminSecurityChainConfig {
                         problems), LoginRequestGuardFilter.class)
                 // The login is a form post (UsernamePasswordAuthenticationFilter reads two parameters): 204 on success,
                 // the one neutral 401 on every failure. The manager refuses over-long fields before anything is hashed.
-                .authenticationManager(new LoginFieldCapAuthenticationManager(authenticationManager))
+                .authenticationManager(new LoginFieldCapAuthenticationManager(new LoginVerificationCapAuthenticationManager(
+                        authenticationManager, admin.loginRateLimit().maxConcurrentVerifications())))
                 .formLogin(login -> login.loginPage(LOGIN_PATH).loginProcessingUrl(LOGIN_PATH)
                         .successHandler(new AdminLoginSuccessHandler(admin.sessionIdleTimeoutMinutes(), clock))
                         .failureHandler(invalidCredentials(problems)))
@@ -167,9 +169,20 @@ class AdminSecurityChainConfig {
                 .build();
     }
 
-    /** Every authentication failure is the same response: unknown account, wrong password, over-long field. */
+    /**
+     * Every credential failure is the same response (unknown account, wrong password, over-long field); the one
+     * exception is a busy verification cap, which is a 503 and says nothing about the credentials.
+     */
     private static AuthenticationFailureHandler invalidCredentials(ProblemResponses problems) {
-        return (request, response, exception) -> problems.write(request, response, SecurityProblem.INVALID_CREDENTIALS);
+        return (request, response, exception) -> {
+            if (exception instanceof LoginVerificationCapAuthenticationManager.LoginBusyException) {
+                // The cap was full: busy, not a wrong password. Nothing was hashed and no session was opened.
+                response.setHeader(HttpHeaders.RETRY_AFTER, "1");
+                problems.write(request, response, SecurityProblem.SERVICE_BUSY);
+                return;
+            }
+            problems.write(request, response, SecurityProblem.INVALID_CREDENTIALS);
+        };
     }
 
     private static AuthenticationEntryPoint unauthenticated(ProblemResponses problems) {

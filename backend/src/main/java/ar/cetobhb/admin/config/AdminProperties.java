@@ -42,13 +42,16 @@ public record AdminProperties(
      * @param maxTrackedClients     clients tracked individually; beyond that new clients share one overflow bucket
      * @param overflowBurst         attempts the shared overflow bucket allows at once
      * @param overflowRefillPerHour attempts per hour the overflow bucket earns back
+     * @param maxConcurrentVerifications password verifications (BCrypt) that may run at the same time, across all
+     *                              clients; one more attempt waits a moment and then gets a 503 (D-20261008-45)
      */
     public record LoginRateLimit(
             @Min(1) @Max(20) int burst,
             @Min(30) @Max(3_600) int refillIntervalSeconds,
             @Min(100) @Max(100_000) int maxTrackedClients,
             @Min(1) @Max(1_000) int overflowBurst,
-            @Min(1) @Max(3_600) int overflowRefillPerHour) {
+            @Min(1) @Max(3_600) int overflowRefillPerHour,
+            @Min(1) @Max(8) int maxConcurrentVerifications) {
 
         private static final long MILLIS_PER_HOUR = 3_600_000L;
 

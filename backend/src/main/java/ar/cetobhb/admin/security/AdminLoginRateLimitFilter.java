@@ -27,8 +27,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *
  * <p>The key comes ONLY from {@code getRemoteAddr()}, which behind the trusted proxy is the real client (the same rule
  * as the checkout limiter); this class never reads {@code X-Forwarded-For}. There is no per-account lockout and no
- * global bucket (D-20261008-07): the owner on another address is never locked out by an attacker's attempts. The
- * address is never logged, and neither is anything the client sent.
+ * global bucket (D-20261008-07), but the owner can still be denied access if she shares an address or bucket key
+ * with an attacker, or when the shared overflow bucket is drained (D-20261008-43). The address is never logged, and
+ * neither is anything the client sent.
  *
  * <p>It only looks at the login processing request (the same method and path matcher as the shape guard and the
  * login filter); every other request passes untouched and spends nothing. It is created by the chain configuration and

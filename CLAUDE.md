@@ -808,7 +808,13 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   y 40 por hora) aunque no traiga token CSRF o esté mal formado, y un intento limitado es 429
   `RATE_LIMITED` (`SecurityProblem.LOGIN_RATE_LIMITED`, mismo código y texto que el checkout, golden
   `admin-error-rate-limited.json`) con `Retry-After` entero, sin hash, sin sesión y con un DEBUG sin IP ni
-  usuario. Sin bloqueo por cuenta ni cubo global: otra IP no se ve afectada. Un cuerpo que declara más del
+  usuario. Sin bloqueo por cuenta ni cubo global. Cada IP tiene su cubo, pero la dueña PUEDE quedar sin
+  acceso por intentos ajenos si comparte IP o clave de cubo con un atacante (CGNAT, un `TRUSTED_PROXIES`
+  mal puesto) o si un solo actor con un /48 IPv6 barato llena la tabla y vacía el cubo de desborde común:
+  es negación de acceso, no un modo de adivinar la contraseña (el ritmo de adivinanzas sigue acotado).
+  Remedios en `docs/operacion-admin.md` (otra red, avisar, reiniciar el contenedor `backend`, que vacía los
+  cubos en memoria y cierra la sesión, o bloquear rangos en Caddy o el firewall); opciones futuras NO
+  implementadas: tabla de claves con login correcto reciente, o desborde por /48 (D-20261008-43). Un cuerpo que declara más del
   tope es 413 antes (el filtro de tamaño corre primero) y no gasta intento; `;x=1`, barra final y otra
   capitalización no son el login y no gastan intento ni calculan hash. Guardas: `AdminLoginRateLimitFilterTest`
   (reloj inyectado), `AdminLoginBurstServerIT` (servidor real: 40 intentos concurrentes de una IP dan
@@ -822,6 +828,23 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   Lo que ya no impide desplegar: este límite y el nivel de log de Security (siguiente punto). Siguen siendo
   requisitos de despliegue `TRUSTED_PROXIES`, Caddy (`docs/API.md`, Despliegue) y el rol de la base con el que conecta la
   aplicación (límite del trigger de auditoría, §3).
+- **Tope de verificaciones de contraseña simultáneas** (D-20261008-45). `LoginVerificationCapAuthenticationManager`
+  (debajo de `LoginFieldCapAuthenticationManager`, así que un campo largo no pide lugar) acota con un `Semaphore`
+  cuántos BCrypt corren a la vez en todo el servidor (`ceto.admin.login-rate-limit.max-concurrent-verifications`,
+  1 a 8, 2 por defecto; el perfil de prueba usa 8 para las ráfagas de 40 logins). El intento que no consigue
+  lugar en 200 ms es 503 `SERVICE_BUSY` con `Retry-After: 1` (`SecurityProblem.SERVICE_BUSY`, golden
+  `admin-error-service-busy.json`), sin hash y sin sesión, y el lugar se devuelve en `finally`. No es un límite
+  de intentos ni un cubo global (D-20261008-07). Guardas: `LoginVerificationCapAuthenticationManagerTest`,
+  `AdminLoginVerificationCapServerIT` (servidor real con el valor 2: dos logins retenidos dentro de BCrypt por
+  `CountingPasswordEncoder.holdMatches`; el siguiente da 503 con la contraseña correcta y el contador de BCrypt
+  no sube; al soltar, el siguiente entra) y `AdminPropertiesValidationTest` (rango 1 a 8). Evidencia por
+  mutación (2026-10-14): quitar el chequeo de `tryAcquire` hizo fallar 2 tests unitarios y el IT. Huecos del
+  límite por IP cerrados con prueba: un /64 de IPv6 comparte cubo y otro /64 no (`AdminLoginLimiterGapsServerIT`;
+  mutación: clave por /128, fallan 2), el desborde de punta a punta con la tabla en 100 clientes
+  (`AdminLoginOverflowServerIT`; mutación: tabla de 100000, falla) y un cuerpo chunked gasta intento, también
+  el que se rechaza después (mutación: el filtro ignora `Transfer-Encoding`, fallan 2). Surefire y failsafe no
+  corren en paralelo (los contadores de BCrypt de las pruebas son estáticos): el `pom.xml` fija `forkCount` 1
+  y no configura `parallel`.
 - **Cierre de sesión, fijación y registros del login.** `POST /api/admin/logout` exige token
   CSRF (sin él o con uno inválido es 403 y la sesión sigue viva), responde 204 sin cuerpo, termina la
   sesión del servidor y vence la cookie `JSESSIONID`; sin sesión también es 204; un GET no cierra nada
@@ -1002,7 +1025,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   (`EndpointInventory.concretePath`) resuelve variables con regex y falla con un
   `AssertionError` ante `**`, `*`, `?` o `{*x}` (`EndpointInventoryTest`).
 - **Una sola cuenta: la de administración.** Contraseña con BCrypt o
-  Argon2, login con rate limit y bloqueo temporal, sesión en cookie
+  Argon2, login con rate limit, sesión en cookie
   `HttpOnly` + `Secure` + `SameSite`. Nunca un token en `localStorage`.
 - **Configuración de producción que falla cerrada**: sin secretos por
   defecto en el repo, CORS sin `*`, docs de la API apagados. Un proceso con

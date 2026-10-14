@@ -33,7 +33,14 @@ public enum SecurityProblem {
      * The client address spent its login attempts. Same status, code and detail as the checkout limiter's 429 (the
      * advice's {@code RATE_LIMITED} row): one answer for "too many requests", with {@code Retry-After}.
      */
-    LOGIN_RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", "Too many requests. Try again later.");
+    LOGIN_RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", "Too many requests. Try again later."),
+
+    /**
+     * The login found every password verification slot busy for a moment (the CPU cap of D-20261008-45): the attempt
+     * is refused before any hash is computed. Same status, code and detail as the advice's {@code SERVICE_BUSY} row,
+     * with {@code Retry-After: 1}.
+     */
+    SERVICE_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_BUSY", "The service is busy. Try again shortly.");
 
     private final HttpStatus status;
     private final String code;

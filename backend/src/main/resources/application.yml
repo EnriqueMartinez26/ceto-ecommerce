@@ -120,6 +120,9 @@ ceto:
       # When the table is full, every new client shares ONE overflow bucket.
       overflow-burst: 20
       overflow-refill-per-hour: 40
+      # BCrypt verifications allowed at the same time (CPU cap, 1..8). The attempt that finds them all busy for 200 ms
+      # gets a 503 SERVICE_BUSY and costs no hash (D-20261008-45).
+      max-concurrent-verifications: 2
     # Largest admin product list and stock view (AdminProperties: 1..500).
     max-listed-products: 200
     # Largest reconciliation result (AdminProperties: 1..1000).

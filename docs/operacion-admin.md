@@ -210,10 +210,48 @@ próximo intento permitido; con el cubo vacío, 90) y no calcula ningún hash.
 |---|---|---|
 | El login responde "demasiados intentos" tras equivocarse varias veces | Esa IP agotó sus 5 intentos | Esperar lo que dice `Retry-After` (hasta 90 s por intento) y escribir la clave con cuidado. Probar desde otra red (datos del celular) también funciona: el límite es por IP, no por cuenta. |
 | 429 en el primer intento del día, desde su red de siempre | Alguien está probando claves desde esa misma IP (por ejemplo, un NAT compartido) o `TRUSTED_PROXIES` está mal y todas las IPs parecen la del proxy | Revisar `TRUSTED_PROXIES` y el `X-Forwarded-For` de Caddy (`docs/API.md`, Despliegue). Con ese valor mal puesto, **un único cubo de 5 intentos lo comparten todos**, la dueña incluida. |
-| 429 sostenido desde varias IPs distintas | Un ataque distribuido llenó la tabla de 10000 clientes: las IPs nuevas comparten un cubo de desborde de 20 de golpe y 40 por hora | Esperar, o poner un límite en Caddy. No hay bloqueo por cuenta: la cuenta nunca queda bloqueada por intentos ajenos. |
+| 429 sostenido desde varias IPs distintas | Un ataque distribuido llenó la tabla de 10000 clientes: las IPs nuevas comparten un cubo de desborde de 20 de golpe y 40 por hora | Esperar, o poner un límite en Caddy. Ver "Si la dueña no puede entrar" más abajo. |
+| 503 `SERVICE_BUSY` en el login, que se arregla reintentando en un segundo | Ya hay 2 verificaciones de contraseña en curso (el tope protege la CPU) y este intento esperó 200 ms sin conseguir lugar. No se probó la contraseña | Reintentar. Si pasa seguido, alguien está mandando intentos desde muchas IPs: ver más abajo. |
+
+### Si la dueña no puede entrar
+
+No existe un bloqueo por cuenta: ninguna cantidad de intentos ajenos bloquea la cuenta como
+tal. Pero el límite es por IP (o por clave de cubo), así que la dueña **sí puede quedar sin
+acceso** por intentos ajenos en estos casos:
+
+- comparte IP con un atacante (una red compartida del operador móvil, CGNAT) o
+  `TRUSTED_PROXIES` está mal puesto y todas las IPs parecen la del proxy;
+- un solo actor con un bloque IPv6 /48 barato (cada /64 cuenta como un cliente) llena la
+  tabla de clientes y vacía el cubo de desborde que comparten las IPs nuevas.
+
+Es una negación de acceso, no una forma de adivinar la contraseña: el ritmo de adivinanzas
+sigue acotado por los mismos cubos y por el tope de verificaciones simultáneas. Qué hacer,
+en orden:
+
+1. Probar desde otra red (por ejemplo, datos del celular en lugar del wifi). Solo sirve si
+   el problema es que comparte IP con alguien; si el desborde está drenado, no ayuda.
+2. Avisar al desarrollador.
+3. El desarrollador reinicia el contenedor del backend (`docker compose restart backend`):
+   vacía todos los cubos, porque están en memoria. También cierra la sesión de la dueña y
+   la de cualquier otra persona logueada, así que tendrá que entrar de nuevo.
+4. Si el ataque sigue, el desarrollador bloquea de forma temporal los rangos abusivos en
+   Caddy o en el firewall del VPS.
+
+Residual aceptado (D-20261008-43), con opciones a futuro que **no están implementadas**: una
+tabla de claves con un login correcto reciente que no pasen por el desborde, o clavar el
+desborde por /48 de IPv6.
+
+### Tope de verificaciones simultáneas
+
+Además del límite por IP, solo 2 contraseñas se verifican a la vez en todo el servidor
+(`max-concurrent-verifications`, de 1 a 8; D-20261008-45). Protege la CPU de BCrypt cuando
+llegan muchos intentos juntos desde IPs distintas. El intento que no encuentra lugar en 200 ms
+recibe 503 `SERVICE_BUSY` con `Retry-After: 1`, sin probar la contraseña ni abrir sesión. No es
+un límite de intentos: no recuerda a nadie.
 
 Los valores están en `ceto.admin.login-rate-limit` (`burst` 1 a 20, `refill-interval-seconds`
-30 a 3600, `max-tracked-clients`, `overflow-burst`, `overflow-refill-per-hour`; un valor
+30 a 3600, `max-tracked-clients`, `overflow-burst`, `overflow-refill-per-hour`,
+`max-concurrent-verifications`; un valor
 fuera de rango detiene el arranque) y se cambian en `application.yml`. Los 429 se
 registran solo en DEBUG y sin la IP ni el usuario. Los logs de Spring Security
 quedan en WARN: a nivel DEBUG imprimen la cuenta, la IP y el id de sesión

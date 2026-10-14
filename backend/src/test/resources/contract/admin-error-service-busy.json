@@ -1,0 +1,6 @@
+{
+  "title": "Service Unavailable",
+  "status": 503,
+  "detail": "The service is busy. Try again shortly.",
+  "code": "SERVICE_BUSY"
+}
