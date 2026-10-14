@@ -117,7 +117,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   ejemplo deja de ser idéntico a su golden, si un golden no está citado o si un
   `code` o `reason` del código no figura en el documento. `EndpointInventoryIT` fija el
   inventario: las 3 rutas públicas, las de administración (`EndpointInventory.ADMIN_ROUTES`,
-  hoy `GET /api/admin/session`, la única anónima, y las rutas de pedidos (lista, detalle y las cuatro acciones): cada ruta protegida se llama sin sesión y
+  hoy `GET /api/admin/session`, la única anónima, las rutas de pedidos (lista, detalle y las cuatro acciones) y las de stock (vista, ajuste y conciliación): cada ruta protegida se llama sin sesión y
   debe dar el golden 401, generado desde los mapeos, y de la anónima se llaman los otros seis
   métodos, también 401) más `ANY /error` de `BasicErrorController`
   (permitido por tipo de handler, no por ruta), todos los `HandlerMapping` por
@@ -291,8 +291,8 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   (`AdminCancelVsReplayIT`). Las acciones no loguean nombre, teléfono ni
   dirección, ni en éxito, ni en transición ilegal, ni con el insert de
   auditoría fallado (`AdminOrderActionsPiiLoggingIT`).
-- **Stock de administración** (`AdminInventoryService`, solo servicio, todavía
-  sin rutas): `adjust(productId, delta, reason)` llama a
+- **Stock de administración** (`AdminInventoryService`, expuesto por `AdminStockController`, ver
+  más abajo): `adjust(productId, delta, reason)` llama a
   `InventoryService.adjustBy`, escribe una fila `STOCK_ADJUSTED` con el stock
   antes y después y el motivo del conjunto cerrado (sin nota), todo en una
   transacción; un delta en 0 o fuera de ±10000 (D-20261008-10), un descuento
@@ -346,6 +346,25 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   correspondientes (2026-10-08). Los caminos de stock no loguean nombres de
   producto ni datos de la compradora (`AdminStockPiiLoggingIT`; evidencia por
   mutación: imprimir los nombres en la vista lo hizo fallar).
+- **Rutas de stock** (`AdminStockController`, D-20261008-23): `GET /api/admin/stock`, `POST /api/admin/stock/{productId}/adjust`
+  (cuerpo `{delta, reason}`, `delta` entero de -10000 a 10000 con `@NotNull @Min @Max`, `reason` del conjunto cerrado, `productId`
+  1..2^53-1) y `GET /api/admin/inventory/reconciliation`; la vista y la conciliación devuelven `truncated` (verdadero solo si el
+  tope cortó la lista). No hay nota ni ruta de stock absoluto: una propiedad desconocida, `note` incluida, es 400
+  `MALFORMED_REQUEST` y no se repite en el cuerpo ni en el log. Un delta 0 es 400 con `reason: INVALID_STOCK_DELTA`; dejar `on_hand`
+  por debajo de `reserved` o de 0 es 409 `INSUFFICIENT_STOCK` sin cifras; un combo o un producto sin fila de stock, 409 `CONFLICT`
+  (WARN, nunca se crea la fila); un producto inexistente, 404. Los `record` de respuesta ocultan el nombre del producto en
+  `toString`. Guardas: `AdminStockHttpIT` (40 casos: goldens `admin-stock*.json` y `admin-error-{conflict,insufficient-stock,
+  malformed,invalid-stock-delta}.json`, todos los bordes, sin cambio ni auditoría en cada rechazo, 403 sin token), `AdminReconciliationHttpIT`
+  (limpia, desviada por SQL crudo, producto sin fila de stock con `reserved` nulo, solo lectura), `AdminCappedReadsHttpIT` (tope 2 contra las
+  consultas reales: con 3 filas las 2 primeras por id y `truncated`; con 2, no), `AdminStockPiiServerIT` (servidor real, DEBUG y TRACE,
+  `note` y motivo centinela, una compradora centinela: ni el log ni ningún cuerpo ni las columnas de texto de `admin_audit_log`
+  los contienen) y `AdminStockRaceServerIT` (servidor real: 20 compras y 10 ajustes simultáneos sobre stock (5, 0), 5 repeticiones;
+  `on_hand` final = 5 más los ajustes confirmados, `reserved` = las compras confirmadas, una fila de auditoría por ajuste, conciliación
+  limpia y todo 409 es `INSUFFICIENT_STOCK`). Evidencia por mutación (2026-10-14): quitar el chequeo de Java de `InventoryStock.adjustBy`
+  hizo fallar los 2 casos de 409 de `AdminStockHttpIT` (llega la violación del CHECK como `CONFLICT`); quitar la llamada a `record` hizo
+  fallar 2; leer la fila con `findById` en vez de `FOR UPDATE` hizo fallar las 5 repeticiones de `AdminStockRaceServerIT` (el ajuste
+  responde `CONFLICT` por la versión). Con la aserción más laxa de "solo 200, 201, 409 o 503" esa mutación pasaba: la carrera sola no prueba
+  el lock si se toleran todos los 409.
 - **Catálogo de administración** (`AdminCatalogService`, solo servicio,
   todavía sin rutas): crear un producto base crea en la misma transacción su
   fila de stock en 0 (D-20261008-15) y la fila `PRODUCT_CREATED`, así que la
