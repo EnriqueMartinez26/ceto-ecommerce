@@ -1,0 +1,10 @@
+{
+  "mismatches": [
+    {
+      "productId": 1,
+      "reserved": 5,
+      "expected": 2
+    }
+  ],
+  "truncated": false
+}

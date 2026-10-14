@@ -1,0 +1,6 @@
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "There is not enough stock for this order.",
+  "code": "INSUFFICIENT_STOCK"
+}

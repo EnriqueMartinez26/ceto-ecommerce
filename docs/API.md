@@ -622,6 +622,202 @@ Golden: `backend/src/test/resources/contract/admin-error-not-found.json`
 }
 ```
 
+## Administración: stock (`/api/admin/stock`, `/api/admin/inventory`)
+
+Todas las rutas de esta sección exigen sesión de administración (sin ella, el 401 `UNAUTHENTICATED` de arriba), el `POST`
+exige además el token CSRF (sin él, el 403 `FORBIDDEN` y no cambia nada) y todas responden con `Cache-Control: no-store`.
+El stock se cuenta en unidades del producto base; no hay ninguna ruta que fije el stock en un valor absoluto: el ajuste es
+siempre relativo.
+
+### `GET /api/admin/stock`
+
+Todos los productos, activos o no, por id ascendente, hasta `ceto.admin.max-listed-products` (1 a 500). `truncated` es
+verdadero solo si había más productos que el tope: una lista cortada nunca se hace pasar por completa. Cada entrada trae
+`combo` (y `comboBaseProductId` y `comboBaseUnits` si lo es), `configured`, `onHand`, `reserved`, `available` y
+`sellable`:
+
+- un producto base con fila de stock trae sus tres contadores y `available = onHand - reserved`;
+- un combo no tiene stock propio: `onHand` y `reserved` son `null` y `available` es el piso de
+  `(onHand - reserved) / N` de su base;
+- un producto base sin fila de stock es `configured: false`, sin cifras (`null`), no un error;
+- `sellable` es verdadero solo si el producto está activo y, en un combo, también su base: un combo sobre una base
+  desactivada conserva las cifras pero no es vendible, así que un `available` positivo no significa "se puede comprar".
+
+La lectura no toma locks. Son dos sentencias bajo READ COMMITTED (productos y luego cifras): un cambio concurrente puede
+mezclar instantáneas y la pantalla converge al refrescar.
+
+Golden: `backend/src/test/resources/contract/admin-stock.json`
+
+```json
+{
+  "products": [
+    {
+      "productId": 1,
+      "name": "Frasco",
+      "active": true,
+      "combo": false,
+      "comboBaseProductId": null,
+      "comboBaseUnits": null,
+      "configured": true,
+      "onHand": 10,
+      "reserved": 3,
+      "available": 7,
+      "sellable": true
+    },
+    {
+      "productId": 2,
+      "name": "Combo x2",
+      "active": true,
+      "combo": true,
+      "comboBaseProductId": 1,
+      "comboBaseUnits": 2,
+      "configured": true,
+      "onHand": null,
+      "reserved": null,
+      "available": 3,
+      "sellable": true
+    },
+    {
+      "productId": 3,
+      "name": "Retirado",
+      "active": false,
+      "combo": false,
+      "comboBaseProductId": null,
+      "comboBaseUnits": null,
+      "configured": true,
+      "onHand": 5,
+      "reserved": 0,
+      "available": 5,
+      "sellable": false
+    },
+    {
+      "productId": 4,
+      "name": "Sin stock",
+      "active": true,
+      "combo": false,
+      "comboBaseProductId": null,
+      "comboBaseUnits": null,
+      "configured": false,
+      "onHand": null,
+      "reserved": null,
+      "available": null,
+      "sellable": true
+    }
+  ],
+  "truncated": false
+}
+```
+
+### `POST /api/admin/stock/{productId}/adjust`
+
+Cuerpo `{"delta": <entero>, "reason": "<motivo>"}`. `delta` va de -10000 a 10000 y no puede ser 0; `reason` es uno de
+`COUNT_CORRECTION`, `RESTOCK`, `DAMAGED_OR_LOST`, `RETURN` u `OTHER` (conjunto propuesto, pendiente de OK de la clienta,
+D-20261008-18). **No hay nota**: una propiedad `note` (o cualquier otra desconocida) es 400 `MALFORMED_REQUEST`, para que
+ningún texto libre llegue al registro de auditoría (D-20261008-23). `productId` va de 1 a 9007199254740991.
+
+Suma `delta` al stock físico (`on_hand`) de un producto base, deja una fila `STOCK_ADJUSTED` con el stock antes y después y
+el motivo, todo en una transacción, y responde 200 con los contadores nuevos:
+
+Golden: `backend/src/test/resources/contract/admin-stock-adjusted.json`
+
+```json
+{
+  "productId": 1,
+  "onHand": 25,
+  "reserved": 2,
+  "available": 23
+}
+```
+
+| Caso | Respuesta |
+|---|---|
+| `delta` 0 | 400 `VALIDATION_ERROR` con `reason: INVALID_STOCK_DELTA` |
+| `delta` fuera de ±10000, ausente o `null`; `reason` ausente o `null` | 400 `VALIDATION_ERROR` |
+| `delta` decimal o texto, `reason` fuera del conjunto, JSON roto, propiedad repetida o desconocida (`note` incluida) | 400 `MALFORMED_REQUEST` |
+| `productId` fuera de rango o no numérico | 400 `VALIDATION_ERROR` |
+| Otro `Content-Type` | 415 `UNSUPPORTED_MEDIA_TYPE` |
+| El resultado dejaría `on_hand` por debajo de `reserved` o de 0 | 409 `INSUFFICIENT_STOCK`, sin cifras; no cambia nada ni audita |
+| El resultado pasaría de 2147483647 | 400 `VALIDATION_ERROR` con `reason: STOCK_OUT_OF_RANGE` |
+| Un combo, o un producto base sin fila de stock | 409 `CONFLICT` (nunca se crea la fila) |
+| Producto inexistente | 404 `NOT_FOUND` |
+
+Bajar el stock hasta exactamente `reserved` es válido. Un producto desactivado se puede ajustar. El ajuste toma solo el lock
+de la fila de stock, igual que una compra, así que no agrega aristas al orden de locks; una compra y un ajuste simultáneos
+se serializan en esa fila y los contadores finales son la suma de lo que se confirmó (el 409 de un ajuste que no cabe es
+siempre `INSUFFICIENT_STOCK`, nunca un conflicto de versión).
+
+Golden: `backend/src/test/resources/contract/admin-error-invalid-stock-delta.json`
+
+```json
+{
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "The request is invalid.",
+  "code": "VALIDATION_ERROR",
+  "reason": "INVALID_STOCK_DELTA"
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-error-malformed.json`
+
+```json
+{
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "The request could not be read.",
+  "code": "MALFORMED_REQUEST"
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-error-insufficient-stock.json`
+
+```json
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "There is not enough stock for this order.",
+  "code": "INSUFFICIENT_STOCK"
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-error-conflict.json`
+
+```json
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "The request conflicts with the current state.",
+  "code": "CONFLICT"
+}
+```
+
+El texto del 409 `INSUFFICIENT_STOCK` es el mismo que en el checkout ("...for this order"): en el ajuste significa que el
+resultado no cabe. Los cuerpos de error llevan `instance` (la ruta pedida) y `requestId`, que los goldens no incluyen.
+
+### `GET /api/admin/inventory/reconciliation`
+
+Compara, en una sola sentencia de solo lectura, el contador `reserved` de cada producto base con las unidades base de las
+líneas de pedidos `PAGO_PENDIENTE`, y lista solo las diferencias, por id, hasta `ceto.admin.max-reconciliation-rows`
+(1 a 1000). `truncated` es verdadero solo si había más diferencias que el tope. `reserved` es `null` si el producto tiene
+demanda pendiente pero no tiene fila de stock. No modifica nada: informa la diferencia, no la repara. Sin diferencias:
+`{"mismatches":[],"truncated":false}`.
+
+Golden: `backend/src/test/resources/contract/admin-reconciliation.json`
+
+```json
+{
+  "mismatches": [
+    {
+      "productId": 1,
+      "reserved": 5,
+      "expected": 2
+    }
+  ],
+  "truncated": false
+}
+```
+
+
 ## Cabeceras
 
 | Cabecera | Dirección | Dónde | Detalle |
@@ -655,14 +851,14 @@ contra `X-Request-Id`.
 | 401 | `UNAUTHENTICATED` | Solo en `/api/admin/*`: no hay sesión de administración. Nunca dice por qué ni nombra al usuario. | | Sí, después de iniciar sesión. |
 | 401 | `INVALID_CREDENTIALS` | Solo en `POST /api/admin/login`: usuario inexistente, contraseña incorrecta o un campo de más de 128 caracteres. Es siempre el mismo cuerpo: no dice cuál fue el motivo ni nombra al usuario. | | Sí, con otros datos. |
 | 403 | `FORBIDDEN` | Solo en `/api/admin/*`: falta el token CSRF o es inválido, o la sesión no puede hacer esto. | | No: pedir un token nuevo. |
-| 404 | `NOT_FOUND` | Ruta inexistente (incluidas variantes como barra final o `//`) o producto inexistente, inactivo u oculto o, en `/api/admin/orders/{id}` y sus acciones, pedido inexistente. | | No. |
+| 404 | `NOT_FOUND` | Ruta inexistente (incluidas variantes como barra final o `//`) o producto inexistente, inactivo u oculto o, en `/api/admin/orders/{id}` y sus acciones, pedido inexistente o, en `POST /api/admin/stock/{productId}/adjust`, producto inexistente. | | No. |
 | 405 | `METHOD_NOT_ALLOWED` | Método no permitido para la ruta (por ejemplo `POST` a la lista). | `Allow` | No. |
 | 406 | `NOT_ACCEPTABLE` | `Accept` no admite JSON. | | No. |
 | 409 | `PRODUCT_UNAVAILABLE` | Un producto del carrito está inactivo, oculto o sin fila de stock. | `productIds`: ids **pedidos** afectados | No: sacar esos productos. |
-| 409 | `INSUFFICIENT_STOCK` | No alcanza el stock. No dice cuál producto ni cuánto queda. | | Solo si el carrito cambia. |
+| 409 | `INSUFFICIENT_STOCK` | No alcanza el stock. No dice cuál producto ni cuánto queda. En `POST /api/admin/stock/{productId}/adjust`: el ajuste dejaría `on_hand` por debajo de `reserved` o de 0. | | Solo si el carrito cambia. |
 | 409 | `IDEMPOTENCY_CONFLICT` | La clave ya se usó con otro contenido. No nombra ningún pedido. | | No: usar una clave nueva si es otro pedido. |
 | 409 | `ILLEGAL_TRANSITION` | Solo en `POST /api/admin/orders/{id}/<acción>`: la arista no está en el grafo de estados del pedido (incluye el segundo toque de la misma acción). No nombra estados ni pedido. | | No: recargar el pedido y ver su estado. |
-| 409 | `CONFLICT` | Una restricción de la base o un conflicto de versión que la lógica no previó. | | Una vez, con la misma clave. |
+| 409 | `CONFLICT` | Una restricción de la base o un conflicto de versión que la lógica no previó; en el ajuste de stock, un combo o un producto base sin fila de stock. | | Una vez, con la misma clave. |
 | 413 | `PAYLOAD_TOO_LARGE` | El cuerpo supera `ceto.web.max-body-bytes` (16 KB por defecto). | | No. |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` distinto de `application/json` (en `POST /api/admin/login`, distinto de `application/x-www-form-urlencoded`). | | No. |
 | 429 | `RATE_LIMITED` | La IP agotó sus intentos de checkout o, en `POST /api/admin/login`, sus intentos de login. Mismo código y texto en ambos. | `Retry-After` | Sí, después de esa espera. |

@@ -1,0 +1,57 @@
+{
+  "products": [
+    {
+      "productId": 1,
+      "name": "Frasco",
+      "active": true,
+      "combo": false,
+      "comboBaseProductId": null,
+      "comboBaseUnits": null,
+      "configured": true,
+      "onHand": 10,
+      "reserved": 3,
+      "available": 7,
+      "sellable": true
+    },
+    {
+      "productId": 2,
+      "name": "Combo x2",
+      "active": true,
+      "combo": true,
+      "comboBaseProductId": 1,
+      "comboBaseUnits": 2,
+      "configured": true,
+      "onHand": null,
+      "reserved": null,
+      "available": 3,
+      "sellable": true
+    },
+    {
+      "productId": 3,
+      "name": "Retirado",
+      "active": false,
+      "combo": false,
+      "comboBaseProductId": null,
+      "comboBaseUnits": null,
+      "configured": true,
+      "onHand": 5,
+      "reserved": 0,
+      "available": 5,
+      "sellable": false
+    },
+    {
+      "productId": 4,
+      "name": "Sin stock",
+      "active": true,
+      "combo": false,
+      "comboBaseProductId": null,
+      "comboBaseUnits": null,
+      "configured": false,
+      "onHand": null,
+      "reserved": null,
+      "available": null,
+      "sellable": true
+    }
+  ],
+  "truncated": false
+}

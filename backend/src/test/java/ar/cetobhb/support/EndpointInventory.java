@@ -32,7 +32,9 @@ public final class EndpointInventory {
     public static final Set<String> ADMIN_ROUTES = Set.of("GET /api/admin/session",
             "GET /api/admin/orders", "GET /api/admin/orders/{id}", "POST /api/admin/orders/{id}/pay",
             "POST /api/admin/orders/{id}/dispatch", "POST /api/admin/orders/{id}/deliver",
-            "POST /api/admin/orders/{id}/cancel");
+            "POST /api/admin/orders/{id}/cancel",
+            "GET /api/admin/stock", "POST /api/admin/stock/{productId}/adjust",
+            "GET /api/admin/inventory/reconciliation");
 
     /**
      * The administration routes an anonymous client may call, and only with the method listed: the session bootstrap.
