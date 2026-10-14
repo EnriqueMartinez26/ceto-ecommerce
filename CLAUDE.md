@@ -248,8 +248,8 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   los cuatro terminales, ids fuera de rango, 403/401/405), `AdminOrderActionsServerIT` (servidor
   real, sesión y token reales: dos pagos simultáneos dan un 200 y un 409 en 8 iteraciones, seis
   cancelaciones simultáneas un 200 y cinco 409, el stock se mueve una vez y hay una sola fila de
-  auditoría) y `AdminOrderActionsPiiServerIT` (todas las rutas de acción con `ar.cetobhb` y
-  `org.springframework.web` en DEBUG y centinelas de nombre y dirección, incluida la acción que
+  auditoría; la carrera mezclada de AOR-07, pago, cancelación, colocación y vencimiento sobre productos base compartidos, se prueba a nivel servicio con `AdminLockOrderingIT` y `AdminVsExpiryRaceIT`, y por HTTP solo el doble pago y la cancelación múltiple) y `AdminOrderActionsPiiServerIT` (todas las rutas de acción con `ar.cetobhb`,
+  `org.springframework.web` y `org.hibernate` en DEBUG y en TRACE, y centinelas de nombre y dirección, incluida la acción que
   se revierte porque falla el insert de auditoría: ni el log ni ningún cuerpo de error los
   contienen). Las pruebas MockMvc firman el token a mano con cookie y cabecera: el post
   processor `csrf()` cambia para siempre el repositorio de tokens del filtro compartido y

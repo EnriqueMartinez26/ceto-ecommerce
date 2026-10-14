@@ -4,6 +4,7 @@ import static ar.cetobhb.support.CatalogFixtures.product;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ar.cetobhb.catalog.service.CatalogService;
+import ar.cetobhb.common.config.PiiLogLevelGuard;
 import ar.cetobhb.inventory.service.InventoryService;
 import ar.cetobhb.orders.domain.Buyer;
 import ar.cetobhb.orders.domain.PlaceOrderCommand;
@@ -28,7 +29,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * The HTTP action paths never write buyer data to the log and never put it in an error body (AOR-08, AUTH-12), with
- * the application and web loggers on DEBUG: success of all four actions (the bodies of those carry the buyer by design),
+ * the application, web and Hibernate loggers on DEBUG and then on TRACE (a parent at TRACE must not lift a silenced child): success of all four actions (the bodies of those carry the buyer by design),
  * the 409 of an illegal edge and of a repeated tap, the 404 of an unknown id, the 400 of a bad id, the 403 of a missing
  * token, and the rolled-back action when the audit insert fails.
  */
@@ -37,7 +38,7 @@ class AdminOrderActionsPiiServerIT extends AbstractAdminServerIT {
 
     private static final String NAME = "SentinelActionNameH";
     private static final String ADDRESS = "SentinelActionStreetH 4444";
-    private static final String[] CATEGORIES = {"ar.cetobhb", "org.springframework.web"};
+    private static final String[] CATEGORIES = {"ar.cetobhb", "org.springframework.web", "org.hibernate"};
 
     @Autowired
     private CatalogService catalog;
@@ -85,8 +86,32 @@ class AdminOrderActionsPiiServerIT extends AbstractAdminServerIT {
         return "/api/admin/orders/" + id + "/" + action;
     }
 
+    /** Every silenced child of those parents (PiiLogLevelGuard.SHIPPED_LEVELS) keeps its own explicit level. */
+    private void assertSilencedChildrenKeepTheirLevel() {
+        PiiLogLevelGuard.SHIPPED_LEVELS.forEach((category, level) -> {
+            assertThat(loggingSystem.getLoggerConfiguration(category).getConfiguredLevel()).as(category)
+                    .isEqualTo(LogLevel.valueOf(level));
+            assertThat(org.slf4j.LoggerFactory.getLogger(category).isTraceEnabled()).as(category + " trace").isFalse();
+            assertThat(org.slf4j.LoggerFactory.getLogger(category).isDebugEnabled()).as(category + " debug").isFalse();
+        });
+    }
+
     @Test
     void everyActionPathLeavesNoBuyerDataInTheLogOrInAnyErrorBody(CapturedOutput output) throws Exception {
+        actionsLeaveNoTrace(output, false);
+    }
+
+    /** The same flows with the parents at TRACE: bound SQL values and message bodies print only if a child is lifted. */
+    @Test
+    void theSameActionsWithTheParentsAtTraceLeaveNoBuyerDataEither(CapturedOutput output) throws Exception {
+        for (String category : CATEGORIES) {
+            loggingSystem.setLogLevel(category, LogLevel.TRACE);
+        }
+        actionsLeaveNoTrace(output, true);
+    }
+
+    private void actionsLeaveNoTrace(CapturedOutput output, boolean trace) throws Exception {
+        assertSilencedChildrenKeepTheirLevel();
         long delivered = order("+5493515554441");
         long cancelled = order("+5493515554442");
         long rolledBack = order("+5493515554443");
@@ -124,6 +149,11 @@ class AdminOrderActionsPiiServerIT extends AbstractAdminServerIT {
 
         assertThat(output.getAll()).as("positive control: the INFO line of an illegal edge is in the capture")
                 .contains("ILLEGAL_TRANSITION");
+        if (trace) {
+            assertThat(output.getAll()).as("positive control: TRACE lines of the parents are in the capture")
+                    .contains("TRACE");
+        }
+        assertSilencedChildrenKeepTheirLevel();
         assertThat(output.getAll()).doesNotContain(NAME).doesNotContain("5554441").doesNotContain("5554442")
                 .doesNotContain("5554443").doesNotContain(ADDRESS).doesNotContain("SentinelAction");
     }
