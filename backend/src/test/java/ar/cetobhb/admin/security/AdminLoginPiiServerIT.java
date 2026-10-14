@@ -22,15 +22,18 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
  * (REQ-AUTH-12): a successful login, a failed login with a sentinel username and password, a wrong password for the
  * real account, and logout. At the levels the application ships with, NOTHING about the flows may be in the output
  * (the real account name included), nor with the web and application loggers on DEBUG. The DEBUG output of Spring
- * Security itself is a known source of the account name and the session id (see the characterization test); keeping
- * that category at WARN is slice X6.4.
+ * Security itself is a known source of the account name, the client address and the session id (see the
+ * characterization test); the application ships that category at WARN (slice X6.4), which also holds when the root
+ * logger is raised to DEBUG. The login limiter's 429 is covered too: its DEBUG line names neither the address nor the
+ * typed account.
  */
 @ExtendWith(OutputCaptureExtension.class)
 class AdminLoginPiiServerIT extends AbstractAdminServerIT {
 
     private static final String SENTINEL_USER = "SentinelLoginName-55120";
     private static final String SENTINEL_PASSWORD = "SentinelLoginSecret-55120";
-    private static final String[] CATEGORIES = {"org.springframework.security", "org.springframework.web", "ar.cetobhb"};
+    private static final String[] CATEGORIES = {"org.springframework.security", "org.springframework.web", "ar.cetobhb",
+        LoggingSystem.ROOT_LOGGER_NAME};
 
     @Autowired
     private LoggingSystem loggingSystem;
@@ -86,6 +89,66 @@ class AdminLoginPiiServerIT extends AbstractAdminServerIT {
     private static String show(AdminClient.Reply reply) {
         return reply.status() + " " + reply.body() + " " + reply.headers().entrySet().stream()
                 .filter(entry -> !entry.getKey().equals("set-cookie")).toList();
+    }
+
+    /** The shipped configuration: Spring Security's own category is at WARN (X6.4), not left to the root logger. */
+    @Test
+    void springSecurityShipsAtWarnSoItsDebugLinesAreNeverPrintedByDefault() {
+        assertThat(loggingSystem.getLoggerConfiguration("org.springframework.security").getConfiguredLevel())
+                .as("configured, not inherited").isEqualTo(LogLevel.WARN);
+        assertThat(loggingSystem.getLoggerConfiguration("org.springframework.security").getEffectiveLevel())
+                .isEqualTo(LogLevel.WARN);
+        assertThat(loggingSystem.getLoggerConfiguration("org.springframework.security.web.authentication")
+                .getEffectiveLevel()).as("sub-categories inherit it").isEqualTo(LogLevel.WARN);
+    }
+
+    /**
+     * Raising the root logger to DEBUG (the usual way to "see what happens") must not bring the account name, the client
+     * address or the session id back: the explicit WARN of Spring Security's category wins over the root level.
+     */
+    @Test
+    void withTheRootLoggerOnDebugSpringSecurityStillPrintsNeitherTheAccountNorTheAddressNorTheSessionId(
+            CapturedOutput output) throws Exception {
+        loggingSystem.setLogLevel(LoggingSystem.ROOT_LOGGER_NAME, LogLevel.DEBUG);
+
+        Run run = runTheFlows();
+
+        assertThat(output.getAll()).as("positive control: the root DEBUG lines are in the capture")
+                .contains("/api/admin/session");
+        assertThat(output.getAll()).doesNotContain("RemoteIpAddress=").doesNotContain("Set SecurityContextHolder")
+                .doesNotContain(AdminTestCredentials.username());
+        for (String secret : run.secrets()) {
+            assertThat(output.getAll()).as("the root DEBUG output must not contain a secret (starts %s)", head(secret))
+                    .doesNotContain(secret);
+        }
+    }
+
+    /**
+     * The 429 of the login limiter: its DEBUG line (positive control) carries neither the client address nor the typed
+     * account or password, and neither does the response.
+     */
+    @Test
+    void aLimitedLoginLeavesNoAddressAccountOrSecretInTheOutputOrTheBody(CapturedOutput output) throws Exception {
+        loggingSystem.setLogLevel("ar.cetobhb", LogLevel.DEBUG);
+        loggingSystem.setLogLevel("org.springframework.web", LogLevel.DEBUG);
+        AdminClient attacker = newClient();
+        attacker.bootstrap();
+        List<AdminClient.Reply> replies = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            replies.add(attacker.login(SENTINEL_USER, SENTINEL_PASSWORD));
+        }
+
+        assertThat(replies).extracting(AdminClient.Reply::status).contains(401, 429);
+        assertThat(output.getAll()).as("positive control: the limiter's DEBUG line is captured")
+                .contains("rejected by the rate limit");
+        List<String> secrets = List.of(attacker.forwardedFor(), SENTINEL_USER, SENTINEL_PASSWORD,
+                AdminTestCredentials.username(), AdminTestCredentials.password(), AdminTestCredentials.passwordHash(),
+                attacker.xsrf());
+        for (String secret : secrets) {
+            assertThat(output.getAll()).as("the output must not contain (starts %s)", head(secret)).doesNotContain(secret);
+            replies.forEach(reply -> assertThat(show(reply)).as("a response must not contain (starts %s)", head(secret))
+                    .doesNotContain(secret));
+        }
     }
 
     @Test
@@ -161,7 +224,7 @@ class AdminLoginPiiServerIT extends AbstractAdminServerIT {
     }
 
     /**
-     * Characterization, and the reason slice X6.4 sets {@code org.springframework.security} to WARN: with the Security
+     * Characterization, and the reason slice X6.4 ships {@code org.springframework.security} at WARN: with the Security
      * loggers on DEBUG the output names the authenticated account ("Set SecurityContextHolder to ... Username=..."),
      * the client address ("RemoteIpAddress=...") and the session id ("Invalidated session ..."). Nothing prints them at the shipped levels
      * (the first test). If Security stops printing them, delete this test.

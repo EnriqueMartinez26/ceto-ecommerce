@@ -48,6 +48,10 @@ logging:
     # DaoAuthenticationProvider logs "Failed to find user '<username>'" at DEBUG, and the username is whatever the client
     # typed. Silenced on its own category so a broader org.springframework.security DEBUG cannot print it.
     org.springframework.security.authentication.dao: "OFF"
+    # At DEBUG, Spring Security prints the authenticated account ("Set SecurityContextHolder to ... Username="), the client
+    # address ("RemoteIpAddress=") and the session id ("Invalidated session ..."). WARN, set on the category itself, keeps
+    # them out even when the root logger is raised to DEBUG (REQ-AUTH-12). Pinned by AdminLoginPiiServerIT.
+    org.springframework.security: "WARN"
 
 spring:
   datasource:
