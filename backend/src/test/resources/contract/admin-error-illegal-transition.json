@@ -1,0 +1,6 @@
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "The order cannot move to that state from its current one.",
+  "code": "ILLEGAL_TRANSITION"
+}

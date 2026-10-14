@@ -526,6 +526,76 @@ Golden: `backend/src/test/resources/contract/admin-order-detail-paid.json`
 }
 ```
 
+### Acciones sobre un pedido: `POST /api/admin/orders/{id}/pay|dispatch|deliver|cancel`
+
+Una acción por ruta, sin cuerpo (si se manda uno, se ignora): el estado de destino lo decide la ruta y nunca un valor del
+cliente. Exigen el token CSRF (`X-XSRF-TOKEN`, ver arriba): sin él es el 403 `FORBIDDEN` y no cambia nada. Responden 200 con
+el mismo detalle de arriba, ya actualizado.
+
+| Ruta | Transición | Efecto en el stock |
+|---|---|---|
+| `pay` | `PAGO_PENDIENTE` a `PAGADO` | descuenta en firme (`on_hand` y `reserved`); sigue valiendo si el plazo pasó y el job no corrió |
+| `dispatch` | `PAGADO` a `DESPACHADO` | ninguno |
+| `deliver` | `DESPACHADO` a `ENTREGADO` | ninguno; el paso está pendiente de la decisión de la clienta (D-20261008-16) |
+| `cancel` | `PAGO_PENDIENTE` o `PAGADO` a `CANCELADO`, con motivo `CANCELLED_BY_ADMIN` | libera la reserva, o devuelve las unidades a `on_hand` si ya estaba pagado |
+
+Cada acción confirmada deja una fila en el registro de auditoría, en la misma transacción. Una arista que el grafo de estados
+no admite (despachar un pendiente, repetir un pago, cualquier acción sobre un `ENTREGADO` o un `CANCELADO`) es 409
+`ILLEGAL_TRANSITION`: no cambia el estado ni el stock y no escribe auditoría; un segundo toque de la misma acción es lo mismo.
+Con dos pagos simultáneos del mismo pedido uno recibe 200 y el otro 409. Un `id` inexistente es 404 `NOT_FOUND` y uno fuera de
+rango o no numérico, 400 `VALIDATION_ERROR`. El cuerpo del 409 no nombra los estados ni al pedido.
+
+El pedido cancelado, tal como lo devuelve `cancel` sobre un `PAGO_PENDIENTE`; el de `pay` es el golden pagado de arriba.
+
+Golden: `backend/src/test/resources/contract/admin-order-cancelled.json`
+
+```json
+{
+  "id": 1,
+  "orderNumber": "CETO-000001",
+  "status": "CANCELADO",
+  "cancelReason": "CANCELLED_BY_ADMIN",
+  "buyerName": "Ana Gomez",
+  "buyerPhone": "+5493515550101",
+  "shippingAddress": "Calle Falsa 123",
+  "zone": "CORDOBA_CAPITAL",
+  "total": "200.00",
+  "createdAt": "2026-03-10T12:00:00Z",
+  "updatedAt": "2026-03-10T12:30:00Z",
+  "paidAt": null,
+  "dispatchedAt": null,
+  "deliveredAt": null,
+  "cancelledAt": "2026-03-10T12:30:00Z",
+  "reservedUntil": null,
+  "secondsLeft": null,
+  "overdue": false,
+  "lines": [
+    {
+      "lineNo": 1,
+      "productId": 1,
+      "productName": "Frasco",
+      "combo": false,
+      "unitPrice": "100.00",
+      "quantity": 2,
+      "baseUnitsPerUnit": 1,
+      "baseUnitsTotal": 2,
+      "lineTotal": "200.00"
+    }
+  ]
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-error-illegal-transition.json`
+
+```json
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "The order cannot move to that state from its current one.",
+  "code": "ILLEGAL_TRANSITION"
+}
+```
+
 ### Errores de las rutas de pedidos
 
 Tienen la forma de siempre, con `instance` igual a la ruta pedida; los goldens no lo incluyen (los tests lo comparan aparte).
@@ -585,12 +655,13 @@ contra `X-Request-Id`.
 | 401 | `UNAUTHENTICATED` | Solo en `/api/admin/*`: no hay sesión de administración. Nunca dice por qué ni nombra al usuario. | | Sí, después de iniciar sesión. |
 | 401 | `INVALID_CREDENTIALS` | Solo en `POST /api/admin/login`: usuario inexistente, contraseña incorrecta o un campo de más de 128 caracteres. Es siempre el mismo cuerpo: no dice cuál fue el motivo ni nombra al usuario. | | Sí, con otros datos. |
 | 403 | `FORBIDDEN` | Solo en `/api/admin/*`: falta el token CSRF o es inválido, o la sesión no puede hacer esto. | | No: pedir un token nuevo. |
-| 404 | `NOT_FOUND` | Ruta inexistente (incluidas variantes como barra final o `//`) o producto inexistente, inactivo u oculto o, en `/api/admin/orders/{id}`, pedido inexistente. | | No. |
+| 404 | `NOT_FOUND` | Ruta inexistente (incluidas variantes como barra final o `//`) o producto inexistente, inactivo u oculto o, en `/api/admin/orders/{id}` y sus acciones, pedido inexistente. | | No. |
 | 405 | `METHOD_NOT_ALLOWED` | Método no permitido para la ruta (por ejemplo `POST` a la lista). | `Allow` | No. |
 | 406 | `NOT_ACCEPTABLE` | `Accept` no admite JSON. | | No. |
 | 409 | `PRODUCT_UNAVAILABLE` | Un producto del carrito está inactivo, oculto o sin fila de stock. | `productIds`: ids **pedidos** afectados | No: sacar esos productos. |
 | 409 | `INSUFFICIENT_STOCK` | No alcanza el stock. No dice cuál producto ni cuánto queda. | | Solo si el carrito cambia. |
 | 409 | `IDEMPOTENCY_CONFLICT` | La clave ya se usó con otro contenido. No nombra ningún pedido. | | No: usar una clave nueva si es otro pedido. |
+| 409 | `ILLEGAL_TRANSITION` | Solo en `POST /api/admin/orders/{id}/<acción>`: la arista no está en el grafo de estados del pedido (incluye el segundo toque de la misma acción). No nombra estados ni pedido. | | No: recargar el pedido y ver su estado. |
 | 409 | `CONFLICT` | Una restricción de la base o un conflicto de versión que la lógica no previó. | | Una vez, con la misma clave. |
 | 413 | `PAYLOAD_TOO_LARGE` | El cuerpo supera `ceto.web.max-body-bytes` (16 KB por defecto). | | No. |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` distinto de `application/json` (en `POST /api/admin/login`, distinto de `application/x-www-form-urlencoded`). | | No. |

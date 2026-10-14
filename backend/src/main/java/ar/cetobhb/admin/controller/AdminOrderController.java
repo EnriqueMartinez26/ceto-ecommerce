@@ -10,14 +10,20 @@ import jakarta.validation.constraints.Size;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The administration order views (AOR-01, AOR-02, AOR-03). HTTP only: bounds and the mapping to the facade; the
- * search, the paging and the countdown are decided below. Authentication is the Security chain's job (every route
- * under {@code /api/admin/} is protected by the filter scope), and the response is never cached by it.
+ * The administration order views (AOR-01, AOR-02, AOR-03) and actions (AOR-04..06). HTTP only: bounds and the mapping
+ * to the facade; the search, the paging, the countdown, the state machine and the audit row are decided below.
+ * Authentication and the CSRF token are the Security chain's job (every route under {@code /api/admin/} is protected
+ * by the filter scope, and a POST without the token never gets here), and the response is never cached by it.
+ *
+ * <p>An action is a POST on a sub-resource with no request body (D-20261008-13): the target state is the route, never
+ * a client value. It answers 200 with the updated detail; an illegal edge is the 409 {@code ILLEGAL_TRANSITION} from
+ * the advice, an unknown id the 404.
  *
  * <p>The search text is a request value and is never logged: a rejected one is the neutral 400, an unreadable one an
  * empty page.
@@ -51,5 +57,29 @@ class AdminOrderController {
     @GetMapping("/{id}")
     AdminOrderDetailResponse detail(@PathVariable @Min(1) @Max(MAX_ID) long id) {
         return AdminOrderDetailResponse.from(orders.detail(id));
+    }
+
+    /** PAGO_PENDIENTE to PAGADO. */
+    @PostMapping("/{id}/pay")
+    AdminOrderDetailResponse pay(@PathVariable @Min(1) @Max(MAX_ID) long id) {
+        return AdminOrderDetailResponse.from(orders.pay(id));
+    }
+
+    /** PAGADO to DESPACHADO. */
+    @PostMapping("/{id}/dispatch")
+    AdminOrderDetailResponse dispatch(@PathVariable @Min(1) @Max(MAX_ID) long id) {
+        return AdminOrderDetailResponse.from(orders.dispatch(id));
+    }
+
+    /** DESPACHADO to ENTREGADO. Pending the client's decision on keeping the step (D-20261008-16). */
+    @PostMapping("/{id}/deliver")
+    AdminOrderDetailResponse deliver(@PathVariable @Min(1) @Max(MAX_ID) long id) {
+        return AdminOrderDetailResponse.from(orders.deliver(id));
+    }
+
+    /** From PAGO_PENDIENTE (releases the reservation) or PAGADO (returns the units to on_hand), reason CANCELLED_BY_ADMIN. */
+    @PostMapping("/{id}/cancel")
+    AdminOrderDetailResponse cancel(@PathVariable @Min(1) @Max(MAX_ID) long id) {
+        return AdminOrderDetailResponse.from(orders.cancel(id));
     }
 }

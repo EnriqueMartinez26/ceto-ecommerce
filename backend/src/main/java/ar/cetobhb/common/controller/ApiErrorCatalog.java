@@ -72,8 +72,11 @@ final class ApiErrorCatalog {
             // adds Retry-After: 1.
             Map.entry(CheckoutInProgressException.class, new ApiError(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_BUSY",
                     "The service is busy. Try again shortly.", Level.DEBUG)),
-            // No public endpoint reaches these three yet; explicit rows keep a future endpoint from returning 500.
-            Map.entry(IllegalOrderTransitionException.class, CONFLICT),
+            // An illegal edge of the order status graph (a double tap, a stale screen of the administrator, ERR-06). Only an
+            // authenticated administration action can reach it, so INFO is safe; the message carries states, never data.
+            Map.entry(IllegalOrderTransitionException.class, new ApiError(HttpStatus.CONFLICT, "ILLEGAL_TRANSITION",
+                    "The order cannot move to that state from its current one.", Level.INFO)),
+            // No public endpoint reaches this one yet; an explicit row keeps a future endpoint from returning 500.
             Map.entry(StockAlreadyConfiguredException.class, CONFLICT),
             // Admin stock adjustment of a combo or of a product without a stock row (AINV-04): WARN via CONFLICT.
             Map.entry(StockNotAdjustableException.class, CONFLICT),

@@ -114,7 +114,7 @@ class ApiExceptionHandlerTest {
                 Arguments.of(new InsufficientStockException(Set.of(3L)), 409, "INSUFFICIENT_STOCK"),
                 Arguments.of(new IdempotencyConflictException(42L), 409, "IDEMPOTENCY_CONFLICT"),
                 Arguments.of(new IllegalOrderTransitionException(OrderStatus.PAGADO, OrderStatus.PAGO_PENDIENTE), 409,
-                        "CONFLICT"),
+                        "ILLEGAL_TRANSITION"),
                 Arguments.of(new StockAlreadyConfiguredException(7L), 409, "CONFLICT"),
                 Arguments.of(new StockNotAdjustableException(7L), 409, "CONFLICT"),
                 Arguments.of(new StaleProductVersionException(7L), 409, "CONFLICT"),
@@ -155,7 +155,8 @@ class ApiExceptionHandlerTest {
                 .andExpect(jsonPath("$.status").value(status))
                 .andExpect(jsonPath("$.title").isNotEmpty())
                 .andExpect(jsonPath("$.instance").value("/boom"));
-        assertThat(body(result)).doesNotContain("+54", "boom:", "UNMAPPED", "STOCK_", "42", "ORDER_NOT_FOUND");
+        assertThat(body(result)).doesNotContain("+54", "boom:", "UNMAPPED", "STOCK_", "42", "ORDER_NOT_FOUND",
+                "PAGADO", "PAGO_PENDIENTE", "->");
     }
 
     static Stream<Arguments> clientErrorResponses() {
