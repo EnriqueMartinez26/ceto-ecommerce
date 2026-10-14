@@ -1,0 +1,33 @@
+{
+  "id": 1,
+  "orderNumber": "CETO-000001",
+  "status": "PAGADO",
+  "cancelReason": null,
+  "buyerName": "Ana Gomez",
+  "buyerPhone": "+5493515550101",
+  "shippingAddress": "Calle Falsa 123",
+  "zone": "CORDOBA_CAPITAL",
+  "total": "200.00",
+  "createdAt": "2026-03-10T12:00:00Z",
+  "updatedAt": "2026-03-10T13:00:00Z",
+  "paidAt": "2026-03-10T13:00:00Z",
+  "dispatchedAt": null,
+  "deliveredAt": null,
+  "cancelledAt": null,
+  "reservedUntil": null,
+  "secondsLeft": null,
+  "overdue": false,
+  "lines": [
+    {
+      "lineNo": 1,
+      "productId": 1,
+      "productName": "Frasco",
+      "combo": false,
+      "unitPrice": "100.00",
+      "quantity": 2,
+      "baseUnitsPerUnit": 1,
+      "baseUnitsTotal": 2,
+      "lineTotal": "200.00"
+    }
+  ]
+}

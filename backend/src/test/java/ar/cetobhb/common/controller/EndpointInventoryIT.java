@@ -52,7 +52,7 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Endpoint inventory (REQ-HRD-03). Spring Security only sees {@code /api/admin/*} (D-20261008-05), so for the public
  * API this allowlist is the control: the union of every MVC handler mapping must be exactly the three public API
- * routes plus the administration routes of {@link EndpointInventory#ADMIN_ROUTES} (today the session bootstrap) plus the error endpoint of Boot, and nothing else (no actuator, documentation, static resources or welcome
+ * routes plus the administration routes of {@link EndpointInventory#ADMIN_ROUTES} (the session bootstrap and the order views) plus the error endpoint of Boot, and nothing else (no actuator, documentation, static resources or welcome
  * page) may answer. The administration area is the one exception to "every other path is the standard 404": Security
  * answers there (401, 403 or 400) and the test-only probe handler lives outside this context
  * ({@code AdminPathVariantsIT}), so this inventory stays exact.
@@ -127,9 +127,9 @@ class EndpointInventoryIT extends AbstractHttpIT {
      * Generated from the handler mappings, not hand-listed: every mapped route outside the public set and outside the
      * anonymous-allowed bootstrap, called anonymously with a valid CSRF token where the method needs one, is the 401
      * golden. As routes are added to {@code ADMIN_ROUTES} they are covered without touching this test;
-     * {@code EndpointInventoryDriftIT} proves the loop is not vacuous. Until the first protected controller exists
-     * (orders, slice Y1) the set is empty, so the next test applies the same generator to the one anonymous-allowed
-     * route and the guard test below fails the day the set stops matching the allowlist.
+     * {@code EndpointInventoryDriftIT} proves the loop is not vacuous. Since slice Y1 the protected set is not
+     * empty (the order list and detail), so the generated 401 is checked against real handlers; the next test applies
+     * the same generator to the one anonymous-allowed route.
      */
     @Test
     void everyMappedProtectedRouteIs401UnauthenticatedForAnAnonymousClient() throws Exception {

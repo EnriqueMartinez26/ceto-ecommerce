@@ -36,7 +36,9 @@ class EndpointInventoryDriftIT extends AbstractAdminProbeHttpIT {
     @Test
     void everyGeneratedAnonymousCallToAMappedNonPublicRouteIsThe401Golden() throws Exception {
         List<EndpointInventory.Mapped> routes = EndpointInventory.protectedRoutes(context);
-        assertThat(routes).as("the fixture maps routes").hasSize(11);
+        // The probe adds 11 routes to the real ones of the application; every one of them is called below.
+        assertThat(routes).as("the fixture maps routes")
+                .filteredOn(route -> route.handler().getPackageName().equals("adminprobe")).hasSize(11);
 
         for (EndpointInventory.Mapped route : routes) {
             for (MockHttpServletRequestBuilder call : EndpointInventory.anonymousCalls(route)) {

@@ -29,7 +29,8 @@ public final class EndpointInventory {
             "GET /api/store/products", "GET /api/store/products/{id}", "POST /api/checkout/orders");
 
     /** Every MVC handler of the administration area (login and logout are Security filters, asserted by behaviour). */
-    public static final Set<String> ADMIN_ROUTES = Set.of("GET /api/admin/session");
+    public static final Set<String> ADMIN_ROUTES = Set.of("GET /api/admin/session",
+            "GET /api/admin/orders", "GET /api/admin/orders/{id}");
 
     /**
      * The administration routes an anonymous client may call, and only with the method listed: the session bootstrap.

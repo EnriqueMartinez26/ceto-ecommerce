@@ -33,7 +33,7 @@ documento se corrige en el mismo cambio.
 | Ids | Enteros positivos de hasta 2^53 − 1 (seguros en JavaScript). |
 | Campos desconocidos | Se rechazan con 400 `MALFORMED_REQUEST`: el cuerpo del `POST` no admite precios, totales ni estado. |
 | Números | `"2"` en lugar de `2` es 400 `MALFORMED_REQUEST`; no hay conversión implícita. |
-| Parámetros de consulta | Se ignoran en todas las rutas. |
+| Parámetros de consulta | Se ignoran en todas las rutas, salvo `GET /api/admin/orders` (ver [Administración: pedidos](#administración-pedidos-apiadminorders)). |
 | Id de petición | Toda respuesta trae `X-Request-Id` (un UUID generado por el servidor; el que mande el cliente se ignora). Los errores lo repiten en `requestId`. Mencionarlo al pedir soporte. |
 
 ## Endpoints
@@ -387,6 +387,171 @@ Golden: `backend/src/test/resources/contract/admin-error-invalid-credentials.jso
 El 401 de login trae `instance: "/api/admin/login"` y `requestId`, que el golden
 no incluye (los tests los comparan aparte).
 
+## Administración: pedidos (`/api/admin/orders`)
+
+Todas las rutas de esta sección exigen sesión de administración (sin ella, el 401
+`UNAUTHENTICATED` de arriba) y responden con `Cache-Control: no-store`. Los datos de la
+compradora (nombre, teléfono, dirección) solo salen en la respuesta de estas rutas autenticadas: nunca en un
+error ni en el log, y la dirección solo en el detalle, no en la lista.
+
+### `GET /api/admin/orders`
+
+Lista paginada, del pedido más nuevo al más viejo (por id descendente). Parámetros de consulta:
+
+| Parámetro | Valores | Por defecto |
+|---|---|---|
+| `status` | `all`, `PAGO_PENDIENTE`, `PAGADO`, `DESPACHADO`, `ENTREGADO` o `CANCELADO` (exacto, con esas mayúsculas) | `all` |
+| `q` | Búsqueda exacta, hasta 64 caracteres: el número de pedido (`CETO-000123`, en cualquier combinación de mayúsculas y minúsculas, o solo los dígitos) o un teléfono en cualquier forma de escritura (`351 555-0199`, `+54 9 351 555 0199`). No hay búsqueda parcial: `CETO-0001` no trae los pedidos que empiezan así. Un texto que no es ni número ni teléfono da una página vacía, no un error. Se combina con `status`. | sin búsqueda |
+| `size` | 1 a 50 | 20 |
+| `after` | 1 a 9007199254740991: el `nextAfter` de la página anterior | primera página |
+
+Un valor fuera de rango, que no sea un número o un `status` desconocido es 400 `VALIDATION_ERROR`.
+`nextAfter` es `null` en la última página. Cada fila trae `overdue`: verdadero solo en un `PAGO_PENDIENTE` cuyo plazo
+(`reservedUntil`) ya pasó y el job de vencimiento todavía no lo canceló; el pedido sigue pagable. `reservedUntil` es `null` fuera de `PAGO_PENDIENTE`.
+
+Golden: `backend/src/test/resources/contract/admin-orders-list.json`
+
+```json
+{
+  "orders": [
+    {
+      "id": 2,
+      "orderNumber": "CETO-000002",
+      "status": "PAGO_PENDIENTE",
+      "buyerName": "Beto Ruiz",
+      "buyerPhone": "+5493515550102",
+      "total": "100.00",
+      "createdAt": "2026-03-10T12:05:00Z",
+      "reservedUntil": "2026-03-12T12:05:00Z",
+      "overdue": false
+    },
+    {
+      "id": 1,
+      "orderNumber": "CETO-000001",
+      "status": "PAGADO",
+      "buyerName": "Ana Gomez",
+      "buyerPhone": "+5493515550101",
+      "total": "200.00",
+      "createdAt": "2026-03-10T12:00:00Z",
+      "reservedUntil": null,
+      "overdue": false
+    }
+  ],
+  "nextAfter": null
+}
+```
+
+### `GET /api/admin/orders/{id}`
+
+El detalle de un pedido, con las líneas tal como se cobraron. `id` va de 1 a 9007199254740991 (fuera de rango o no
+numérico es 400 `VALIDATION_ERROR`); un pedido inexistente es 404 `NOT_FOUND`, sin repetir el id en el cuerpo.
+`reservedUntil` y `secondsLeft` solo vienen en un `PAGO_PENDIENTE`; `secondsLeft` es 0 cuando el plazo pasó y el
+pedido sigue pagable (`overdue` verdadero). `cancelReason` solo en un `CANCELADO`.
+
+Golden: `backend/src/test/resources/contract/admin-order-detail.json`
+
+```json
+{
+  "id": 1,
+  "orderNumber": "CETO-000001",
+  "status": "PAGO_PENDIENTE",
+  "cancelReason": null,
+  "buyerName": "Ana Gomez",
+  "buyerPhone": "+5493515550101",
+  "shippingAddress": "Calle Falsa 123",
+  "zone": "CORDOBA_CAPITAL",
+  "total": "200.00",
+  "createdAt": "2026-03-10T12:00:00Z",
+  "updatedAt": "2026-03-10T12:00:00Z",
+  "paidAt": null,
+  "dispatchedAt": null,
+  "deliveredAt": null,
+  "cancelledAt": null,
+  "reservedUntil": "2026-03-12T12:00:00Z",
+  "secondsLeft": 86400,
+  "overdue": false,
+  "lines": [
+    {
+      "lineNo": 1,
+      "productId": 1,
+      "productName": "Frasco",
+      "combo": false,
+      "unitPrice": "100.00",
+      "quantity": 2,
+      "baseUnitsPerUnit": 1,
+      "baseUnitsTotal": 2,
+      "lineTotal": "200.00"
+    }
+  ]
+}
+```
+
+El mismo pedido ya pagado: sin plazo y con la hora del pago.
+
+Golden: `backend/src/test/resources/contract/admin-order-detail-paid.json`
+
+```json
+{
+  "id": 1,
+  "orderNumber": "CETO-000001",
+  "status": "PAGADO",
+  "cancelReason": null,
+  "buyerName": "Ana Gomez",
+  "buyerPhone": "+5493515550101",
+  "shippingAddress": "Calle Falsa 123",
+  "zone": "CORDOBA_CAPITAL",
+  "total": "200.00",
+  "createdAt": "2026-03-10T12:00:00Z",
+  "updatedAt": "2026-03-10T13:00:00Z",
+  "paidAt": "2026-03-10T13:00:00Z",
+  "dispatchedAt": null,
+  "deliveredAt": null,
+  "cancelledAt": null,
+  "reservedUntil": null,
+  "secondsLeft": null,
+  "overdue": false,
+  "lines": [
+    {
+      "lineNo": 1,
+      "productId": 1,
+      "productName": "Frasco",
+      "combo": false,
+      "unitPrice": "100.00",
+      "quantity": 2,
+      "baseUnitsPerUnit": 1,
+      "baseUnitsTotal": 2,
+      "lineTotal": "200.00"
+    }
+  ]
+}
+```
+
+### Errores de las rutas de pedidos
+
+Tienen la forma de siempre, con `instance` igual a la ruta pedida; los goldens no lo incluyen (los tests lo comparan aparte).
+
+Golden: `backend/src/test/resources/contract/admin-error-validation.json`
+
+```json
+{
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "The request is invalid.",
+  "code": "VALIDATION_ERROR"
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-error-not-found.json`
+
+```json
+{
+  "title": "Not Found",
+  "status": 404,
+  "detail": "The resource was not found.",
+  "code": "NOT_FOUND"
+}
+```
+
 ## Cabeceras
 
 | Cabecera | Dirección | Dónde | Detalle |
@@ -420,7 +585,7 @@ contra `X-Request-Id`.
 | 401 | `UNAUTHENTICATED` | Solo en `/api/admin/*`: no hay sesión de administración. Nunca dice por qué ni nombra al usuario. | | Sí, después de iniciar sesión. |
 | 401 | `INVALID_CREDENTIALS` | Solo en `POST /api/admin/login`: usuario inexistente, contraseña incorrecta o un campo de más de 128 caracteres. Es siempre el mismo cuerpo: no dice cuál fue el motivo ni nombra al usuario. | | Sí, con otros datos. |
 | 403 | `FORBIDDEN` | Solo en `/api/admin/*`: falta el token CSRF o es inválido, o la sesión no puede hacer esto. | | No: pedir un token nuevo. |
-| 404 | `NOT_FOUND` | Ruta inexistente (incluidas variantes como barra final o `//`) o producto inexistente, inactivo u oculto. | | No. |
+| 404 | `NOT_FOUND` | Ruta inexistente (incluidas variantes como barra final o `//`) o producto inexistente, inactivo u oculto o, en `/api/admin/orders/{id}`, pedido inexistente. | | No. |
 | 405 | `METHOD_NOT_ALLOWED` | Método no permitido para la ruta (por ejemplo `POST` a la lista). | `Allow` | No. |
 | 406 | `NOT_ACCEPTABLE` | `Accept` no admite JSON. | | No. |
 | 409 | `PRODUCT_UNAVAILABLE` | Un producto del carrito está inactivo, oculto o sin fila de stock. | `productIds`: ids **pedidos** afectados | No: sacar esos productos. |

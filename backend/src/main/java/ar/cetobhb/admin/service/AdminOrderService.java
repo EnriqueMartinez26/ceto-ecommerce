@@ -5,6 +5,8 @@ import ar.cetobhb.admin.domain.AuditEntry;
 import ar.cetobhb.orders.domain.CancelReason;
 import ar.cetobhb.orders.service.OrderDetail;
 import ar.cetobhb.orders.service.OrderLifecycleService;
+import ar.cetobhb.orders.service.OrderListQuery;
+import ar.cetobhb.orders.service.OrderPage;
 import ar.cetobhb.orders.service.OrderQueryService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +32,16 @@ public class AdminOrderService {
         this.lifecycle = lifecycle;
         this.queries = queries;
         this.audit = audit;
+    }
+
+    /** One page of the order list (AOR-01, AOR-02): a projection read, no lock, no audit row. */
+    public OrderPage list(OrderListQuery query) {
+        return queries.list(query);
+    }
+
+    /** The full admin view of one order (AOR-03): a projection read, no lock, no audit row. */
+    public OrderDetail detail(long orderId) {
+        return queries.detail(orderId);
     }
 
     /** PAGO_PENDIENTE to PAGADO. */

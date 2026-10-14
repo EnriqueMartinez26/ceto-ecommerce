@@ -331,6 +331,29 @@ class ArchitectureRulesTest {
 
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
+            ".size(java.lang.Integer) parameter 0|is numeric and lacks a minimum and a maximum",
+            ".text(java.lang.String) parameter 0|lacks @Size(max = ...)",
+            ".list(java.util.List) parameter 0|lacks @Size(max = ...)",
+            ".after(java.lang.Long) parameter 0|is numeric and lacks a maximum",
+            ".body(archfixtures.ar.cetobhb.adminbounds.admin.controller.UnboundedAdminController$AdminBody) parameter 0"
+                    + "|is a @RequestBody and lacks @Valid"})
+    void inputsRuleBitesOnHandlersOfAnAdminControllerThatIsCorrectlyUnderTheAdminPrefix(String where, String reason) {
+        List<String> lines = violations(ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED, "adminbounds");
+
+        assertViolation(lines, where, reason);
+        assertThat(lines).noneMatch(line -> line.contains("AdminBody.label"));
+        assertThatCode(() -> ArchitectureRules.ADMIN_HANDLER_PATHS_ARE_UNDER_THE_ADMIN_PREFIX
+                .check(fixtures("adminbounds"))).doesNotThrowAnyException();
+    }
+
+    @Test
+    void inputsRuleAcceptsTheParameterShapesOfAPagedAdminList() {
+        assertThatCode(() -> ArchitectureRules.REQUEST_INPUTS_ARE_BOUNDED.check(fixtures("clean.admin")))
+                .doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
             "ForwardingController.forwardCall(|jakarta.servlet.RequestDispatcher.forward(",
             "ForwardingController.includeCall(|jakarta.servlet.RequestDispatcher.include(",
             "MethodReferenceForwarder.forwardReference(|jakarta.servlet.RequestDispatcher.forward(",

@@ -1,0 +1,27 @@
+{
+  "orders": [
+    {
+      "id": 2,
+      "orderNumber": "CETO-000002",
+      "status": "PAGO_PENDIENTE",
+      "buyerName": "Beto Ruiz",
+      "buyerPhone": "+5493515550102",
+      "total": "100.00",
+      "createdAt": "2026-03-10T12:05:00Z",
+      "reservedUntil": "2026-03-12T12:05:00Z",
+      "overdue": false
+    },
+    {
+      "id": 1,
+      "orderNumber": "CETO-000001",
+      "status": "PAGADO",
+      "buyerName": "Ana Gomez",
+      "buyerPhone": "+5493515550101",
+      "total": "200.00",
+      "createdAt": "2026-03-10T12:00:00Z",
+      "reservedUntil": null,
+      "overdue": false
+    }
+  ],
+  "nextAfter": null
+}
