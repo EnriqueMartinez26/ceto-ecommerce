@@ -30,6 +30,12 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 @ExtendWith(OutputCaptureExtension.class)
 class AdminLoginPiiServerIT extends AbstractAdminServerIT {
 
+    /**
+     * A web-layer DEBUG line that is always printed for the session bootstrap. It is not the request line of
+     * DispatcherServlet: that category ships at INFO (the order search text travels in the query string), see
+     * AdminOrdersPiiServerIT.
+     */
+    private static final String WEB_DEBUG_CONTROL = "Mapped to ar.cetobhb.admin.controller.AdminSessionController";
     private static final String SENTINEL_USER = "SentinelLoginName-55120";
     private static final String SENTINEL_PASSWORD = "SentinelLoginSecret-55120";
     private static final String[] CATEGORIES = {"org.springframework.security", "org.springframework.web", "ar.cetobhb",
@@ -114,7 +120,7 @@ class AdminLoginPiiServerIT extends AbstractAdminServerIT {
         Run run = runTheFlows();
 
         assertThat(output.getAll()).as("positive control: the root DEBUG lines are in the capture")
-                .contains("/api/admin/session");
+                .contains(WEB_DEBUG_CONTROL);
         assertThat(output.getAll()).doesNotContain("RemoteIpAddress=").doesNotContain("Set SecurityContextHolder")
                 .doesNotContain(AdminTestCredentials.username());
         for (String secret : run.secrets()) {
@@ -175,7 +181,7 @@ class AdminLoginPiiServerIT extends AbstractAdminServerIT {
         Run run = runTheFlows();
 
         assertThat(output.getAll()).as("positive control: the web DEBUG lines are in the capture")
-                .contains("/api/admin/session");
+                .contains(WEB_DEBUG_CONTROL);
         for (String secret : run.secrets()) {
             assertThat(output.getAll()).as("the DEBUG output must not contain a secret (starts %s)", head(secret))
                     .doesNotContain(secret);
@@ -214,7 +220,7 @@ class AdminLoginPiiServerIT extends AbstractAdminServerIT {
         assertThat(superseded.status()).isEqualTo(401);
         assertThat(expired.status()).isEqualTo(401);
         assertThat(output.getAll()).as("positive control: the DEBUG lines of the web layer are captured")
-                .contains("/api/admin/session");
+                .contains(WEB_DEBUG_CONTROL);
         for (String secret : secrets) {
             assertThat(output.getAll()).as("the output must not contain a secret (starts %s)", head(secret))
                     .doesNotContain(secret);

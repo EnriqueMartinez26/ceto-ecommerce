@@ -52,6 +52,14 @@ logging:
     # address ("RemoteIpAddress=") and the session id ("Invalidated session ..."). WARN, set on the category itself, keeps
     # them out even when the root logger is raised to DEBUG (REQ-AUTH-12). Pinned by AdminLoginPiiServerIT.
     org.springframework.security: "WARN"
+    # At DEBUG, DispatcherServlet prints the request line with its query string ('GET "/api/admin/orders?q=<text>"'), and the
+    # search text of the order list is a buyer phone or an order number. INFO, set on the category itself, keeps it out even
+    # when org.springframework.web is raised to DEBUG. Pinned by AdminOrdersPiiServerIT.
+    org.springframework.web.servlet.DispatcherServlet: "INFO"
+    # At DEBUG these two echo the rejected request value of a parameter that cannot be converted ("Failed to convert value of
+    # type 'String' to 'int' for value '<text>'", "For input string: ..."): the query text of the order list is a buyer phone.
+    org.springframework.web.method.HandlerMethod: "OFF"
+    org.springframework.web.servlet.mvc.method.annotation.ExceptionHandlerExceptionResolver: "OFF"
 
 spring:
   datasource:

@@ -117,7 +117,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   ejemplo deja de ser idéntico a su golden, si un golden no está citado o si un
   `code` o `reason` del código no figura en el documento. `EndpointInventoryIT` fija el
   inventario: las 3 rutas públicas, las de administración (`EndpointInventory.ADMIN_ROUTES`,
-  hoy solo `GET /api/admin/session`, la única anónima: cada ruta protegida se llama sin sesión y
+  hoy `GET /api/admin/session`, la única anónima, y las dos lecturas de pedidos: cada ruta protegida se llama sin sesión y
   debe dar el golden 401, generado desde los mapeos, y de la anónima se llaman los otros seis
   métodos, también 401) más `ANY /error` de `BasicErrorController`
   (permitido por tipo de handler, no por ruta), todos los `HandlerMapping` por
@@ -164,8 +164,8 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   puede desactivar o borrar el trigger; frena errores y bugs de la aplicación,
   no a un dueño de la base hostil. Todavía no hay rutas ni fachada que escriban
   en ella (ver `docs/DECISIONES.md`).
-- **Lectura de pedidos para administración** (`OrderQueryService`, solo
-  servicio, todavía sin rutas): la lista es paginada por clave (id descendente,
+- **Lectura de pedidos para administración** (`OrderQueryService`, expuesta por
+  `GET /api/admin/orders` y `GET /api/admin/orders/{id}`, ver más abajo): la lista es paginada por clave (id descendente,
   `size` 1..50, `after` 1..2^53-1, pedida con `size + 1` filas para saber si hay
   otra página) y el detalle sale de proyecciones, sin lock y sin dejar la
   entidad `Order` en el contexto de persistencia. La búsqueda es exacta, nunca
@@ -185,6 +185,37 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   inclusivo del job) y distingue "pasó el plazo" de "la cuenta regresiva llegó
   a 0", en el detalle y en la fila de la lista (`ReservationCountdownTest`,
   `OrderQueryServiceIT`).
+- **Rutas de lectura de pedidos de administración** (`AdminOrderController`, en
+  `..admin.controller..`, llama solo a `AdminOrderService`; D-20261008-12).
+  `GET /api/admin/orders?status=&q=&size=&after=`: `status` es `all` o un estado
+  (`@Pattern`, `@Size(max=16)`), `q` `@Size(max=64)`, `size` 1..50 (20 por defecto),
+  `after` 1..2^53-1; `GET /api/admin/orders/{id}` con `id` 1..2^53-1. Un valor fuera de
+  rango o ilegible es 400 `VALIDATION_ERROR` y un pedido inexistente 404 `NOT_FOUND`, sin
+  repetir lo pedido en el cuerpo. Los DTO (`AdminOrderRow`, `AdminOrderListResponse`,
+  `AdminOrderDetailResponse`) llevan dinero como string de 2 decimales e instantes ISO UTC,
+  y su `toString` no imprime datos de la compradora; la fila no tiene dirección ni zona, el
+  detalle es la única respuesta con nombre, teléfono y dirección. Guardas:
+  `AdminOrderListHttpIT` y `AdminOrderDetailHttpIT` (MockMvc con `user()`; goldens
+  `admin-orders-list.json`, `admin-order-detail*.json`, `admin-error-validation.json` y
+  `admin-error-not-found.json`; paginado de 120 pedidos en 50/50/20, filtro, búsqueda por
+  número y por teléfono, todos los bordes de los límites, `no-store` y 401 sin sesión
+  abierta), `AdminOrdersSessionServerIT` (servidor real: el cierre de sesión y un login
+  nuevo dejan la cookie vieja en 401 sobre la ruta real), `EndpointInventoryIT` con las dos
+  rutas en `ADMIN_ROUTES` (el 401 generado ya no es vacío) y las fixtures `adminbounds` y
+  `clean.admin` de `ArchitectureRulesTest` para `REQUEST_INPUTS_ARE_BOUNDED` en un
+  controller de administración. Registros: `AdminOrdersPiiServerIT` (servidor real, con
+  `ar.cetobhb` y `org.springframework.web` en DEBUG y textos centinela en el pedido y en
+  `q`, `status`, `size`, `after`) encontró que a nivel DEBUG `DispatcherServlet` imprime la
+  línea de la petición con su query string (el `q` es un teléfono) y `HandlerMethod` y
+  `ExceptionHandlerExceptionResolver` repiten el valor que no se pudo convertir; por eso
+  `application.yml` fija `DispatcherServlet` en INFO y las otras dos en OFF, y el test fija
+  los niveles configurados. Límite: un operador que ponga esas categorías en DEBUG con un
+  argumento o una variable de entorno las vuelve a prender (a diferencia de Security, no hay
+  guarda de arranque). Evidencia por mutación (2026-10-14): quitar el `@Max` de `size` hizo
+  fallar `ArchitectureTest.requestInputsAreBounded` y `size=51` de `AdminOrderListHttpIT`;
+  quitar la línea de `DispatcherServlet` hizo fallar los 2 tests de `AdminOrdersPiiServerIT`;
+  quitar `requestCache(disable)` de la cadena de administración hizo fallar el 401 anónimo de
+  `AdminOrderListHttpIT` (abre una sesión).
 - **Acciones de administración sobre pedidos** (`AdminOrderService`, solo
   servicio, todavía sin rutas): pagar, despachar, entregar y cancelar llaman a
   `OrderLifecycleService` (la máquina de estados y el stock siguen ahí), escriben
@@ -762,8 +793,8 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   no lee literales, por eso un nombre de vista `forward:` se cierra por tipo, no
   por texto). Todo handler de `..admin.controller..` mapea bajo `/api/admin/` y
   ningún otro mapea esa ruta (`ArchitectureTest.adminHandlerPathsAreUnderTheAdminPrefix`,
-  con fixtures en `ArchitectureRulesTest`); hoy no hay controllers de admin, así
-  que la primera mitad no tiene handlers que mirar y las fixtures prueban que
+  con fixtures en `ArchitectureRulesTest`); hay un controller de admin (`AdminOrderController`), así
+  que la primera mitad mira handlers reales y las fixtures prueban que
   muerde. Evidencia por mutación (2026-10-08): mapear un controller de la tienda
   bajo `/api/admin/` o agregarle un `getRequestDispatcher(..).forward(..)` hizo
   fallar ambas reglas.
