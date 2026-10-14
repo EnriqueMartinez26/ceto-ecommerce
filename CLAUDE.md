@@ -117,7 +117,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   ejemplo deja de ser idéntico a su golden, si un golden no está citado o si un
   `code` o `reason` del código no figura en el documento. `EndpointInventoryIT` fija el
   inventario: las 3 rutas públicas, las de administración (`EndpointInventory.ADMIN_ROUTES`,
-  hoy `GET /api/admin/session`, la única anónima, las rutas de pedidos (lista, detalle y las cuatro acciones) y las de stock (vista, ajuste y conciliación): cada ruta protegida se llama sin sesión y
+  hoy `GET /api/admin/session`, la única anónima, las rutas de pedidos (lista, detalle y las cuatro acciones) las de stock (vista, ajuste y conciliación) y las de productos (lista, alta, edición, activar y desactivar): cada ruta protegida se llama sin sesión y
   debe dar el golden 401, generado desde los mapeos, y de la anónima se llaman los otros seis
   métodos, también 401) más `ANY /error` de `BasicErrorController`
   (permitido por tipo de handler, no por ruta), todos los `HandlerMapping` por
@@ -365,8 +365,8 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   fallar 2; leer la fila con `findById` en vez de `FOR UPDATE` hizo fallar las 5 repeticiones de `AdminStockRaceServerIT` (el ajuste
   responde `CONFLICT` por la versión). Con la aserción más laxa de "solo 200, 201, 409 o 503" esa mutación pasaba: la carrera sola no prueba
   el lock si se toleran todos los 409.
-- **Catálogo de administración** (`AdminCatalogService`, solo servicio,
-  todavía sin rutas): crear un producto base crea en la misma transacción su
+- **Catálogo de administración** (`AdminCatalogService`, expuesto por
+  `AdminProductController`, ver más abajo): crear un producto base crea en la misma transacción su
   fila de stock en 0 (D-20261008-15) y la fila `PRODUCT_CREATED`, así que la
   tienda lo muestra
   `SOLD_OUT` sin error y `AVAILABLE` tras reponer; la creación vive en la
@@ -419,6 +419,26 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   de truncamiento de la lista. Los caminos de catálogo no loguean nombres de producto ni datos de la
   compradora (`AdminCatalogPiiLoggingIT`; evidencia por mutación: imprimir el
   nombre al crear lo hizo fallar).
+- **Rutas de productos** (`AdminProductController`, ACAT-01 a ACAT-07): `GET /api/admin/products` (con `truncated`),
+  `POST /api/admin/products` (`type` `BASE` o `COMBO`; 201), `PUT /api/admin/products/{id}` y `POST
+  /api/admin/products/{id}/activate|deactivate`. Las cotas de los DTO son amplias a propósito (`AdminBounds`): solo
+  mantienen chico cada valor; las reglas de negocio (precio, nombre, combo de 2 a 100 unidades sobre una base activa) las
+  sigue juzgando `CatalogRules` y responden con su `reason` (`INVALID_PRICE_PAIR`, `INVALID_PRODUCT_NAME`,
+  `INVALID_CHARACTERS`, `INVALID_COMBO_LINK`). La edición es un **reemplazo completo** (D-20261008-21): un
+  `compareAtPrice` ausente o `null` borra la oferta, y lo fija `AdminProductUpdateHttpIT`; el vínculo del combo, el tipo y `active` no se
+  pueden mandar (propiedad desconocida: 400 `MALFORMED_REQUEST`). Una `version` vieja es 409 `CONFLICT`; activar y desactivar no
+  llevan versión y son idempotentes (`changed`, D-20261008-28). El 201 no trae `version` leída de la base: es 0 por ser la
+  primera de la fila, y la primera edición con ese valor lo confirma. Los `record` de petición y respuesta con nombre ocultan el
+  nombre en `toString`. Guardas: `AdminProductListHttpIT`, `AdminProductCreateHttpIT` (45 casos), `AdminProductUpdateHttpIT`
+  (25), `AdminProductActivationHttpIT` (10) con goldens `admin-product*.json`, `AdminCappedReadsHttpIT` (la lista de productos con tope 2),
+  `AdminProductPiiServerIT` (servidor real, DEBUG y TRACE, nombre, precio y propiedad centinela rechazados y una compradora
+  centinela: ni el log ni los cuerpos de error ni las columnas de texto de `admin_audit_log` los contienen) y
+  `AdminProductUpdateRaceServerIT` (seis ediciones simultáneas de la misma versión: una sola 200, el resto 409 `CONFLICT`,
+  precio del ganador, `version` 1 y una sola fila `PRICE_CHANGED`). Evidencia por mutación (2026-10-14): hacer que una oferta
+  ausente conserve la anterior hizo fallar 3 tests de `AdminProductUpdateHttpIT`; quitar el chequeo de `version` de
+  `CatalogService.update` hizo fallar la prueba de versión vieja y las 3 repeticiones de la carrera. Observación: el mapper acepta
+  un número JSON donde va un texto (`"name": 5` queda "5"); no es una vía de ataque (el texto pasa por las mismas reglas) y
+  endurecerlo cambiaría el parseo del checkout público.
 
 ### Frontend (`frontend/`)
 
