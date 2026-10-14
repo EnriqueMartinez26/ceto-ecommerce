@@ -879,7 +879,8 @@ Golden: `backend/src/test/resources/contract/admin-products-list.json`
 ### `POST /api/admin/products`
 
 Cuerpo `{"type": "BASE" | "COMBO", "name", "price", "compareAtPrice"?, "baseProductId"?, "units"?}`. Responde 201 con el producto
-creado (activo, `version` 0). Una propiedad desconocida (`active`, `id`, `version`) es 400 `MALFORMED_REQUEST`.
+creado, leído de la fila guardada (`active` y `version` son los almacenados: hoy activo y `version` 0). **No lleva `Location`**: no hay
+un `GET /api/admin/products/{id}` al que apuntar, el cliente usa `id` y vuelve a pedir la lista. Una propiedad desconocida (`active`, `id`, `version`) es 400 `MALFORMED_REQUEST`.
 
 - **Base** (`type: BASE`, sin `baseProductId` ni `units`): se crea junto con su fila de stock en 0 y 0, en la misma
   transacción, así que la tienda lo muestra `SOLD_OUT` hasta el primer ajuste de stock. Si falla la fila de stock, no queda
@@ -890,7 +891,7 @@ creado (activo, `version` 0). Una propiedad desconocida (`active`, `id`, `versio
 - `price`: más de 0, hasta 9999999999.99 y como mucho 2 decimales (texto o número JSON); `compareAtPrice`, si viene, tiene
   que ser mayor que `price`. `name`: de 1 a 200 caracteres sin contar los espacios de los extremos, con al menos un carácter
   visible y sin caracteres de control, de formato, separadores de línea o párrafo, de uso privado ni sin asignar. El nombre se
-  guarda tal cual, sin escapar: escapar es cosa de quien lo muestra.
+  guarda tal cual, sin escapar: escapar es cosa de quien lo muestra. El tope de 200 caracteres (no 120) coincide con la columna `VARCHAR(200)` y con `CatalogRules` (D-20261008-51).
 
 Golden: `backend/src/test/resources/contract/admin-product-created.json`
 

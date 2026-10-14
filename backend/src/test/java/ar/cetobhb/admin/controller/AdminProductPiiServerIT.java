@@ -145,8 +145,17 @@ class AdminProductPiiServerIT extends AbstractAdminServerIT {
                 send(client, "PUT", "/api/admin/products/987654",
                         "{\"name\":\"" + BAD_NAME + "\",\"price\":\"10.00\",\"version\":0}"),
                 send(client, "POST", "/api/admin/products/" + id + "/frobnicate", null));
+        // A non-numeric id: the MVC conversion failure message echoes the rejected value ("Failed to convert value of type
+        // 'String' to 'long' for value '...'") unless its category is silenced. The path is echoed in `instance` by
+        // design (capped), so these bodies are not checked for the path sentinel, but the log is.
+        List<AdminClient.Reply> pathErrors = List.of(
+                send(client, "PUT", "/api/admin/products/notanumber",
+                        "{\"name\":\"X\",\"price\":\"10.00\",\"version\":0}"),
+                send(client, "POST", "/api/admin/products/notanumber/activate", null),
+                send(client, "POST", "/api/admin/products/" + BAD_PROPERTY + "/deactivate", null));
 
         assertThat(successes).extracting(AdminClient.Reply::status).containsExactly(201, 201, 200, 200, 200, 200);
+        assertThat(pathErrors).extracting(AdminClient.Reply::status).containsExactly(400, 400, 400);
         assertThat(errors).extracting(AdminClient.Reply::status).containsExactly(409, 400, 400, 400, 400, 400, 404, 404);
         assertThat(successes.get(0).body()).as("positive control: a success body carries the name").contains(NAME);
         for (AdminClient.Reply reply : successes) {

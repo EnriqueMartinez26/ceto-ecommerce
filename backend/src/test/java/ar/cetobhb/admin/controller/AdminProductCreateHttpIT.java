@@ -59,6 +59,31 @@ class AdminProductCreateHttpIT extends AbstractAdminHttpIT {
         assertThat(auditActions()).containsExactly("PRODUCT_CREATED");
     }
 
+    /**
+     * Review batch 10: the 201 describes the STORED row, it does not assume it. A trigger makes the row differ from what
+     * the application wrote (version 7, inactive); the body must say so, and the version it reports must be the one the
+     * next edit needs.
+     */
+    @Test
+    void theCreatedResponseCarriesTheVersionAndTheActiveFlagOfTheStoredRowNotAssumedOnes() throws Exception {
+        try {
+            jdbc.execute("CREATE OR REPLACE FUNCTION shape_product_row_for_test() RETURNS trigger AS $$ BEGIN"
+                    + " NEW.version := 7; NEW.active := FALSE; RETURN NEW; END $$ LANGUAGE plpgsql");
+            jdbc.execute("CREATE TRIGGER shape_product_row_for_test BEFORE INSERT ON products FOR EACH ROW"
+                    + " EXECUTE FUNCTION shape_product_row_for_test()");
+
+            JsonNode created = body(send(adminPostJson(PATH, BASE_BODY)));
+
+            assertThat(created.get("version").asLong()).isEqualTo(7L);
+            assertThat(created.get("active").asBoolean()).isFalse();
+            assertThat(jdbc.queryForMap("SELECT version, active FROM products WHERE id = ?",
+                    created.get("id").asLong())).containsEntry("version", 7L).containsEntry("active", false);
+        } finally {
+            jdbc.execute("DROP TRIGGER IF EXISTS shape_product_row_for_test ON products");
+            jdbc.execute("DROP FUNCTION IF EXISTS shape_product_row_for_test()");
+        }
+    }
+
     @Test
     void aComboIs201MatchesTheGoldenAndHasNoStockRow() throws Exception {
         long base = catalog.createBase(product("Frasco", "100.00")).id();

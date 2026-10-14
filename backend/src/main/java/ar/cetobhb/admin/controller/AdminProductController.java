@@ -56,7 +56,7 @@ class AdminProductController {
         ProductSnapshot created = combo
                 ? catalog.createCombo(data, request.baseProductId(), request.units())
                 : catalog.createBase(data);
-        return AdminProductResponse.fromCreated(created);
+        return AdminProductResponse.from(catalog.view(created.id()));
     }
 
     @PutMapping(path = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)

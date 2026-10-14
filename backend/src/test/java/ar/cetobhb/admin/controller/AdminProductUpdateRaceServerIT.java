@@ -19,9 +19,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * Concurrent edits from the same read, over real HTTP (ACAT-04, "Lost update"): six admins send an edit of the same
- * version at once. Exactly one is applied (200) and every other is a 409 {@code CONFLICT} (or a 503 retry); the stored
- * price is the winner's, the version moved by exactly one and a single {@code PRICE_CHANGED} row exists. Nothing is
- * silently overwritten and nothing is a 5xx other than the 503.
+ * version at once. Exactly one is applied (200) and every other is a 409 {@code CONFLICT}: at least one conflict must
+ * appear, and there is NO 503 (D-20261008-49): the test pool (30) is not smaller than the threads, so a 503 would be a
+ * lock wait or a deadlock hiding in a retry. The stored price is the winner's, the version moved by exactly one and a
+ * single {@code PRICE_CHANGED} row exists. Nothing is silently overwritten and nothing is a 5xx.
  */
 class AdminProductUpdateRaceServerIT extends AbstractAdminServerIT {
 
@@ -58,8 +59,11 @@ class AdminProductUpdateRaceServerIT extends AbstractAdminServerIT {
         List<Result> results = report.outcomes().stream().map(Outcome::value).toList();
         List<Result> winners = results.stream().filter(r -> r.status() == 200).toList();
         assertThat(winners).hasSize(1);
-        assertThat(results.stream().filter(r -> r.status() != 200)).allMatch(
-                r -> r.status() == 503 || (r.status() == 409 && r.body().contains("\"code\":\"CONFLICT\"")));
+        assertThat(results).extracting(Result::status).as("no 503: a lock wait or a deadlock must not hide in a retry")
+                .doesNotContain(503);
+        List<Result> conflicts = results.stream().filter(r -> r.status() != 200).toList();
+        assertThat(conflicts).as("at least one 409 CONFLICT").isNotEmpty();
+        assertThat(conflicts).allMatch(r -> r.status() == 409 && r.body().contains("\"code\":\"CONFLICT\""));
         assertThat(jdbc.queryForObject("SELECT price FROM products WHERE id = ?", BigDecimal.class, id))
                 .isEqualByComparingTo(winners.get(0).price());
         assertThat(jdbc.queryForObject("SELECT version FROM products WHERE id = ?", Long.class, id)).isEqualTo(1L);

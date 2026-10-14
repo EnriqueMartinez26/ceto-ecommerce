@@ -69,6 +69,12 @@ public class CatalogService {
         CatalogRules.requireValidPrices(data.price(), data.compareAtPrice());
     }
 
+    /** The admin read model of one product, active or not, as stored (its version included); a missing id is a {@link ProductNotFoundException}. */
+    @Transactional(readOnly = true)
+    public ProductAdminView findAdminView(long id) {
+        return products.findById(id).map(Product::toAdminView).orElseThrow(() -> new ProductNotFoundException(id));
+    }
+
     /** Any product by id, active or not (admin use); a missing id is a {@link ProductNotFoundException}. */
     @Transactional(readOnly = true)
     public ProductSnapshot findAnyIncludingInactive(long id) {

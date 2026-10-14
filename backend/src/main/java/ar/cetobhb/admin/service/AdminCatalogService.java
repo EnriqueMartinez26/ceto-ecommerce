@@ -50,6 +50,17 @@ public class AdminCatalogService {
     }
 
     /**
+     * One product as stored, active or not, with its current version. The create responses are built from this read, not
+     * from what the application assumes it just wrote.
+     *
+     * @throws ar.cetobhb.catalog.domain.ProductNotFoundException for an unknown id
+     */
+    @Transactional(readOnly = true)
+    public ProductAdminView view(long id) {
+        return catalog.findAdminView(id);
+    }
+
+    /**
      * Creates a base product together with its stock row (0 on hand, 0 reserved), so the storefront shows it as sold
      * out instead of treating a missing row as an error, and records PRODUCT_CREATED.
      *
