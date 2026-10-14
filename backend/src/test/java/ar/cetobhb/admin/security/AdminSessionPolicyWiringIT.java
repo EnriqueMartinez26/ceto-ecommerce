@@ -27,6 +27,11 @@ class AdminSessionPolicyWiringIT extends AbstractHttpIT {
     }
 
     @Test
+    void theSecurityLogLevelGuardIsPartOfTheApplication() {
+        assertThat(context.getBeansOfType(SecurityLogLevelGuard.class)).hasSize(1);
+    }
+
+    @Test
     void thereIsExactlyOneSessionRegistryAndOneSessionEventPublisher() {
         assertThat(context.getBeansOfType(SessionRegistry.class)).hasSize(1);
         Map<String, HttpSessionEventPublisher> publishers = context.getBeansOfType(HttpSessionEventPublisher.class);
