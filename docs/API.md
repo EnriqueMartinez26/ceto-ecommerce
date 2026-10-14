@@ -333,13 +333,27 @@ uno más cada 90 segundos (40 por hora), sin importar qué traiga (sin token CSR
 mal formado, con la contraseña correcta). El 6.º seguido es 429 `RATE_LIMITED` con
 `Retry-After` en segundos enteros (mínimo 1; con el cubo vacío, 90); un intento
 limitado no calcula ningún hash, no abre sesión y no empuja más lejos el próximo
-intento. Cada IP tiene su cubo (la dueña no queda bloqueada por los intentos de
-otra IP), no hay bloqueo por cuenta ni cubo global (D-20261008-07). La IP es la que
+intento. Cada IP tiene su cubo y no hay bloqueo por cuenta ni cubo global
+(D-20261008-07); aun así, quien comparte IP o clave de cubo con un atacante (una
+red compartida, un `TRUSTED_PROXIES` mal puesto) comparte también su cubo, y la
+tabla de clientes llena manda a los nuevos a un cubo de desborde común
+(D-20261008-43). Es una negación de acceso, no un modo de adivinar la
+contraseña: el ritmo de adivinanzas sigue acotado. La IP es la que
 resuelve el proxy de confianza (`TRUSTED_PROXIES`). Un cuerpo que *declara* más de
 `max-body-bytes` es 413 antes del límite y no gasta intento. Solo cuenta
 `POST /api/admin/login` escrito exactamente así: `;x=1` es 400 del firewall, y
 barra final u otra capitalización no son el login (401 o 404), sin trabajo de BCrypt y
 sin gastar intento.
+
+**Tope de verificaciones simultáneas.** Además del límite por IP, a lo sumo
+`ceto.admin.login-rate-limit.max-concurrent-verifications` (1 a 8, 2 por defecto)
+contraseñas se verifican a la vez en todo el servidor, para acotar la CPU de
+BCrypt aunque lleguen intentos de muchas IPs. Un intento que no encuentra lugar
+en 200 ms recibe 503 `SERVICE_BUSY` con `Retry-After: 1`, sin calcular ningún
+hash ni abrir sesión (su intento ya gastó el del cubo de su IP). No recuerda a
+nadie ni cuenta nada en el tiempo: no es un límite de intentos ni un bloqueo
+(D-20261008-45). Un campo de más de 128 caracteres se rechaza antes de pedir
+lugar.
 
 El cuerpo de estos errores es fijo y no repite ningún valor de la petición.
 
@@ -381,7 +395,7 @@ no incluye (los tests los comparan aparte).
 | `Content-Type` | petición | `POST` | `application/json`. Otro tipo (o ninguno) es 415. |
 | `Accept` | petición | todas | `application/json` o sin definir. Otro tipo (por ejemplo XML) es 406. |
 | `X-Request-Id` | respuesta | todas | UUID del servidor; los errores lo repiten en `requestId`. El de la petición se ignora. |
-| `Retry-After` | respuesta | 429 y 503 | Segundos de espera. En 429 `RATE_LIMITED` es el tiempo hasta el próximo intento permitido (mínimo 1). En 503 `SERVICE_BUSY` es `1` si hay otro checkout del mismo teléfono en curso y `5` si el servicio está saturado. |
+| `Retry-After` | respuesta | 429 y 503 | Segundos de espera. En 429 `RATE_LIMITED` es el tiempo hasta el próximo intento permitido (mínimo 1). En 503 `SERVICE_BUSY` es `1` si hay otro checkout del mismo teléfono en curso (o, en el login, si las verificaciones de contraseña están al tope) y `5` si el servicio está saturado. |
 | `Cache-Control` | respuesta | checkout y todo error | `no-store`. Los `GET` de la tienda no fijan `Cache-Control`: la política de caché de la lista la define el frontend o Caddy. |
 | `Cache-Control`, `X-Frame-Options` | respuesta | `/api/admin/*` | Toda respuesta de administración lleva `Cache-Control` con `no-store` (los errores `no-store` a secas; en las demás, Security suma `no-cache`, `Pragma` y `Expires`) y `X-Frame-Options: DENY`. Nunca hay `Access-Control-Allow-Origin` ni `Strict-Transport-Security`. Las rutas públicas no cambian sus cabeceras. |
 | `Allow` | respuesta | 405 | Métodos permitidos de la ruta. |
@@ -418,7 +432,7 @@ contra `X-Request-Id`.
 | 429 | `RATE_LIMITED` | La IP agotó sus intentos de checkout o, en `POST /api/admin/login`, sus intentos de login. Mismo código y texto en ambos. | `Retry-After` | Sí, después de esa espera. |
 | 429 | `TOO_MANY_PENDING_ORDERS` | El teléfono ya tiene el máximo de pedidos `PAGO_PENDIENTE`. | | No: pagar o esperar que venzan. |
 | 500 | `INTERNAL_ERROR` | Falla inesperada. Se registra con el `requestId`. | | Una vez, con la misma clave. |
-| 503 | `SERVICE_BUSY` | Otro checkout del mismo teléfono está en curso, un lock tardó más de 5 s o no hay conexión a la base. | `Retry-After` | Sí, con la misma clave. |
+| 503 | `SERVICE_BUSY` | Otro checkout del mismo teléfono está en curso, un lock tardó más de 5 s o no hay conexión a la base. En `POST /api/admin/login`: ya hay verificaciones de contraseña en curso hasta el tope (`ceto.admin.login-rate-limit.max-concurrent-verifications`, 2 por defecto) y este intento esperó 200 ms sin conseguir lugar; no se calculó ningún hash ni se abrió sesión. | `Retry-After` | Sí, con la misma clave (en el login, otra vez en un segundo). |
 
 Los errores que Tomcat genera **antes** de la cadena de filtros (línea de
 petición inválida, 414, 431) no tienen esta forma ni las cabeceras de seguridad:
@@ -643,6 +657,17 @@ Golden: `backend/src/test/resources/contract/admin-error-rate-limited.json`
 }
 ```
 
+Golden: `backend/src/test/resources/contract/admin-error-service-busy.json`
+
+```json
+{
+  "title": "Service Unavailable",
+  "status": 503,
+  "detail": "The service is busy. Try again shortly.",
+  "code": "SERVICE_BUSY"
+}
+```
+
 Golden: `backend/src/test/resources/contract/admin-error-unsupported-media-type.json`
 
 ```json
@@ -706,6 +731,7 @@ clienta; este documento no lo redacta.
 |---|---|---|---|
 | Intentos de checkout por IP | 10 de golpe y uno más cada 6 minutos (10 por hora). Solo cuenta el `POST`, antes de leer el cuerpo. Un cuerpo demasiado grande no gasta intento. | 429 `RATE_LIMITED` + `Retry-After` | D-20261007-17 |
 | Intentos de login por IP | 5 de golpe y uno más cada 90 segundos (40 por hora), `ceto.admin.login-rate-limit`. Cuenta todo `POST /api/admin/login` antes del CSRF y de BCrypt; un cuerpo declarado demasiado grande no gasta intento. Sin bloqueo por cuenta ni cubo global. | 429 `RATE_LIMITED` + `Retry-After` | D-20261008-07, D-20261008-43 |
+| Verificaciones de contraseña simultáneas | 2 por defecto (1 a 8), `ceto.admin.login-rate-limit.max-concurrent-verifications`, 200 ms de espera por un lugar. No es un límite de intentos. | 503 `SERVICE_BUSY` + `Retry-After: 1` | D-20261008-45 |
 | Pedidos `PAGO_PENDIENTE` por teléfono | 3 (`ORDER_MAX_PENDING_PER_PHONE`, de 1 a 20). Un pendiente vencido que el job aún no canceló sigue contando. Pagado, cancelado y vencido liberan el cupo. | 429 `TOO_MANY_PENDING_ORDERS` | D-20261007-19 (propuesta, pendiente de OK de la clienta), D-20261007-24 |
 | Checkouts simultáneos del mismo teléfono | Uno. El lock por teléfono no espera: el segundo recibe 503 al instante y ningún pedido retiene una conexión esperando. | 503 `SERVICE_BUSY` + `Retry-After: 1` | D-20261008-01 |
 | Tabla del limitador por IP llena | Las IPs nuevas comparten un balde de desborde (checkout: 100 de golpe, 100 por hora; login: 20 de golpe, 40 por hora). | 429 `RATE_LIMITED` | D-20261007-25, D-20261008-43 |

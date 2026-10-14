@@ -65,7 +65,8 @@ class NoGeneratedPasswordTest {
                         "ceto.admin.login-rate-limit.refill-interval-seconds=90",
                         "ceto.admin.login-rate-limit.max-tracked-clients=10000",
                         "ceto.admin.login-rate-limit.overflow-burst=20",
-                        "ceto.admin.login-rate-limit.overflow-refill-per-hour=40")
+                        "ceto.admin.login-rate-limit.overflow-refill-per-hour=40",
+                        "ceto.admin.login-rate-limit.max-concurrent-verifications=2")
                 .run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context).doesNotHaveBean(InMemoryUserDetailsManager.class);

@@ -56,6 +56,7 @@ class AdminPropertiesValidationTest {
             assertThat(p.loginRateLimit().maxTrackedClients()).isEqualTo(10_000);
             assertThat(p.loginRateLimit().overflowBurst()).isEqualTo(20);
             assertThat(p.loginRateLimit().overflowRefillPerHour()).isEqualTo(40);
+            assertThat(p.loginRateLimit().maxConcurrentVerifications()).isEqualTo(2);
             assertThat(p.maxListedProducts()).isEqualTo(200);
             assertThat(p.maxReconciliationRows()).isEqualTo(100);
         });
@@ -146,7 +147,10 @@ class AdminPropertiesValidationTest {
                 Arguments.of("login-rate-limit.overflow-burst", "0"),
                 Arguments.of("login-rate-limit.overflow-burst", "1001"),
                 Arguments.of("login-rate-limit.overflow-refill-per-hour", "0"),
-                Arguments.of("login-rate-limit.overflow-refill-per-hour", "3601"));
+                Arguments.of("login-rate-limit.overflow-refill-per-hour", "3601"),
+                Arguments.of("login-rate-limit.max-concurrent-verifications", "0"),
+                Arguments.of("login-rate-limit.max-concurrent-verifications", "9"),
+                Arguments.of("login-rate-limit.max-concurrent-verifications", "1000"));
     }
 
     @ParameterizedTest(name = "{0}={1} aborts startup")
@@ -189,7 +193,9 @@ class AdminPropertiesValidationTest {
                 Arguments.of("login-rate-limit.overflow-burst", "1"),
                 Arguments.of("login-rate-limit.overflow-burst", "1000"),
                 Arguments.of("login-rate-limit.overflow-refill-per-hour", "1"),
-                Arguments.of("login-rate-limit.overflow-refill-per-hour", "3600"));
+                Arguments.of("login-rate-limit.overflow-refill-per-hour", "3600"),
+                Arguments.of("login-rate-limit.max-concurrent-verifications", "1"),
+                Arguments.of("login-rate-limit.max-concurrent-verifications", "8"));
     }
 
     @ParameterizedTest(name = "{0}={1} is accepted")
@@ -200,16 +206,16 @@ class AdminPropertiesValidationTest {
 
     @Test
     void theOverflowRefillPerHourBecomesTheIntervalBetweenTokens() {
-        assertThat(new AdminProperties.LoginRateLimit(5, 90, 100, 20, 1).overflowRefillInterval())
+        assertThat(new AdminProperties.LoginRateLimit(5, 90, 100, 20, 1, 2).overflowRefillInterval())
                 .isEqualTo(Duration.ofHours(1));
-        assertThat(new AdminProperties.LoginRateLimit(5, 90, 100, 20, 40).overflowRefillInterval())
+        assertThat(new AdminProperties.LoginRateLimit(5, 90, 100, 20, 40, 2).overflowRefillInterval())
                 .isEqualTo(Duration.ofSeconds(90));
     }
 
     @Test
     void toStringNeverPrintsTheUsernameOrTheHash() {
         AdminProperties properties = new AdminProperties("owner-name-sentinel", "hash-sentinel-value", 480, 720,
-                new AdminProperties.LoginRateLimit(5, 90, 10_000, 20, 40), 200, 100);
+                new AdminProperties.LoginRateLimit(5, 90, 10_000, 20, 40, 2), 200, 100);
 
         assertThat(properties.toString()).doesNotContain("owner-name-sentinel").doesNotContain("hash-sentinel-value")
                 .contains("480");

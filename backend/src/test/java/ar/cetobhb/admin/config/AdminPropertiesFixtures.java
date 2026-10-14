@@ -8,7 +8,7 @@ public final class AdminPropertiesFixtures {
 
     /** Shipped defaults for everything except the two list caps; no credential. */
     public static AdminProperties withCaps(int maxListedProducts, int maxReconciliationRows) {
-        return new AdminProperties(null, null, 480, 720, new AdminProperties.LoginRateLimit(5, 90, 10_000, 20, 40),
+        return new AdminProperties(null, null, 480, 720, new AdminProperties.LoginRateLimit(5, 90, 10_000, 20, 40, 2),
                 maxListedProducts, maxReconciliationRows);
     }
 
@@ -20,6 +20,7 @@ public final class AdminPropertiesFixtures {
             "ceto.admin.login-rate-limit.refill-interval-seconds=90",
             "ceto.admin.login-rate-limit.max-tracked-clients=10000",
             "ceto.admin.login-rate-limit.overflow-burst=20",
-            "ceto.admin.login-rate-limit.overflow-refill-per-hour=40"};
+            "ceto.admin.login-rate-limit.overflow-refill-per-hour=40",
+            "ceto.admin.login-rate-limit.max-concurrent-verifications=2"};
     }
 }

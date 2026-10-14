@@ -5,6 +5,11 @@ ceto:
     # Only the IPv4 loopback address is a trusted proxy: tests set the client address per request with X-Forwarded-For,
     # and a peer connecting from any other loopback address (127.0.0.2) is an untrusted one (ClientIpHttpIT).
     trusted-proxies: 127.0.0.1/32
+  admin:
+    login-rate-limit:
+      # The shipped value is 2 (D-20261008-45). The burst ITs send up to 40 concurrent logins and count exact 401s, so the
+      # shared test contexts allow the maximum; AdminLoginVerificationCapServerIT runs a context with the shipped 2.
+      max-concurrent-verifications: 8
 
 spring:
   datasource:

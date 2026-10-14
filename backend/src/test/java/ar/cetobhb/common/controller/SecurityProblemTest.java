@@ -15,7 +15,8 @@ class SecurityProblemTest {
     void theEnumHasExactlyTheRowsOfTheLoginSlice() {
         assertThat(SecurityProblem.values()).containsExactly(SecurityProblem.UNAUTHENTICATED,
                 SecurityProblem.INVALID_CREDENTIALS, SecurityProblem.FORBIDDEN, SecurityProblem.REJECTED_REQUEST,
-                SecurityProblem.UNSUPPORTED_MEDIA_TYPE, SecurityProblem.LOGIN_RATE_LIMITED);
+                SecurityProblem.UNSUPPORTED_MEDIA_TYPE, SecurityProblem.LOGIN_RATE_LIMITED,
+                SecurityProblem.SERVICE_BUSY);
     }
 
     @Test
@@ -25,6 +26,15 @@ class SecurityProblemTest {
         assertThat(SecurityProblem.LOGIN_RATE_LIMITED.status()).isEqualTo(advice.status());
         assertThat(SecurityProblem.LOGIN_RATE_LIMITED.code()).isEqualTo(advice.code()).isEqualTo("RATE_LIMITED");
         assertThat(SecurityProblem.LOGIN_RATE_LIMITED.detail()).isEqualTo(advice.detail());
+    }
+
+    @Test
+    void theBusyLoginIsTheSameRowAsTheAdvicesServiceBusy() {
+        ApiError advice = ApiErrorCatalog.SERVICE_BUSY;
+
+        assertThat(SecurityProblem.SERVICE_BUSY.status()).isEqualTo(advice.status());
+        assertThat(SecurityProblem.SERVICE_BUSY.code()).isEqualTo(advice.code()).isEqualTo("SERVICE_BUSY");
+        assertThat(SecurityProblem.SERVICE_BUSY.detail()).isEqualTo(advice.detail());
     }
 
     @Test
