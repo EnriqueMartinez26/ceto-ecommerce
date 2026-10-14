@@ -284,8 +284,7 @@ administración responde 401 `UNAUTHENTICATED` a quien no inició sesión, salvo
 rutas de Security que abren y cierran la sesión (login y logout, ver la tabla de
 abajo), que tienen su propio contrato. Un `GET /api/admin/login` anónimo no es
 una página de login: responde el 401 `UNAUTHENTICATED` de siempre y no llega a
-ningún handler. El login limitado por IP llega en un
-cambio posterior: **no publicar el backend con el login antes de ese cambio**.
+ningún handler. El login tiene límite de intentos por IP (ver abajo).
 
 Flujo: `GET /api/admin/session` entrega la cookie `__Host-XSRF-TOKEN`; el cliente la
 repite en la cabecera `X-XSRF-TOKEN` de cada `POST`; `POST /api/admin/login` abre
@@ -327,6 +326,20 @@ BCrypt, y no abre sesión en ningún caso de rechazo:
   `UNSUPPORTED_MEDIA_TYPE`;
 - con `username` o `password` repetido, ausente o con una codificación
   porcentual inválida en el cuerpo: 400 `MALFORMED_REQUEST`.
+
+**Límite de intentos.** Antes de ese filtro, del CSRF y de cualquier trabajo de
+BCrypt, cada `POST /api/admin/login` gasta un intento del cubo de su IP: 5 de golpe y
+uno más cada 90 segundos (40 por hora), sin importar qué traiga (sin token CSRF,
+mal formado, con la contraseña correcta). El 6.º seguido es 429 `RATE_LIMITED` con
+`Retry-After` en segundos enteros (mínimo 1; con el cubo vacío, 90); un intento
+limitado no calcula ningún hash, no abre sesión y no empuja más lejos el próximo
+intento. Cada IP tiene su cubo (la dueña no queda bloqueada por los intentos de
+otra IP), no hay bloqueo por cuenta ni cubo global (D-20261008-07). La IP es la que
+resuelve el proxy de confianza (`TRUSTED_PROXIES`). Un cuerpo que *declara* más de
+`max-body-bytes` es 413 antes del límite y no gasta intento. Solo cuenta
+`POST /api/admin/login` escrito exactamente así: `;x=1` es 400 del firewall, y
+barra final u otra capitalización no son el login (401 o 404), sin trabajo de BCrypt y
+sin gastar intento.
 
 El cuerpo de estos errores es fijo y no repite ningún valor de la petición.
 
@@ -402,7 +415,7 @@ contra `X-Request-Id`.
 | 409 | `CONFLICT` | Una restricción de la base o un conflicto de versión que la lógica no previó. | | Una vez, con la misma clave. |
 | 413 | `PAYLOAD_TOO_LARGE` | El cuerpo supera `ceto.web.max-body-bytes` (16 KB por defecto). | | No. |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` distinto de `application/json` (en `POST /api/admin/login`, distinto de `application/x-www-form-urlencoded`). | | No. |
-| 429 | `RATE_LIMITED` | La IP agotó sus intentos de checkout. | `Retry-After` | Sí, después de esa espera. |
+| 429 | `RATE_LIMITED` | La IP agotó sus intentos de checkout o, en `POST /api/admin/login`, sus intentos de login. Mismo código y texto en ambos. | `Retry-After` | Sí, después de esa espera. |
 | 429 | `TOO_MANY_PENDING_ORDERS` | El teléfono ya tiene el máximo de pedidos `PAGO_PENDIENTE`. | | No: pagar o esperar que venzan. |
 | 500 | `INTERNAL_ERROR` | Falla inesperada. Se registra con el `requestId`. | | Una vez, con la misma clave. |
 | 503 | `SERVICE_BUSY` | Otro checkout del mismo teléfono está en curso, un lock tardó más de 5 s o no hay conexión a la base. | `Retry-After` | Sí, con la misma clave. |
@@ -582,7 +595,7 @@ diferencia en `instance`. En el 401 y el 403 es la ruta pedida, como en el resto
 de los errores, pero si la ruta pasa de 256 caracteres vale `/api/admin` (el
 cuerpo no crece con la petición). En el 400 `MALFORMED_REQUEST` del firewall
 (una ruta con `;`, `//`, `/./` o `/../`, o un login con query string o campos
-repetidos) **no hay `instance`**: lo rechazado no se repite. Estos cuatro goldens no incluyen
+repetidos) **no hay `instance`**: lo rechazado no se repite. Estos cinco goldens no incluyen
 `instance` (cambia en cada ruta) ni `requestId`; los tests los comparan aparte
 (`ContractAssertions.assertMatchesGoldenForPath`).
 
@@ -616,6 +629,17 @@ Golden: `backend/src/test/resources/contract/admin-error-rejected-request.json`
   "status": 400,
   "detail": "The request could not be read.",
   "code": "MALFORMED_REQUEST"
+}
+```
+
+Golden: `backend/src/test/resources/contract/admin-error-rate-limited.json`
+
+```json
+{
+  "title": "Too Many Requests",
+  "status": 429,
+  "detail": "Too many requests. Try again later.",
+  "code": "RATE_LIMITED"
 }
 ```
 
@@ -681,9 +705,10 @@ clienta; este documento no lo redacta.
 | Límite | Valor | Respuesta | Decisión |
 |---|---|---|---|
 | Intentos de checkout por IP | 10 de golpe y uno más cada 6 minutos (10 por hora). Solo cuenta el `POST`, antes de leer el cuerpo. Un cuerpo demasiado grande no gasta intento. | 429 `RATE_LIMITED` + `Retry-After` | D-20261007-17 |
+| Intentos de login por IP | 5 de golpe y uno más cada 90 segundos (40 por hora), `ceto.admin.login-rate-limit`. Cuenta todo `POST /api/admin/login` antes del CSRF y de BCrypt; un cuerpo declarado demasiado grande no gasta intento. Sin bloqueo por cuenta ni cubo global. | 429 `RATE_LIMITED` + `Retry-After` | D-20261008-07, D-20261008-43 |
 | Pedidos `PAGO_PENDIENTE` por teléfono | 3 (`ORDER_MAX_PENDING_PER_PHONE`, de 1 a 20). Un pendiente vencido que el job aún no canceló sigue contando. Pagado, cancelado y vencido liberan el cupo. | 429 `TOO_MANY_PENDING_ORDERS` | D-20261007-19 (propuesta, pendiente de OK de la clienta), D-20261007-24 |
 | Checkouts simultáneos del mismo teléfono | Uno. El lock por teléfono no espera: el segundo recibe 503 al instante y ningún pedido retiene una conexión esperando. | 503 `SERVICE_BUSY` + `Retry-After: 1` | D-20261008-01 |
-| Tabla del limitador por IP llena | Las IPs nuevas comparten un balde de desborde (100 de golpe, 100 por hora). | 429 `RATE_LIMITED` | D-20261007-25 |
+| Tabla del limitador por IP llena | Las IPs nuevas comparten un balde de desborde (checkout: 100 de golpe, 100 por hora; login: 20 de golpe, 40 por hora). | 429 `RATE_LIMITED` | D-20261007-25, D-20261008-43 |
 | Tamaño del cuerpo | 16 KB por defecto (1 KB a 256 KB) | 413 `PAYLOAD_TOO_LARGE` | |
 | Unidades por línea / líneas por pedido | 30 (1 a 100) / 20 | 400 `VALIDATION_ERROR` | D-20261007-13, D-20261007-05 |
 | Los `GET` de la tienda | Sin límite por IP | | D-20261007-22 |
@@ -699,7 +724,9 @@ evalúa antes y sí puede aplicarse.
 Quien rota teléfonos e IPs puede reservar stock sin pagar hasta que vencen las
 reservas (48 h): se acepta (D-20261007-21, propuesta pendiente de OK de la
 clienta). Ante una ráfaga distribuida desde muchas IPs, las nuevas comparten el
-balde de desborde y pueden recibir 429 (D-20261007-25). La protección del stock
+balde de desborde y pueden recibir 429 (D-20261007-25); lo mismo vale para el
+login: con la tabla de 10000 IPs llena de un ataque distribuido, la dueña desde una
+IP nueva comparte un balde de 20 de golpe y 40 por hora (D-20261008-43). La protección del stock
 es el tope por teléfono; la defensa contra ataques distribuidos es el límite en
 el borde (Caddy) o Turnstile, que son trabajo futuro.
 
@@ -712,7 +739,7 @@ en la red interna de Docker Compose.
 
 | Requisito | Detalle |
 |---|---|
-| `TRUSTED_PROXIES` | **Obligatoria, sin valor por defecto**: si falta, la aplicación no arranca. Lista CIDR separada por comas, sin regex, con cada entrada dentro de rangos privados (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `fc00::/7`, `fe80::/10`, `::1/128`). Ejemplos válidos: `172.18.0.5/32`, `172.18.0.0/16`. Rechazados: `0.0.0.0/0`, `::/0`, `.*`, rangos públicos, entradas vacías. Preferir el `/32` o la subred de la red de Compose donde vive Caddy: confiar en `127.0.0.0/8` o `169.254.0.0/16` confía en todo el host o todo el enlace. Si el valor es incorrecto, todas las IPs parecen la del proxy y el límite por IP deja de distinguir compradoras. |
+| `TRUSTED_PROXIES` | **Obligatoria, sin valor por defecto**: si falta, la aplicación no arranca. Lista CIDR separada por comas, sin regex, con cada entrada dentro de rangos privados (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `fc00::/7`, `fe80::/10`, `::1/128`). Ejemplos válidos: `172.18.0.5/32`, `172.18.0.0/16`. Rechazados: `0.0.0.0/0`, `::/0`, `.*`, rangos públicos, entradas vacías. Preferir el `/32` o la subred de la red de Compose donde vive Caddy: confiar en `127.0.0.0/8` o `169.254.0.0/16` confía en todo el host o todo el enlace. Si el valor es incorrecto, todas las IPs parecen la del proxy y el límite por IP deja de distinguir compradoras y, en el login, **un solo cubo de 5 intentos lo comparten todos, la dueña incluida**. |
 | Caddy | Debe descartar el `X-Forwarded-For` que mande el cliente y fijar la IP real. No declarar `trusted_proxies` en Caddy salvo que haya otro proxy adelante, y verificar el despliegue con una petición con un `X-Forwarded-For` falso: no debe cambiar la IP que ve la aplicación. Agrega `Strict-Transport-Security` y es el lugar para un límite de borde. |
 | Variables `ORDER_*` | `ORDER_RESERVATION_HOURS` (48; 1 a 168), `ORDER_MAX_UNITS_PER_LINE` (30; 1 a 100), `ORDER_MAX_PENDING_PER_PHONE` (3; 1 a 20). Un valor fuera de rango detiene el arranque. |
 | Propiedades `ceto.web.*` | `max-body-bytes` (16384; 1024 a 262144), `storefront-max-products` (200; 1 a 500) y `checkout-rate-limit.{burst, refill-interval-seconds, max-tracked-clients, overflow-burst, overflow-refill-per-hour}`. Se cambian en `application.yml` o con variables de entorno en la forma canónica de Spring Boot (mayúsculas, puntos a guion bajo y sin guiones: `CETO_WEB_MAXBODYBYTES`). Todas se validan con mínimo y máximo, salvo `trusted-proxies`, que se valida con la regla CIDR de `TRUSTED_PROXIES`. |

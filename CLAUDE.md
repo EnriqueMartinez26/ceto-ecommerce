@@ -799,8 +799,29 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   el mismo que usa `AdminAccessGuardInterceptor`, así que `%73ession`, otra capitalización, barra
   final, subruta, `;` y los demás métodos no heredan el permiso (`SessionBootstrapRequestTest`,
   `AdminSessionPermitServerIT`; mutaciones 2026-10-08: permitir `/api/admin/session/**` hizo fallar
-  6 casos de ese IT y 1 de `EndpointInventoryIT`, permitir la ruta con cualquier método, 4 y 1). El
-  login todavía no tiene límite por IP: no desplegar antes de ese corte.
+  6 casos de ese IT y 1 de `EndpointInventoryIT`, permitir la ruta con cualquier método, 4 y 1).
+- **Límite de intentos del login** (X6, D-20261008-07, D-20261008-43). `AdminLoginRateLimitFilter` (no es
+  un bean: Boot lo registraría en `/*`) es el PRIMERO de los tres filtros del login, después del escritor
+  de cabeceras y antes de `LoginRequestGuardFilter`, del CSRF y de la autenticación: cada `POST
+  /api/admin/login` gasta un intento del cubo de su IP (`TokenBucketLimiter`, clave de `getRemoteAddr()`
+  como el checkout; `ceto.admin.login-rate-limit`: 5 de golpe, uno cada 90 s, 10000 clientes, desborde 20
+  y 40 por hora) aunque no traiga token CSRF o esté mal formado, y un intento limitado es 429
+  `RATE_LIMITED` (`SecurityProblem.LOGIN_RATE_LIMITED`, mismo código y texto que el checkout, golden
+  `admin-error-rate-limited.json`) con `Retry-After` entero, sin hash, sin sesión y con un DEBUG sin IP ni
+  usuario. Sin bloqueo por cuenta ni cubo global: otra IP no se ve afectada. Un cuerpo que declara más del
+  tope es 413 antes (el filtro de tamaño corre primero) y no gasta intento; `;x=1`, barra final y otra
+  capitalización no son el login y no gastan intento ni calculan hash. Guardas: `AdminLoginRateLimitFilterTest`
+  (reloj inyectado), `AdminLoginBurstServerIT` (servidor real: 40 intentos concurrentes de una IP dan
+  exactamente 5 × 401 y 35 × 429, cero 5xx, y el contador de BCrypt sube 5; el intento limitado con la
+  contraseña correcta no calcula hash; el flood sin token CSRF y los mal formados gastan intento; la dueña
+  entra desde otra IP; el intento vuelve tras `Retry-After`) y `AdminLoginFilterOrderIT` (orden leído de la
+  cadena real). Evidencia por mutación (2026-10-14): quitar el filtro hizo fallar 10 de los 11 tests de esos
+  dos ITs; ponerlo después del CSRF, 3; después del guard de forma, 2; después del filtro que autentica, 9. Residual
+  aceptado: con `TRUSTED_PROXIES` mal puesto todas las IPs son la del proxy y comparten UN cubo (incluida
+  la dueña), y con la tabla de 10000 clientes llena las IPs nuevas comparten el cubo de desborde.
+  Este límite ya no impide desplegar; el nivel de log de Security (X6.4) sigue pendiente. Siguen siendo
+  requisitos de despliegue `TRUSTED_PROXIES`, Caddy (`docs/API.md`, Despliegue) y el rol de la base con el que conecta la
+  aplicación (límite del trigger de auditoría, §3).
 - **Cierre de sesión, fijación y registros del login.** `POST /api/admin/logout` exige token
   CSRF (sin él o con uno inválido es 403 y la sesión sigue viva), responde 204 sin cuerpo, termina la
   sesión del servidor y vence la cookie `JSESSIONID`; sin sesión también es 204; un GET no cierra nada
@@ -820,7 +841,7 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   2026-10-08). Hallazgo: con `org.springframework.security` en DEBUG Spring Security imprime el
   nombre de la cuenta autenticada, la dirección del cliente y el id de la sesión (`Set
   SecurityContextHolder to ...`, `Invalidated session ...`); un control positivo del mismo IT lo
-  fija. Lo que lo apaga es dejar esa categoría en WARN (corte del límite de login, tarea X6.4).
+  fija. Lo que lo apaga es dejar esa categoría en WARN (tarea X6.4, pendiente en este corte).
 - **Política de la sesión de administración** (X5). *Cookie*: `AdminSessionGuard` (lee el
   `Environment` efectivo, como `WebConfig`) detiene el arranque, en cualquier perfil, si
   `server.servlet.session.cookie.secure` o `http-only` no son `true`, `same-site` no es `strict` o

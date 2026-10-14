@@ -197,3 +197,22 @@ En desarrollo local:
 | Cookie CSRF | `__Host-XSRF-TOKEN` (`Secure`, `Path=/`, sin `Domain`); la cabecera es `X-XSRF-TOKEN` (D-20261008-41). |
 | Memoria | Las sesiones están en memoria: un reinicio o un despliegue las cierra (aceptado). |
 
+
+## Límite de intentos de login
+
+Cada IP tiene 5 intentos de `POST /api/admin/login` de golpe y recupera uno cada 90
+segundos (40 por hora). Cuenta todo intento, también el que no trae token CSRF o
+está mal formado, y vale lo mismo con la contraseña correcta: pasado el quinto
+seguido, el login responde 429 `RATE_LIMITED` con `Retry-After` (segundos hasta el
+próximo intento permitido; con el cubo vacío, 90) y no calcula ningún hash.
+
+| Qué ve la operadora | Qué significa | Qué hacer |
+|---|---|---|
+| El login responde "demasiados intentos" tras equivocarse varias veces | Esa IP agotó sus 5 intentos | Esperar lo que dice `Retry-After` (hasta 90 s por intento) y escribir la clave con cuidado. Probar desde otra red (datos del celular) también funciona: el límite es por IP, no por cuenta. |
+| 429 en el primer intento del día, desde su red de siempre | Alguien está probando claves desde esa misma IP (por ejemplo, un NAT compartido) o `TRUSTED_PROXIES` está mal y todas las IPs parecen la del proxy | Revisar `TRUSTED_PROXIES` y el `X-Forwarded-For` de Caddy (`docs/API.md`, Despliegue). Con ese valor mal puesto, **un único cubo de 5 intentos lo comparten todos**, la dueña incluida. |
+| 429 sostenido desde varias IPs distintas | Un ataque distribuido llenó la tabla de 10000 clientes: las IPs nuevas comparten un cubo de desborde de 20 de golpe y 40 por hora | Esperar, o poner un límite en Caddy. No hay bloqueo por cuenta: la cuenta nunca queda bloqueada por intentos ajenos. |
+
+Los valores están en `ceto.admin.login-rate-limit` (`burst` 1 a 20, `refill-interval-seconds`
+30 a 3600, `max-tracked-clients`, `overflow-burst`, `overflow-refill-per-hour`; un valor
+fuera de rango detiene el arranque) y se cambian en `application.yml`. Los 429 se
+registran solo en DEBUG y sin la IP ni el usuario.
