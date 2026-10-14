@@ -1,7 +1,8 @@
 # API pública de Ceto BHB
 
-Referencia escrita a mano de las 3 rutas públicas del backend, para quien arma
-el frontend y para Mateo (D-20261007-18). Todo lo que figura acá bajo un
+Referencia escrita a mano de las 3 rutas públicas del backend y de las rutas de
+administración (`/api/admin/*`: 15 rutas de controller, más el login y el logout
+de Security), para quien arma el frontend y para Mateo (D-20261007-18). Todo lo que figura acá bajo un
 encabezado `Golden:` es semánticamente igual (mismo JSON; el formato y el orden
 de las claves no cuentan) a un archivo de referencia que los tests comparan
 contra la respuesta real; si cambia el contrato, el test falla y este
@@ -21,6 +22,33 @@ documento se corrige en el mismo cambio.
    y abre WhatsApp (ver [Mensaje de WhatsApp](#mensaje-de-whatsapp)).
 5. Si algo falla, el cuerpo siempre trae `code`; el frontend decide el mensaje
    según el [catálogo de errores](#errores).
+
+## Camino rápido de administración
+
+El panel (que todavía no existe) habla solo con `/api/admin/*`, en el mismo origen:
+
+1. `GET /api/admin/session`: 200 `{"authenticated": false}` y la cookie
+   `__Host-XSRF-TOKEN`. Es la única ruta anónima.
+2. `POST /api/admin/login` (formulario `username` y `password`) con la cabecera
+   `X-XSRF-TOKEN` igual a la cookie: 204 y la cookie de sesión `JSESSIONID`, más un
+   `__Host-XSRF-TOKEN` nuevo. Con 429 `RATE_LIMITED` se espera `Retry-After`.
+3. Lectura: `GET /api/admin/orders`, `GET /api/admin/orders/{id}`, `GET /api/admin/stock`,
+   `GET /api/admin/inventory/reconciliation` y `GET /api/admin/products`.
+4. Escritura (todas con `X-XSRF-TOKEN`, sin él es 403): las acciones de pedido
+   (`pay`, `dispatch`, `deliver`, `cancel`), el ajuste de stock (que manda el
+   `expectedOnHand` que la pantalla mostró) y el alta, la edición (con la `version`
+   leída) y la activación de productos.
+5. Un 409 casi nunca es un error del panel: es que la pantalla estaba vieja
+   (`ILLEGAL_TRANSITION`, `CONFLICT`) o que no alcanza el stock
+   (`INSUFFICIENT_STOCK`). Se vuelve a leer y se decide de nuevo.
+6. `POST /api/admin/logout` cierra la sesión (204).
+
+| Ruta | Sección |
+|---|---|
+| `GET /api/admin/session`, `POST /api/admin/login`, `POST /api/admin/logout` | [Administración: sesión](#administración-sesión-apiadmin) |
+| `GET /api/admin/orders`, `GET /api/admin/orders/{id}`, `POST /api/admin/orders/{id}/pay`, `.../dispatch`, `.../deliver`, `.../cancel` | [Administración: pedidos](#administración-pedidos-apiadminorders) |
+| `GET /api/admin/stock`, `POST /api/admin/stock/{productId}/adjust`, `GET /api/admin/inventory/reconciliation` | [Administración: stock](#administración-stock-apiadminstock-apiadmininventory) |
+| `GET /api/admin/products`, `POST /api/admin/products`, `PUT /api/admin/products/{id}`, `POST /api/admin/products/{id}/activate`, `POST /api/admin/products/{id}/deactivate` | [Administración: productos](#administración-productos-apiadminproducts) |
 
 ## Convenciones
 
@@ -1388,6 +1416,8 @@ en la red interna de Docker Compose.
 | Caddy | Debe descartar el `X-Forwarded-For` que mande el cliente y fijar la IP real. No declarar `trusted_proxies` en Caddy salvo que haya otro proxy adelante, y verificar el despliegue con una petición con un `X-Forwarded-For` falso: no debe cambiar la IP que ve la aplicación. Agrega `Strict-Transport-Security` y es el lugar para un límite de borde. |
 | Variables `ORDER_*` | `ORDER_RESERVATION_HOURS` (48; 1 a 168), `ORDER_MAX_UNITS_PER_LINE` (30; 1 a 100), `ORDER_MAX_PENDING_PER_PHONE` (3; 1 a 20). Un valor fuera de rango detiene el arranque. |
 | Propiedades `ceto.web.*` | `max-body-bytes` (16384; 1024 a 262144), `storefront-max-products` (200; 1 a 500) y `checkout-rate-limit.{burst, refill-interval-seconds, max-tracked-clients, overflow-burst, overflow-refill-per-hour}`. Se cambian en `application.yml` o con variables de entorno en la forma canónica de Spring Boot (mayúsculas, puntos a guion bajo y sin guiones: `CETO_WEB_MAXBODYBYTES`). Todas se validan con mínimo y máximo, salvo `trusted-proxies`, que se valida con la regla CIDR de `TRUSTED_PROXIES`. |
+| Administración | `ADMIN_USERNAME` y `ADMIN_PASSWORD_HASH` son obligatorias y sin valor por defecto (la aplicación no arranca sin ellas); `ADMIN_SESSION_IDLE_MINUTES` (480; 5 a 1440) y `ADMIN_SESSION_ABSOLUTE_MINUTES` (720; 60 a 1440). La cookie de sesión es `Secure`, así que el panel solo funciona por HTTPS (Caddy). Las sesiones y los cubos del límite de login viven en memoria: **una sola instancia** del backend, y un reinicio cierra las sesiones. Cómo generar el hash, el escape `$$` y qué hacer si la dueña no puede entrar: `docs/operacion-admin.md`. |
+| Registros | El backend no tiene access log (`server.tomcat.accesslog.enabled` en `true` detiene el arranque, `PiiLogLevelGuard`) porque la URL de `GET /api/admin/orders?q=<teléfono>` lleva datos de la compradora. Caddy debe cumplir lo mismo: sin access log para `/api/admin/*`, o con un filtro que quite la query string. |
 | Pool de conexiones | 10 por instancia, 3 s de espera por una conexión; sin conexión, 503 `SERVICE_BUSY`. Postgres permite 100: no subir el pool sin revisar ese techo. |
 | `lock_timeout` | 5 s en cada conexión: una espera de lock más larga termina en 503 `SERVICE_BUSY` con `Retry-After: 5`. Las migraciones usan `SET LOCAL`. |
 | `idle_in_transaction_session_timeout` | 30 s en cada conexión: respaldo contra una transacción que retiene locks y dejó de hablar con la base. |
@@ -1401,7 +1431,13 @@ pruebas unitarias, integración con Postgres real y reglas de arquitectura).
 
 - Goldens: `backend/src/test/resources/contract/*.json`, comparados por
   `StorefrontHttpIT`, `CheckoutHttpIT`, `CheckoutErrorsHttpIT`, `RateLimitIT`,
-  `LockTimeoutIT`, `PoolExhaustionIT`, `BodySizeLimitHttpIT` y `PiiHttpPathIT`.
+  `LockTimeoutIT`, `PoolExhaustionIT`, `BodySizeLimitHttpIT` y `PiiHttpPathIT`; en
+  administración, `AdminSecurityChainIT`, `AdminLoginServerIT`, `AdminOrderListHttpIT`,
+  `AdminOrderDetailHttpIT`, `AdminOrderActionsHttpIT`, `AdminStockHttpIT`,
+  `AdminReconciliationHttpIT`, `AdminProductCreateHttpIT`, `AdminProductUpdateHttpIT`,
+  `AdminProductActivationHttpIT` y `AdminProductListHttpIT`.
+- El inventario de rutas lo fija `EndpointInventoryIT` (`EndpointInventory.ADMIN_ROUTES`):
+  una ruta de administración que no figure en este documento es un defecto del documento.
 - Este documento se verifica con `ApiDocConsistencyTest`: cada bloque marcado
   con `Golden:` es igual como JSON al archivo citado, todo golden está citado, todo
   `code` del catálogo de errores y todo `reason` del código figuran acá.

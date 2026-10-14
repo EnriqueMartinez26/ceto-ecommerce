@@ -5,6 +5,9 @@ cuenta de administración. Su usuario y el hash de su contraseña llegan por
 variables de entorno; no hay valor por defecto y no se versiona ninguno
 (`NoCommittedHashTest` revisa todos los archivos de texto del repositorio).
 
+Orden de lectura para un despliegue nuevo: "Primera puesta en marcha", "Qué ve quien opera cada
+error" y "Requisitos previos de despliegue" (al final); el resto es el detalle de cada tema.
+
 ## Variables requeridas
 
 | Variable | Propiedad | Qué es |
@@ -285,3 +288,102 @@ rechazados de Spring MVC y los escritores de cuerpos. Cada una queda en el nivel
 `application.yml` o más alto; subir una categoría padre (`org.hibernate`, `org.springframework.web`,
 la raíz) no las levanta. Tampoco arranca con `SERVER_TOMCAT_ACCESSLOG_ENABLED=true`: el access
 log por defecto imprime la query string de la petición (`?q=<teléfono>`).
+
+Tampoco arranca si `spring.mvc.log-request-details` es `true` (el dispatcher registraría
+parámetros y cabeceras) ni si `org.springframework.web.HttpLogging`, `InvocableHandlerMethod` o
+`ServletInvocableHandlerMethod` quedan por encima de OFF (D-20261008-50). Las pruebas lo fijan en
+`PiiLogLevelGuardStartupTest`, con el `application.yml` real.
+
+## Primera puesta en marcha
+
+Pasos para dejar la API de administración funcionando por primera vez. El repositorio todavía no
+trae los archivos de Docker Compose ni de Caddy; lo que sigue es lo que esos archivos tienen que
+cumplir. El panel (frontend) tampoco existe: hasta entonces se verifica con `curl`.
+
+1. **Generar el hash** de la contraseña con el comando de aprovisionamiento (sección "Cómo generar
+   el hash"): mínimo 14 caracteres, máximo 72 bytes. No lo escriba como argumento.
+2. **Cargar las variables** en el archivo de entorno del despliegue (permisos 600, fuera de git y
+   de los respaldos sin cifrar):
+   - `ADMIN_USERNAME` y `ADMIN_PASSWORD_HASH` (cada `$` del hash escrito `$$` en archivos que lee
+     Compose);
+   - `TRUSTED_PROXIES`: la subred o IP de Caddy en la red de Compose (por ejemplo `172.18.0.5/32`).
+     Sin ella la aplicación no arranca; mal puesta, el límite del login pasa a ser un único cubo
+     para todos, la dueña incluida;
+   - los datos de conexión a Postgres que use el despliegue (`SPRING_DATASOURCE_URL`,
+     `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`);
+   - opcionales: `ADMIN_SESSION_IDLE_MINUTES` y `ADMIN_SESSION_ABSOLUTE_MINUTES`.
+3. **Arrancar** el servicio del backend (`docker compose up -d --build backend`). Flyway aplica las
+   migraciones solo (incluye la tabla de auditoría `admin_audit_log`). Si el proceso se detiene en
+   el arranque, el mensaje nombra la propiedad o la categoría de log y nunca el valor; las causas
+   están en las secciones anteriores (hash, `$$`, espacios, costo, cookie, nivel de log).
+4. **Verificar sin sesión**: `GET /api/admin/session` debe dar 200 con `{"authenticated":false}` y
+   una cookie `__Host-XSRF-TOKEN`; cualquier otra ruta de `/api/admin/` sin sesión debe dar 401.
+5. **Iniciar sesión** (con un cliente de prueba, por HTTPS y a través de Caddy). Guarde las cookies
+   en un archivo, mande el token en la cabecera y lea la contraseña sin eco; `printf` es una orden
+   interna y la clave no queda en la lista de procesos. La clave debe ir codificada como URL si
+   tiene `&`, `%` o `+`:
+
+   ```sh
+   curl -s -c cookies.txt https://TIENDA/api/admin/session
+   TOKEN=$(awk '$6=="__Host-XSRF-TOKEN"{print $7}' cookies.txt)
+   read -rs CLAVE
+   printf 'username=%s&password=%s' "$ADMIN_USERNAME" "$CLAVE" | curl -i -b cookies.txt -c cookies.txt \
+        -H "X-XSRF-TOKEN: $TOKEN" --data-binary @- https://TIENDA/api/admin/login
+   unset CLAVE
+   ```
+
+   Esperado: `204` sin cuerpo y una cookie `JSESSIONID` nueva (`HttpOnly`, `Secure`,
+   `SameSite=Strict`). Después, `GET /api/admin/stock` con las mismas cookies debe dar 200.
+6. **Cerrar** con `POST /api/admin/logout` (con el token CSRF vigente): 204.
+
+Si el login responde 401 `INVALID_CREDENTIALS`, usuario o clave no coinciden (la respuesta no dice
+cuál de los dos); si responde 429, vea la sección "Límite de intentos de login".
+
+## Qué ve quien opera cada error
+
+La API responde siempre `application/problem+json` con un `code` fijo, sin datos de la
+compradora (el catálogo completo está en `docs/API.md`, "Errores"). Lo que sigue es lo que
+significa cada uno en el trabajo diario y qué hacer:
+
+| `code` (estado) | Qué significa | Qué hacer |
+|---|---|---|
+| `UNAUTHENTICATED` (401) | No hay sesión, venció (8 h sin actividad o 12 h desde el login), la desplazó un login nuevo o el servidor se reinició | Volver a iniciar sesión |
+| `FORBIDDEN` (403) | Falta el token CSRF o no coincide con la cookie (por ejemplo, tras cerrar sesión) | Llamar otra vez a `GET /api/admin/session` y reintentar |
+| `INVALID_CREDENTIALS` (401) | Usuario o clave incorrectos | Revisar; no dice cuál falló |
+| `RATE_LIMITED` (429) | Demasiados intentos de login desde esa IP | Esperar `Retry-After`; ver "Si la dueña no puede entrar" |
+| `MALFORMED_REQUEST` (400) | El cuerpo no es JSON válido, tiene una propiedad desconocida (por ejemplo `note`) o la ruta tiene una grafía rechazada | Es un defecto del cliente, no de la operadora |
+| `VALIDATION_ERROR` (400) | Un valor fuera de rango; el `reason` dice cuál (`INVALID_STOCK_DELTA`, `STOCK_OUT_OF_RANGE`, `INVALID_PRICE_PAIR`, `INVALID_PRODUCT_NAME`, `INVALID_COMBO_LINK`, `INVALID_CHARACTERS`) | Corregir el dato |
+| `NOT_FOUND` (404) | El pedido o el producto no existe | Recargar la lista |
+| `ILLEGAL_TRANSITION` (409) | El pedido ya cambió de estado (otro toque, otra pantalla, el vencimiento automático) | Recargar el pedido y ver su estado |
+| `INSUFFICIENT_STOCK` (409) | Un ajuste dejaría el stock por debajo de lo reservado o de cero. El texto dice "for this order" aunque no sea un pedido (se reutiliza el del checkout, aceptado) | Revisar `reserved` en la vista de stock |
+| `CONFLICT` (409) | La pantalla estaba vieja: el `expectedOnHand` del ajuste ya no es el stock real (incluye el reintento de un ajuste ya aplicado), la `version` del producto cambió, o se pidió ajustar el stock de un combo o de un producto sin fila de stock | Volver a leer el stock o el producto; **no** reintentar el mismo cuerpo |
+| `PAYLOAD_TOO_LARGE` (413), `UNSUPPORTED_MEDIA_TYPE` (415) | Cuerpo demasiado grande o `Content-Type` equivocado | Defecto del cliente |
+| `SERVICE_BUSY` (503) | Sin conexión libre a la base, un lock tardó más de 5 s o hay verificaciones de contraseña en curso | Reintentar tras `Retry-After`; si es sostenido, avisar al desarrollador |
+| `INTERNAL_ERROR` (500) | Falla inesperada; el cuerpo no dice más | Anotar el `requestId` y avisar al desarrollador (el log tiene la clase, nunca datos de la compradora) |
+
+Un ajuste de stock repetido por un doble toque o una red lenta es seguro: el segundo es un 409
+`CONFLICT` y el stock se movió una sola vez (D-20261008-48).
+
+## Requisitos previos de despliegue
+
+- **`TRUSTED_PROXIES` correcta** (ver la tabla de "Despliegue" en `docs/API.md`): sin ella el
+  límite por IP no distingue a nadie.
+- **Caddy delante**, único con puertos publicados: termina TLS (la cookie de sesión es `Secure`),
+  descarta el `X-Forwarded-For` del cliente y agrega `Strict-Transport-Security`. Verifique con
+  una petición con un `X-Forwarded-For` falso que la IP que ve la aplicación no cambia.
+- **Sin access log con query string.** El backend se niega a arrancar con el access log de Tomcat
+  encendido. En Caddy, `GET /api/admin/orders?q=<teléfono>` pondría un teléfono de la compradora
+  en su log de acceso: apáguelo para `/api/admin/*` o filtre la query string antes de escribirlo,
+  y compruebe el resultado en el servidor real.
+- **Una sola instancia del backend.** Las sesiones, el cubo del límite de login y el tope de
+  verificaciones están en memoria de cada proceso.
+- **Rol de la base.** La tabla `admin_audit_log` es de solo inserción por un trigger, pero hoy la
+  aplicación se conecta con el rol que ejecuta las migraciones y es dueño de la tabla: ese rol
+  puede desactivar el trigger (límite aceptado en `CLAUDE.md`, §3: frena errores de la
+  aplicación, no a un dueño hostil). Recomendación para endurecerlo, **no implementada ni
+  probada**: un rol dueño solo para Flyway y un rol de ejecución con `SELECT` e `INSERT` (y
+  `USAGE` de su secuencia) sobre `admin_audit_log`. Eso hace que Flyway use otra conexión que el
+  `DataSource` del pool, que hoy aplica `lock_timeout` también a las migraciones (§4, regla 3),
+  así que habría que ajustar y probar esa parte en el mismo cambio.
+- **Respaldos** de Postgres con copia fuera del VPS, sin los archivos de entorno con el hash
+  (pendiente: el script y la restauración probada no existen todavía).

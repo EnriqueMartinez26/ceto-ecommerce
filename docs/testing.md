@@ -72,13 +72,14 @@ cuentan como detectados (`TIMED_OUT`).
   `inventory.service` y dinero/stock/estados. Un `toString` o un mensaje de
   log que sobrevive es ruido.
 
-## Estado actual (2026-10-08, rama `feat/http-s6-api-docs`)
+## Estado actual (2026-10-14, rama `feat/admin-docs-sync`)
 
 Resumen de las últimas mediciones; el detalle de cada una está más abajo.
 
 | Qué | Resultado | Cuándo |
 |---|---|---|
-| `./mvnw clean verify` | 992 pruebas unitarias + 477 de integración, 0 fallas | 2026-10-08, pulido final de S6 |
+| `./mvnw clean verify` | 1664 pruebas unitarias + 1237 de integración, 0 fallas (incluye `ApiDocConsistencyTest`, 13 pruebas) | 2026-10-14, cierre de la API de administración (`feat/admin-docs-sync`) |
+| `./mvnw clean verify` (antes de la administración) | 992 pruebas unitarias + 477 de integración, 0 fallas | 2026-10-08, pulido final de S6 |
 | PIT `services` | 158 mutantes (`orders.service` 104, `inventory.service` 29, `catalog.service` 25), 158 muertos, 0 sobrevivientes, 0 sin cobertura | 2026-10-08, rama `feat/http-s5c1-lock-and-pool` |
 | PIT `domain` | 360 mutantes, 359 muertos; el sobreviviente es el equivalente aceptado de `PhoneNumberNormalizer` | 2026-10-08, rama `feat/http-s4b1b-client-ip-key` |
 
@@ -86,6 +87,14 @@ Resumen de las últimas mediciones; el detalle de cada una está más abajo.
 con los goldens y con las tablas de códigos del código (no es una prueba de
 mutación, pero es parte de lo que mantiene el contrato honesto). PIT no se
 volvió a correr sobre el cambio de S6: solo agrega una prueba y documentación.
+
+**Ejecuciones de PIT y la administración.** Todas las mediciones de abajo son anteriores a la API
+de administración (2026-10-07 y 2026-10-08, hasta `feat/http-s6-api-docs`). No se corrió PIT sobre
+`admin.service`, `admin.security`, `inventory.service` (`adjustBy` con `expectedOnHand`) ni
+`catalog.service` (`update`, `findAdminView`) después de esos cambios: las clases nuevas se
+probaron con mutaciones manuales puntuales (la tabla M1 a M10 y las evidencias por punto están en
+`CLAUDE.md`, §5), que miden otra cosa. Correr PIT de nuevo sobre `services` y sumar un perfil para
+`admin.service` queda pendiente y es una corrida manual (~20 min), fuera del gate.
 
 ## Línea base y resultado (2026-10-07)
 

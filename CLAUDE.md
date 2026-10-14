@@ -8,14 +8,18 @@ Docker Compose en un VPS (postgres, backend, frontend, caddy).
 
 Este archivo se carga en cada sesión y es contexto autoritativo para
 cualquier cambio. Está escrito para el asistente de IA tanto como para las
-personas. **Estado al 2026-10-08: el backend (`backend/`, Spring Boot 4.1.1)
+personas. **Estado al 2026-10-14: el backend (`backend/`, Spring Boot 4.1.1)
 tiene la guarda de ddl-auto, las reglas ArchUnit, el catálogo, el stock, el
 dominio y el ciclo de vida de los pedidos (reserva, pago, cancelación y
-vencimiento por job), la normalización del teléfono y la API pública de la
-tienda y del checkout (3 rutas, documentadas a mano en `docs/API.md`, con
-límites por IP y por teléfono, tope de cuerpo, cabeceras de seguridad y
-límites de recursos), todo probado contra Postgres real. No existen el panel
-de administración, el frontend ni el resto de las áreas de §4.** Por eso
+vencimiento por job), la normalización del teléfono, la API pública de la
+tienda y del checkout (3 rutas, con límites por IP y por teléfono, tope de
+cuerpo, cabeceras de seguridad y límites de recursos) y la API de
+administración (`/api/admin/*`, 15 rutas de controller más el login y el logout
+de Security: sesión de una sola cuenta, CSRF, límite de intentos del login,
+auditoría de solo inserción, pedidos, stock y catálogo), todo documentado a
+mano en `docs/API.md` y probado contra Postgres real. El frontend (y con él la
+pantalla del panel) y el resto de las áreas de §4 (cupones, reseñas, avisos por
+mail, Mercado Pago) no existen.** Por eso
 cada regla dura dice cuál es su guarda (test, restricción de la base, chequeo
 estático) o lleva **[guarda pendiente]**: una regla con guarda pendiente es
 un requisito de implementación, no algo que ya esté protegido. Cuando la
@@ -162,8 +166,10 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   mutación (2026-10-08): quitar el trigger hizo fallar los cuatro tests de
   solo-inserción de `AdminAuditLogConstraintsIT`. Límite: el dueño de la tabla
   puede desactivar o borrar el trigger; frena errores y bugs de la aplicación,
-  no a un dueño de la base hostil. Todavía no hay rutas ni fachada que escriban
-  en ella (ver `docs/DECISIONES.md`).
+  no a un dueño de la base hostil. La escriben las fachadas de administración
+  (`AdminOrderService`, `AdminInventoryService` y `AdminCatalogService`), cada una en la
+  transacción de la acción; no hay ninguna ruta que la lea ni que la modifique (ver
+  `docs/DECISIONES.md`).
 - **Lectura de pedidos para administración** (`OrderQueryService`, expuesta por
   `GET /api/admin/orders` y `GET /api/admin/orders/{id}`, ver más abajo): la lista es paginada por clave (id descendente,
   `size` 1..50, `after` 1..2^53-1, pedida con `size + 1` filas para saber si hay
@@ -221,13 +227,19 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   suya por debajo, o un grupo de `logging.group.*` que la lista; un padre más verboso no lo dispara
   porque no lo levanta. También lo detiene `server.tomcat.accesslog.enabled=true`: el patrón por defecto
   imprime la query string (`?q=<teléfono>`); si algún día hace falta un access log, se agrega con un
-  patrón sin query string y se relaja esa comprobación en el mismo cambio (límite aceptado). Guardas:
+  patrón sin query string y se relaja esa comprobación en el mismo cambio (límite aceptado). También lo detiene
+  `spring.mvc.log-request-details=true` (el dispatcher registraría parámetros y cabeceras, D-20261008-50). La lista incluye además
+  `InvocableHandlerMethod`, `ServletInvocableHandlerMethod` y `org.springframework.web.HttpLogging` en OFF: en Spring 7 los dos
+  primeros registran por el logger estático de `HandlerMethod` ("Arguments: [...]" a TRACE, el valor devuelto ante un error de
+  manejo), ya listado, y se nombran por si una versión nueva usa su propia clase; `HttpLogging` es la categoría de respaldo de los
+  conversores de mensajes HTTP; `RequestMappingHandlerAdapter` solo registra nombres de `@ControllerAdvice` y no se lista. Guardas:
   `PiiLogLevelGuardStartupTest` (`SpringApplication` real con el yml real: argumento, variable de
   entorno, subcategoría, grupo, padre en TRACE, `--debug`, access log, perfiles, inicialización perezosa,
   sin eco del valor) y `PiiLogLevelGuardWiringIT`. Límite: la guarda mira la configuración al arrancar,
   no un cambio posterior del nivel por el sistema de logging (las pruebas lo hacen para probar su
   control); no hay actuator. Evidencia por mutación (2026-10-14): sin el cuerpo de la guarda fallan 40
-  de 66 tests de arranque; sin las líneas `bind` y `extract` del yml, el pase TRACE de
+  de 66 tests de arranque (hoy son 81 con las categorías nuevas y el indicador de detalle de la petición; sin ellas fallaron 4 de 72
+  en `adm-fix10-4-red`); sin las líneas `bind` y `extract` del yml, el pase TRACE de
   `AdminOrdersPiiServerIT` imprime `binding parameter` y falla; sin la línea de
   `org.hibernate.orm.core` el pase DEBUG imprime las entidades y falla. Evidencia por mutación (2026-10-14): quitar el `@Max` de `size` hizo
   fallar `ArchitectureTest.requestInputsAreBounded` y `size=51` de `AdminOrderListHttpIT`;
@@ -292,10 +304,13 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   dirección, ni en éxito, ni en transición ilegal, ni con el insert de
   auditoría fallado (`AdminOrderActionsPiiLoggingIT`).
 - **Stock de administración** (`AdminInventoryService`, expuesto por `AdminStockController`, ver
-  más abajo): `adjust(productId, delta, reason)` llama a
-  `InventoryService.adjustBy`, escribe una fila `STOCK_ADJUSTED` con el stock
+  más abajo): `adjust(productId, delta, expectedOnHand, reason)` llama a
+  `InventoryService.adjustBy`, que bajo el lock de la fila compara el `on_hand`
+  confirmado con `expectedOnHand` (compare-and-set, D-20261008-48: un reintento del
+  mismo cuerpo o una pantalla vieja es `StaleStockException`, 409 `CONFLICT`, sin cambio
+  ni fila de auditoría), escribe una fila `STOCK_ADJUSTED` con el stock
   antes y después y el motivo del conjunto cerrado (sin nota), todo en una
-  transacción; un delta en 0 o fuera de ±10000 (D-20261008-10), un descuento
+  transacción; un delta en 0 o fuera de ±10000 (D-20261008-10; ±10000 exactos se aceptan), un descuento
   por debajo de `reserved`, un resultado por encima de `Integer.MAX_VALUE`
   (`STOCK_OUT_OF_RANGE`), un combo, un producto sin fila de stock o un id
   desconocido no escriben nada, y si falla el insert de auditoría vuelve atrás
@@ -347,24 +362,31 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   producto ni datos de la compradora (`AdminStockPiiLoggingIT`; evidencia por
   mutación: imprimir los nombres en la vista lo hizo fallar).
 - **Rutas de stock** (`AdminStockController`, D-20261008-23): `GET /api/admin/stock`, `POST /api/admin/stock/{productId}/adjust`
-  (cuerpo `{delta, reason}`, `delta` entero de -10000 a 10000 con `@NotNull @Min @Max`, `reason` del conjunto cerrado, `productId`
+  (cuerpo `{expectedOnHand, delta, reason}`, `expectedOnHand` entero de 0 a 2147483647 con `@NotNull @Min @Max` (el `on_hand` que la
+  pantalla mostró, D-20261008-48), `delta` entero de -10000 a 10000 con `@NotNull @Min @Max`, `reason` del conjunto cerrado, `productId`
   1..2^53-1) y `GET /api/admin/inventory/reconciliation`; la vista y la conciliación devuelven `truncated` (verdadero solo si el
   tope cortó la lista). No hay nota ni ruta de stock absoluto: una propiedad desconocida, `note` incluida, es 400
   `MALFORMED_REQUEST` y no se repite en el cuerpo ni en el log. Un delta 0 es 400 con `reason: INVALID_STOCK_DELTA`; dejar `on_hand`
-  por debajo de `reserved` o de 0 es 409 `INSUFFICIENT_STOCK` sin cifras; un combo o un producto sin fila de stock, 409 `CONFLICT`
+  por debajo de `reserved` o de 0 es 409 `INSUFFICIENT_STOCK` sin cifras (el texto reutiliza el del checkout, aceptado); un
+  `expectedOnHand` que ya no es el confirmado, 409 `CONFLICT` (se comprueba antes que `reserved`); un combo o un producto sin fila de stock, 409 `CONFLICT`
   (WARN, nunca se crea la fila); un producto inexistente, 404. Los `record` de respuesta ocultan el nombre del producto en
-  `toString`. Guardas: `AdminStockHttpIT` (40 casos: goldens `admin-stock*.json` y `admin-error-{conflict,insufficient-stock,
+  `toString`. Guardas: `AdminStockHttpIT` (51 casos, con el reintento del mismo cuerpo, los bordes de `expectedOnHand` y los deltas de ±10000: goldens `admin-stock*.json` y `admin-error-{conflict,insufficient-stock,
   malformed,invalid-stock-delta}.json`, todos los bordes, sin cambio ni auditoría en cada rechazo, 403 sin token), `AdminReconciliationHttpIT`
   (limpia, desviada por SQL crudo, producto sin fila de stock con `reserved` nulo, solo lectura), `AdminCappedReadsHttpIT` (tope 2 contra las
   consultas reales: con 3 filas las 2 primeras por id y `truncated`; con 2, no), `AdminStockPiiServerIT` (servidor real, DEBUG y TRACE,
   `note` y motivo centinela, una compradora centinela: ni el log ni ningún cuerpo ni las columnas de texto de `admin_audit_log`
-  los contienen) y `AdminStockRaceServerIT` (servidor real: 20 compras y 10 ajustes simultáneos sobre stock (5, 0), 5 repeticiones;
-  `on_hand` final = 5 más los ajustes confirmados, `reserved` = las compras confirmadas, una fila de auditoría por ajuste, conciliación
-  limpia y todo 409 es `INSUFFICIENT_STOCK`). Evidencia por mutación (2026-10-14): quitar el chequeo de Java de `InventoryStock.adjustBy`
+  los contienen) y `AdminStockRaceServerIT` (servidor real: 20 compras y 10 ajustes simultáneos sobre stock (5, 0), todos con `expectedOnHand` 5, 5
+  repeticiones; las compras no mueven `on_hand`, así que se aplica exactamente un ajuste y al menos uno de los demás es 409 `CONFLICT`;
+  `on_hand` final = 5 más el ajuste confirmado, `reserved` = las compras confirmadas, una fila de auditoría por ajuste, conciliación
+  limpia, todo 409 es `INSUFFICIENT_STOCK` o `CONFLICT`, y **ningún 503** (D-20261008-49: el pool de prueba es 30, no menor que los
+  hilos, así que un 503 sería una espera de lock o un deadlock escondido); y el par simultáneo del mismo cuerpo, 5 repeticiones: un 200 y
+  un 409 `CONFLICT`, `on_hand` 105 y una sola fila de auditoría). Evidencia por mutación (2026-10-14): quitar el chequeo de Java de `InventoryStock.adjustBy`
   hizo fallar los 2 casos de 409 de `AdminStockHttpIT` (llega la violación del CHECK como `CONFLICT`); quitar la llamada a `record` hizo
   fallar 2; leer la fila con `findById` en vez de `FOR UPDATE` hizo fallar las 5 repeticiones de `AdminStockRaceServerIT` (el ajuste
   responde `CONFLICT` por la versión). Con la aserción más laxa de "solo 200, 201, 409 o 503" esa mutación pasaba: la carrera sola no prueba
-  el lock si se toleran todos los 409.
+  el lock si se toleran todos los 409. Evidencia por mutación (2026-10-14, D-20261008-48): con el parámetro `expectedOnHand` recibido pero sin
+  compararlo fallaron 18 tests (`adm-fix10-1-red`: los de reintento y de valor distinto de `AdminInventoryServiceAdjustIT`,
+  `InventoryServiceAdjustByIT` y `AdminStockHttpIT`, las 5 repeticiones de la carrera y las 5 del par simultáneo).
 - **Catálogo de administración** (`AdminCatalogService`, expuesto por
   `AdminProductController`, ver más abajo): crear un producto base crea en la misma transacción su
   fila de stock en 0 (D-20261008-15) y la fila `PRODUCT_CREATED`, así que la
@@ -427,14 +449,15 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `INVALID_CHARACTERS`, `INVALID_COMBO_LINK`). La edición es un **reemplazo completo** (D-20261008-21): un
   `compareAtPrice` ausente o `null` borra la oferta, y lo fija `AdminProductUpdateHttpIT`; el vínculo del combo, el tipo y `active` no se
   pueden mandar (propiedad desconocida: 400 `MALFORMED_REQUEST`). Una `version` vieja es 409 `CONFLICT`; activar y desactivar no
-  llevan versión y son idempotentes (`changed`, D-20261008-28). El 201 no trae `version` leída de la base: es 0 por ser la
-  primera de la fila, y la primera edición con ese valor lo confirma. Los `record` de petición y respuesta con nombre ocultan el
-  nombre en `toString`. Guardas: `AdminProductListHttpIT`, `AdminProductCreateHttpIT` (45 casos), `AdminProductUpdateHttpIT`
+  llevan versión y son idempotentes (`changed`, D-20261008-28). El 201 se arma leyendo la fila guardada (`AdminCatalogService.view`), sin suponer `active` ni `version`
+  (`AdminProductCreateHttpIT`, con un trigger que fija `version` 7 y `active` falso: sin la lectura el cuerpo decía 0 y verdadero,
+  `adm-fix10-5-red`); no lleva `Location`. El nombre admite hasta 200 caracteres, no 120 como decía el spec (D-20261008-51). Los `record` de petición y respuesta con nombre ocultan el
+  nombre en `toString`. Guardas: `AdminProductListHttpIT`, `AdminProductCreateHttpIT` (46 casos), `AdminProductUpdateHttpIT`
   (25), `AdminProductActivationHttpIT` (10) con goldens `admin-product*.json`, `AdminCappedReadsHttpIT` (la lista de productos con tope 2),
   `AdminProductPiiServerIT` (servidor real, DEBUG y TRACE, nombre, precio y propiedad centinela rechazados y una compradora
   centinela: ni el log ni los cuerpos de error ni las columnas de texto de `admin_audit_log` los contienen) y
-  `AdminProductUpdateRaceServerIT` (seis ediciones simultáneas de la misma versión: una sola 200, el resto 409 `CONFLICT`,
-  precio del ganador, `version` 1 y una sola fila `PRICE_CHANGED`). Evidencia por mutación (2026-10-14): hacer que una oferta
+  `AdminProductUpdateRaceServerIT` (seis ediciones simultáneas de la misma versión: una sola 200, el resto 409 `CONFLICT` y al menos
+  uno, **ningún 503** (D-20261008-49), precio del ganador, `version` 1 y una sola fila `PRICE_CHANGED`). Evidencia por mutación (2026-10-14): hacer que una oferta
   ausente conserve la anterior hizo fallar 3 tests de `AdminProductUpdateHttpIT`; quitar el chequeo de `version` de
   `CatalogService.update` hizo fallar la prueba de versión vieja y las 3 repeticiones de la carrera. Observación: el mapper acepta
   un número JSON donde va un texto (`"name": 5` queda "5"); no es una vía de ataque (el texto pasa por las mismas reglas) y
@@ -474,7 +497,8 @@ estático. Una instrucción en lenguaje natural no es una garantía.
    sobre Postgres real. `InventoryService` valida antes en Java
    (`InsufficientStockException`), la base es la red de seguridad
    (`InventoryServiceIT`). El ajuste de administración es relativo
-   (`InventoryService.adjustBy`, D-20261008-10): suma en `long`, rechaza con
+   (`InventoryService.adjustBy`, D-20261008-10): suma en `long`, compara el `on_hand`
+   confirmado con el `expectedOnHand` recibido (`StaleStockException`, D-20261008-48), rechaza con
    `InsufficientStockException` lo que dejaría `on_hand` por debajo de
    `reserved`, y un combo o un producto sin fila de stock no se ajusta
    (`StockNotAdjustableException`, nunca se crea la fila). Guardas:
@@ -1162,8 +1186,11 @@ estático. Una instrucción en lenguaje natural no es una garantía.
   `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `fc00::/7`, `fe80::/10` o `::1/128`; sin
   regex, entradas vacías ni coma final; `WebConfigTest`: la misma regla sobre el valor que Tomcat
   usa de verdad, estrategia `native`, cabecera `X-Forwarded-For` y sin `trusted-proxies`
-  ni `proxies-header`, también con variables de entorno); el resto de la configuración
-  **[guarda pendiente]**
+  ni `proxies-header`, también con variables de entorno) y para la administración:
+  `AdminCredentials.parse` y `AdminCredentialsStartupTest` (usuario y hash), `AdminPropertiesValidationTest` y
+  `AdminPropertiesCapsValidationTest` (rangos de sesión, límite del login y topes de lectura, con el nombre de la propiedad en el
+  fallo), `AdminSessionGuard` (cookie y sesión), `SecurityLogLevelGuard` y `PiiLogLevelGuard` (niveles de log y access log), todas
+  en el arranque real. El resto de la configuración **[guarda pendiente]**
 - **Todo parámetro numérico de la API lleva mínimo Y máximo**
   (`@Min`/`@Max`, cantidades, paginado, estrellas). Un solo lado deja un 500
   alcanzable. Las propiedades de `ceto.orders.*` ya cumplen la regla
@@ -1279,6 +1306,23 @@ estático. Una instrucción en lenguaje natural no es una garantía.
 - **Datos personales (Ley 25.326)**: se pide solo lo necesario; teléfono,
   dirección y email no van a los logs.
 
+- **Evidencia por mutación consolidada de la administración (M1 a M10).** Cada fila repite lo que ya está dicho en el
+  punto de su guarda; esta tabla solo las reúne con su fecha. Una mutación es un cambio deliberado del código de producción
+  que el test nombrado tiene que detectar; sin esa falla, el test no probaba nada.
+
+  | Id | Mutación | Fecha | Qué falló |
+  |---|---|---|---|
+  | M1 | Filtro de Security mapeado a `/*` en vez de `/api/admin/*` | 2026-10-08 | 6 casos de `CheckoutPathLimitHttpIT`, 4 variantes de `PublicSurfaceUnchangedServerIT`, el test del firewall y del mapeo de `SecurityFilterScopeIT` |
+  | M2 | Quitar el filtro del límite de intentos del login | 2026-10-14 | 10 de los 11 tests de `AdminLoginBurstServerIT` y `AdminLoginFilterOrderIT` |
+  | M3 | Poner el límite después del filtro CSRF | 2026-10-14 | 3 de esos tests (después del guard de forma, 2; después del filtro que autentica, 9) |
+  | M4 | `sessionFixation().none()` | 2026-10-08 | `SessionFixationServerIT` |
+  | M5 | `maximumSessions(-1)` | 2026-10-08 | 4 tests de `SingleSessionServerIT` |
+  | M6 | Quitar la guarda de 72 bytes de `AdminPasswordEncoder` | 2026-10-08 | 4 tests de `AdminPasswordEncoderTest` |
+  | M7 | Quitar el chequeo de Java de `InventoryStock.adjustBy` | 2026-10-08 y 2026-10-14 | `InventoryServiceAdjustByIT`, `InventoryStockAdjustByTest` y 2 casos de `AdminStockHttpIT` (llega la violación del CHECK) |
+  | M8 | Quitar el trigger de solo inserción de `admin_audit_log` | 2026-10-08 | los 4 tests de solo inserción de `AdminAuditLogConstraintsIT` |
+  | M9 | Activar la caché de peticiones de Security | 2026-10-08 y 2026-10-14 | `AdminAnonymousSessionIT` y el 401 anónimo de `AdminOrderListHttpIT` (el 401 abre una sesión) |
+  | M10 | Quitar la llamada a `record` de la auditoría | 2026-10-08 y 2026-10-14 | 7 tests de `AdminOrderActionsIT`, 3 de `AdminInventoryServiceAdjustIT`, 6 de las clases de catálogo y 8 de las clases de acciones por HTTP |
+
 ## 6. Legal y contenido (regla dura para la IA)
 
 - **Los textos de salud, beneficios y resultados los provee y aprueba la
@@ -1368,10 +1412,17 @@ No se implementa nada de esta lista asumiendo una respuesta: se pregunta.
   pendientes de OK de la clienta. Quedan abiertos: un tope global o Turnstile
   contra quien rota teléfonos e IPs (riesgo residual aceptado,
   D-20261007-21 y D-20261007-25) y el límite de borde en Caddy.
+- **Administración, pendiente de OK de la clienta** (la API ya los implementa como propuesta; el frontend todavía no existe): la
+  acción "marcar entregado" (D-20261008-16), el vencimiento de la sesión por inactividad (D-20261008-17), los motivos de ajuste de
+  stock (D-20261008-18), la confirmación previa al cancelar (D-20261008-19), recuperar la contraseña con un hash nuevo y un
+  despliegue (D-20261008-20), la ausencia de nota en el ajuste (D-20261008-23) y el precio libre de un combo (D-20261008-31). Si la
+  clienta cambia alguna, es un cambio de contrato de `docs/API.md`.
+- Para desplegar el panel faltan, fuera del código de esta API: el frontend de `/admin`, Caddy con `TRUSTED_PROXIES` fijado y sin
+  access log (`docs/operacion-admin.md`), el rol de la base que escribe la tabla de auditoría y los backups.
 - Del lado técnico, todavía no existen: CI, pre-commit, backups ni las
   guardas que siguen marcadas como pendientes (los topes de la carga de
-  reseñas y la configuración de producción fuera de `OrderProperties` y
-  `WebProperties`).
+  reseñas y la configuración de producción fuera de `OrderProperties`,
+  `WebProperties` y la administración).
 
 ## 10. Compuertas de proceso
 
