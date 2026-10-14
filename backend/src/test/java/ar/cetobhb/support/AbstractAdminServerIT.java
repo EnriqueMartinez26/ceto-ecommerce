@@ -26,6 +26,11 @@ public abstract class AbstractAdminServerIT extends AbstractServerIT {
         return new AdminClient(port);
     }
 
+    /** A browser that presents the given client address, so that several of them share one limiter bucket. */
+    protected AdminClient newClient(String forwardedFor) {
+        return new AdminClient(port, forwardedFor);
+    }
+
     /** A browser that has bootstrapped (holds an XSRF cookie) and logged in as the test administrator. */
     protected AdminClient loggedInClient() throws IOException, InterruptedException {
         AdminClient client = newClient();

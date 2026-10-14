@@ -59,6 +59,20 @@ public final class AdminClient {
         this.forwardedFor = "198." + (20 + ((n >> 16) & 0x01)) + "." + ((n >> 8) & 0xff) + "." + (n & 0xff);
     }
 
+    /**
+     * A browser that comes from the given client address (sent as {@code X-Forwarded-For}), so several clients can
+     * share one address and one limiter bucket.
+     */
+    public AdminClient(int port, String forwardedFor) {
+        this.port = port;
+        this.forwardedFor = forwardedFor;
+    }
+
+    /** The client address this browser presents to the application. */
+    public String forwardedFor() {
+        return forwardedFor;
+    }
+
     public Map<String, String> cookies() {
         return jar;
     }

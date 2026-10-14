@@ -1,0 +1,6 @@
+{
+  "title": "Too Many Requests",
+  "status": 429,
+  "detail": "Too many requests. Try again later.",
+  "code": "RATE_LIMITED"
+}

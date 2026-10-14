@@ -1,6 +1,7 @@
 package ar.cetobhb.admin.security;
 
 import ar.cetobhb.admin.config.AdminProperties;
+import ar.cetobhb.common.domain.TokenBucketLimiter;
 import ar.cetobhb.common.web.ProblemResponses;
 import ar.cetobhb.common.web.SecurityProblem;
 import java.time.Clock;
@@ -106,6 +107,11 @@ class AdminSecurityChainConfig {
                 .addFilterAfter(new SupersededSessionFilter(adminSessionRegistry), HeaderWriterFilter.class)
                 // The login request is shaped (no query string, urlencoded, one value per field) before CSRF reads it.
                 .addFilterBefore(new LoginRequestGuardFilter(LOGIN_PATH, problems), CsrfFilter.class)
+                // FIRST of the three login filters: every login POST spends one token of its address's bucket, whatever
+                // it carries, before the shape guard, CSRF or the authentication manager see it. A limited attempt
+                // therefore costs no BCrypt, and a flood of malformed or token-less attempts is bounded too.
+                .addFilterBefore(new AdminLoginRateLimitFilter(loginLimiter(clock, admin.loginRateLimit()), LOGIN_PATH,
+                        problems), LoginRequestGuardFilter.class)
                 // The login is a form post (UsernamePasswordAuthenticationFilter reads two parameters): 204 on success,
                 // the one neutral 401 on every failure. The manager refuses over-long fields before anything is hashed.
                 .authenticationManager(new LoginFieldCapAuthenticationManager(authenticationManager))
@@ -132,6 +138,12 @@ class AdminSecurityChainConfig {
                 .httpBasic(basic -> basic.disable())
                 .headers(headers -> headers.httpStrictTransportSecurity(hsts -> hsts.disable()))
                 .build();
+    }
+
+    /** Per-address bucket of the login (REQ-AUTH-10); the bounds are validated in {@link AdminProperties}. */
+    static TokenBucketLimiter loginLimiter(Clock clock, AdminProperties.LoginRateLimit limit) {
+        return new TokenBucketLimiter(clock, limit.burst(), Duration.ofSeconds(limit.refillIntervalSeconds()),
+                limit.maxTrackedClients(), limit.overflowBurst(), limit.overflowRefillInterval());
     }
 
     /**

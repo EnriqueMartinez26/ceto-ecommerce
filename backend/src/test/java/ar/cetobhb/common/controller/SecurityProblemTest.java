@@ -13,10 +13,18 @@ class SecurityProblemTest {
 
     @Test
     void theEnumHasExactlyTheRowsOfTheLoginSlice() {
-        // LOGIN_RATE_LIMITED arrives with the limiter slice.
         assertThat(SecurityProblem.values()).containsExactly(SecurityProblem.UNAUTHENTICATED,
                 SecurityProblem.INVALID_CREDENTIALS, SecurityProblem.FORBIDDEN, SecurityProblem.REJECTED_REQUEST,
-                SecurityProblem.UNSUPPORTED_MEDIA_TYPE);
+                SecurityProblem.UNSUPPORTED_MEDIA_TYPE, SecurityProblem.LOGIN_RATE_LIMITED);
+    }
+
+    @Test
+    void theLoginLimitIsTheSameRowAsTheCheckoutLimitsRateLimited() {
+        ApiError advice = ApiErrorCatalog.domainErrors().get(ar.cetobhb.common.domain.RateLimitedException.class);
+
+        assertThat(SecurityProblem.LOGIN_RATE_LIMITED.status()).isEqualTo(advice.status());
+        assertThat(SecurityProblem.LOGIN_RATE_LIMITED.code()).isEqualTo(advice.code()).isEqualTo("RATE_LIMITED");
+        assertThat(SecurityProblem.LOGIN_RATE_LIMITED.detail()).isEqualTo(advice.detail());
     }
 
     @Test

@@ -27,7 +27,13 @@ public enum SecurityProblem {
 
     /** The login body is not form-urlencoded. Same row as the advice's 415 for an unsupported {@code Content-Type}. */
     UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE",
-            "The content type is not supported.");
+            "The content type is not supported."),
+
+    /**
+     * The client address spent its login attempts. Same status, code and detail as the checkout limiter's 429 (the
+     * advice's {@code RATE_LIMITED} row): one answer for "too many requests", with {@code Retry-After}.
+     */
+    LOGIN_RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", "Too many requests. Try again later.");
 
     private final HttpStatus status;
     private final String code;
