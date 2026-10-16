@@ -1,12 +1,12 @@
 export { HomePage } from "./HomePage";
-export { ComboSelector } from "./combo-selector";
+export { ProductPreviewSection } from "./product-preview-section";
 export { HeroSection } from "./hero-section";
 export { RevealBehavior } from "./reveal-behavior";
 export { SiteHeader } from "./site-header";
 export {
   FaqSection,
-  FormulaSection,
   OfferBand,
   PlanSection,
+  ProductInformationSection,
   SiteFooter,
 } from "./sections";

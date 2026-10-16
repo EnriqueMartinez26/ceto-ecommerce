@@ -5,6 +5,9 @@ import type { StoreProduct, StoreProductPage } from "../model";
 import { ProductAvailability } from "./ProductAvailability";
 import { ProductHeader } from "./ProductHeader";
 import { ProductPrice } from "./ProductPrice";
+import { AddToCartButton } from "./AddToCartButton";
+import { toCartItem } from "./cart-item";
+import { previewCartItem, previewProduct, requiredSupplementNotice } from "./preview-product";
 import styles from "./catalog.module.css";
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -50,12 +53,34 @@ function PaginationLinks({ data }: { data: StoreProductPage }) {
 
 async function CatalogContent({ page, size }: Pagination) {
   const catalog = await getCatalog(page, size);
-  if (catalog.status !== "ready") {
+  if (catalog.status === "not_configured") {
     return (
-      <div className={styles.state} role="alert">
-        <p>El catálogo no está disponible en este momento.</p>
-        <Link className={styles.paginationLink} href={`/productos?page=${page}&size=${size}`}>Volver a intentar</Link>
-      </div>
+      <>
+        <section className={styles.previewCard} aria-labelledby="preview-product-title">
+          <p className={styles.kicker}>FICHA PRELIMINAR · DATOS EN VALIDACIÓN</p>
+          <h2 id="preview-product-title">{previewProduct.name}</h2>
+          <p>{previewProduct.detail}</p>
+          <p className={styles.previewLegal}>{requiredSupplementNotice}</p>
+          <div className={styles.previewActions}>
+            <Link className={styles.paginationLink} href={`/productos/${previewProduct.slug}`}>Ver ficha preliminar</Link>
+            <AddToCartButton
+              item={previewCartItem}
+              label="Probar en el carrito"
+            />
+          </div>
+          <p className={styles.previewNote}>Vista de demostración: no confirma una compra ni genera un pedido.</p>
+        </section>
+        <p className={styles.note}>El catálogo comercial todavía no está conectado; esta ficha solo permite probar la experiencia del carrito.</p>
+      </>
+    );
+  }
+  if (catalog.status === "unavailable") {
+    return (
+      <section className={styles.state} role="alert" aria-labelledby="catalog-unavailable-title">
+        <h2 id="catalog-unavailable-title">No pudimos cargar el catálogo.</h2>
+        <p>La información comercial no está disponible en este momento. Intentá nuevamente en unos minutos.</p>
+        <Link className={styles.paginationLink} href={`/productos?page=${page}&size=${size}`}>Reintentar</Link>
+      </section>
     );
   }
   const data = catalog.data;
@@ -87,6 +112,11 @@ async function CatalogContent({ page, size }: Pagination) {
               unavailableClassName={styles.unavailable}
             />
             <Link className={styles.link} href={`/productos/${encodeURIComponent(product.slug)}`}>Ver detalles <span aria-hidden="true">↗</span></Link>
+            <AddToCartButton
+              item={toCartItem(product)}
+              disabled={product.availability === "OUT_OF_STOCK" || product.maxQuantity === 0}
+              label="Agregar al carrito"
+            />
           </li>
         ))}
       </ul>
@@ -115,13 +145,13 @@ export function CatalogPage({ searchParams }: { searchParams: PageSearchParams }
       <ProductHeader backHref="/" backLabel="← Volver al inicio" />
       <section id="main-content" className={styles.intro} tabIndex={-1}>
         <p className={styles.kicker}>01 / CATÁLOGO</p>
-        <h1>Productos <em>publicados.</em></h1>
-        <p>Consultá las opciones disponibles y su precio actual.</p>
+        <h1>Producto <em>en revisión.</em></h1>
+        <p>La información comercial y la disponibilidad se publicarán cuando estén confirmadas.</p>
       </section>
       <Suspense fallback={<p className={styles.state} role="status">Cargando catálogo…</p>}>
         <CatalogRoute searchParams={searchParams} />
       </Suspense>
-      <p className={styles.note}>La compra online aún no está habilitada.</p>
+      <p className={styles.note}>La compra online aún no está habilitada. {requiredSupplementNotice}</p>
     </main>
   );
 }

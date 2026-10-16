@@ -1,13 +1,13 @@
 import styles from "./home.module.css";
-import { ComboSelector } from "./combo-selector";
 import { HeroSection } from "./hero-section";
 import { RevealBehavior } from "./reveal-behavior";
 import { SiteHeader } from "./site-header";
+import { ProductPreviewSection } from "./product-preview-section";
 import {
   FaqSection,
-  FormulaSection,
   OfferBand,
   PlanSection,
+  ProductInformationSection,
   SiteFooter,
 } from "./sections";
 
@@ -22,9 +22,9 @@ export function HomePage() {
           <main id="main-content" tabIndex={-1}>
             <HeroSection />
             <OfferBand />
-            <ComboSelector />
+            <ProductPreviewSection />
             <PlanSection />
-            <FormulaSection />
+            <ProductInformationSection />
             <FaqSection />
           </main>
 

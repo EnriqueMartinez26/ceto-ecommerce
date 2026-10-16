@@ -89,6 +89,94 @@
   overflow-wrap: anywhere;
 }
 
+.previewCard {
+  display: grid;
+  justify-items: start;
+  gap: 16px;
+  padding: clamp(24px, 5vw, 42px);
+  border: 1px solid var(--line-soft);
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: 0 8px 28px rgb(23 63 53 / 5%);
+}
+
+.previewCard h2 {
+  margin: 0;
+  color: var(--forest);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(32px, 5vw, 48px);
+  font-weight: 500;
+  letter-spacing: -.04em;
+}
+
+.previewCard > p,
+.previewSection > p {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.previewLegal {
+  color: var(--forest) !important;
+  font-size: 13px !important;
+  font-weight: 700;
+}
+
+.previewActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.previewNote {
+  font-size: 13px !important;
+}
+
+.addButton {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-pill);
+  background: var(--brand);
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform var(--motion-fast) var(--ease-ui), background var(--motion-fast) var(--ease-ui);
+}
+
+.addButton:hover,
+.addButton:focus-visible {
+  transform: translateY(-1px);
+  background: var(--brand-hover);
+}
+
+.addButton:focus-visible {
+  outline: 3px solid var(--natural-dark);
+  outline-offset: 3px;
+}
+
+.addButton:active {
+  transform: translateY(1px);
+  background: var(--brand-active);
+}
+
+.addButton:disabled {
+  border-color: var(--border-soft);
+  background: var(--disabled);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+  transform: none;
+}
+
 .prices {
   display: flex;
   flex-wrap: wrap;
@@ -258,14 +346,16 @@
 }
 
 .ingredients,
-.variants {
+.variants,
+.previewSection {
   margin-top: 46px;
   padding-top: 25px;
   border-top: 1px solid var(--line-soft);
 }
 
 .ingredients h2,
-.variants h2 {
+.variants h2,
+.previewSection h2 {
   margin: 0 0 17px;
   color: var(--forest);
   font-family: Georgia, "Times New Roman", serif;
@@ -311,6 +401,12 @@
     border-radius: 20px;
   }
 
+  .previewCard { border-radius: 20px; }
+
+  .previewActions { align-items: stretch; }
+
+  .previewActions > * { flex: 1 1 100%; }
+
   .pagination {
     gap: 9px;
   }
@@ -338,4 +434,10 @@
   .link:active {
     transform: none;
   }
+
+  .addButton { transition: none; }
+
+  .addButton:hover,
+  .addButton:focus-visible,
+  .addButton:active { transform: none; }
 }

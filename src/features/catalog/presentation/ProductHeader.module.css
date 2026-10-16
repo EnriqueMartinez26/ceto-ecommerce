@@ -1,4 +1,6 @@
 .header { min-height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line-soft); }
+.actions { display: flex; align-items: center; gap: 18px; }
+.actions > a { font-size: 13px; }
 .brand, .back { min-height: 44px; display: inline-flex; align-items: center; outline-offset: 3px; }
 .brand { color: var(--forest); font-family: var(--font-ui); font-size: 17px; font-weight: 800; letter-spacing: .025em; white-space: nowrap; }
 .brand b { color: var(--brand); }
@@ -9,5 +11,6 @@
 @media (max-width: 600px) {
   .header { min-height: 68px; gap: 12px; }
   .brand { font-size: 14px; }
-  .back { max-width: 55%; padding-inline: 11px; font-size: 12px; text-align: right; }
+  .actions { min-width: 0; flex: 1; gap: 8px; }
+  .back { max-width: calc(100% - 78px); padding-inline: 8px; font-size: 11px; white-space: nowrap; text-align: right; }
 }

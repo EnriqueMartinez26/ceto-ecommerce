@@ -103,6 +103,29 @@
   background: var(--brand-hover);
 }
 
+.home :global(.site-header__actions) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
+.home :global(.site-header__actions) > a:first-child {
+  min-width: var(--target-min);
+  justify-content: center;
+  border-radius: var(--radius-pill);
+}
+
+.home :global(.site-header__actions) > a:first-child:hover,
+.home :global(.site-header__actions) > a:first-child:focus-visible {
+  background: var(--paper-green);
+}
+
+.home :global(.site-header__actions) > a:first-child:focus-visible {
+  outline: 3px solid var(--natural-dark);
+  outline-offset: 3px;
+}
+
 .home :global(.mobile-menu) {
   display: none;
 }
@@ -501,6 +524,7 @@
   font-family: var(--font-body);
   font-size: 11px;
   font-weight: 700;
+  cursor: pointer;
   letter-spacing: .12em;
   text-transform: uppercase;
 }
@@ -513,11 +537,11 @@
 }
 
 .home :global(.plan-section),
-.home :global(.combo-section) {
+.home :global(.product-section) {
   padding-block: 100px;
 }
 
-.home :global(.combo-section) {
+.home :global(.product-section) {
   margin-top: 52px;
   margin-bottom: 32px;
   padding: clamp(24px, 4.5vw, 56px);
@@ -628,13 +652,13 @@
   color: #ffc1d8;
 }
 
-.home :global(.ingredient-grid) {
+.home :global(.validation-grid) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
-.home :global(.ingredient-card) {
+.home :global(.validation-card) {
   min-height: 82px;
   display: flex;
   align-items: center;
@@ -646,7 +670,7 @@
   color: #fffdf8;
 }
 
-.home :global(.ingredient-card) > span:first-child {
+.home :global(.validation-card) > span:first-child {
   width: 32px;
   height: 32px;
   flex: 0 0 auto;
@@ -660,24 +684,14 @@
   font-weight: 800;
 }
 
-.home :global(.ingredient-card) b {
+.home :global(.validation-card) b {
   max-width: 190px;
   font-family: var(--font-body);
   font-size: 14px;
   font-weight: 600;
 }
 
-.home :global(.ingredient-card__spark) {
-  margin-left: auto;
-  color: #ffc1d8;
-  font-size: 16px;
-}
-
-.home :global(.ingredient-card):nth-child(7) {
-  grid-column: 1 / -1;
-}
-
-.home :global(.combo-layout) {
+.home :global(.product-layout) {
   display: grid;
   grid-template-columns: 1.05fr .95fr;
   align-items: stretch;
@@ -685,77 +699,58 @@
   margin-top: 34px;
 }
 
-.home :global(.combo-options) {
+.home :global(.product-preview-list) {
   display: grid;
   align-content: start;
   gap: 12px;
 }
 
-.home :global(.combo-card) {
-  min-height: 104px;
-  display: grid;
-  grid-template-columns: 28px 1fr auto;
-  grid-template-rows: auto 1fr;
-  align-items: center;
-  gap: 4px 14px;
-  padding: 18px 20px;
+.home :global(.product-preview-card) {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 16px;
+  padding: clamp(24px, 4vw, 42px);
   border: 1px solid var(--line-soft);
-  border-radius: 18px;
+  border-radius: 22px;
   background: var(--surface);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color var(--motion-fast) var(--ease-ui), transform var(--motion-fast) var(--ease-ui), box-shadow var(--motion-fast) var(--ease-ui);
 }
 
-.home :global(.combo-card):hover {
-  transform: translateY(-1px);
-  border-color: var(--forest);
-}
-
-.home :global(.combo-card--selected) {
-  border-color: var(--forest);
-  box-shadow: 0 0 0 2px var(--forest);
-}
-
-.home :global(.combo-card__radio) {
-  grid-row: 1 / span 2;
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  border: 1.5px solid var(--ink-subtle);
-  border-radius: 50%;
-  background: var(--surface);
-  color: #fff;
-  font-size: 12px;
-}
-
-.home :global(.combo-card--selected) :global(.combo-card__radio) {
-  border-color: var(--forest);
-  background: var(--forest);
-}
-
-.home :global(.combo-card__title) {
+.home :global(.product-preview-card__status) {
+  margin: 0;
+  padding: 7px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--paper-green);
   color: var(--forest);
-  font-family: var(--font-body);
-  font-size: 16px;
-  font-weight: 700;
-  text-transform: capitalize;
-}
-
-.home :global(.combo-card__note) {
-  grid-column: 2;
-  color: var(--ink-muted);
-  font-size: 13px;
-}
-
-.home :global(.combo-card__price) {
-  grid-column: 3;
-  grid-row: 1 / span 2;
-  color: var(--ink-muted);
   font-size: 12px;
-  font-weight: 600;
-  text-align: right;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.home :global(.product-preview-card) h3 {
+  margin: 0;
+  color: var(--forest);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(32px, 4vw, 48px);
+  font-weight: 500;
+  letter-spacing: -.04em;
+}
+
+.home :global(.product-preview-card) > p:not(.product-preview-card__status) {
+  max-width: 42ch;
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.home :global(.product-preview-card) > strong {
+  color: var(--ink-muted);
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .home :global(.order-summary) {
@@ -805,8 +800,7 @@
   font-size: 14px;
 }
 
-.home :global(.order-summary__line),
-.home :global(.order-summary__total) {
+.home :global(.order-summary__line) {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -818,16 +812,6 @@
 
 .home :global(.order-summary__line) b {
   color: #fffdf8;
-  text-align: right;
-}
-
-.home :global(.order-summary__total) {
-  color: #fffdf8;
-  font-weight: 700;
-}
-
-.home :global(.order-summary__total) b {
-  color: #ffc1d8;
   text-align: right;
 }
 
@@ -1030,12 +1014,12 @@
   }
 
   .home :global(.hero),
-  .home :global(.combo-section) {
+  .home :global(.product-section) {
     width: calc(100% - 40px);
     margin-inline: auto;
   }
 
-  .home :global(.combo-layout) {
+  .home :global(.product-layout) {
     grid-template-columns: 1fr;
   }
 
@@ -1224,7 +1208,7 @@
     grid-template-columns: 1fr;
   }
 
-  .home :global(.combo-section) {
+  .home :global(.product-section) {
     padding: 28px;
   }
 }
@@ -1248,6 +1232,16 @@
     padding-inline: 13px;
     font-size: 11px;
   }
+
+  .home :global(.site-header__actions) { gap: 8px; }
+
+  .home :global(.site-header__actions) > a:first-child {
+    min-width: 44px;
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  .home :global(.header-cta) { display: none; }
 
   .home :global(.hero) {
     margin-top: 14px;
@@ -1395,66 +1389,49 @@
     gap: 25px;
   }
 
-  .home :global(.ingredient-grid) {
+  .home :global(.validation-grid) {
     gap: 8px;
   }
 
-  .home :global(.ingredient-card) {
+  .home :global(.validation-card) {
     min-height: 70px;
     gap: 8px;
     padding: 10px;
     border-radius: 14px;
   }
 
-  .home :global(.ingredient-card) > span:first-child {
+  .home :global(.validation-card) > span:first-child {
     width: 27px;
     height: 27px;
     font-size: 9px;
   }
 
-  .home :global(.ingredient-card) b {
+  .home :global(.validation-card) b {
     font-size: 11px;
   }
 
-  .home :global(.ingredient-card__spark) {
-    font-size: 13px;
-  }
-
-  .home :global(.combo-section) {
+  .home :global(.product-section) {
     margin-top: 26px;
     margin-bottom: 10px;
     padding: 23px 17px;
     border-radius: 22px;
   }
 
-  .home :global(.combo-layout) {
+  .home :global(.product-layout) {
     gap: 14px;
     margin-top: 27px;
   }
 
-  .home :global(.combo-card) {
-    min-height: 90px;
-    grid-template-columns: 25px minmax(0, 1fr);
-    gap: 4px 10px;
-    padding: 14px 12px;
+  .home :global(.product-preview-card) {
+    min-height: 260px;
+    gap: 14px;
+    padding: 22px;
+    border-radius: 18px;
   }
 
-  .home :global(.combo-card__title) {
-    font-size: 14px;
-  }
+  .home :global(.product-preview-card) h3 { font-size: 34px; }
 
-  .home :global(.combo-card__note) {
-    grid-column: 2;
-    font-size: 12px;
-  }
-
-  .home :global(.combo-card__price) {
-    grid-column: 2;
-    grid-row: 3;
-    justify-self: start;
-    text-align: left;
-    font-size: 11px;
-  }
+  .home :global(.product-preview-card) > p:not(.product-preview-card__status) { font-size: 13px; }
 
   .home :global(.order-summary) {
     padding: 21px;

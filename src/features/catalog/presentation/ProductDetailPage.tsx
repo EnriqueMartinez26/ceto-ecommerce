@@ -5,6 +5,9 @@ import { getProduct } from "../server/catalog-api";
 import { ProductAvailability } from "./ProductAvailability";
 import { ProductHeader } from "./ProductHeader";
 import { ProductPrice } from "./ProductPrice";
+import { AddToCartButton } from "./AddToCartButton";
+import { toCartItem } from "./cart-item";
+import { previewCartItem, previewProduct, requiredSupplementNotice } from "./preview-product";
 import styles from "./catalog.module.css";
 
 async function ProductContent({ params }: { params: Promise<{ slug: string }> }) {
@@ -13,10 +16,35 @@ async function ProductContent({ params }: { params: Promise<{ slug: string }> })
 
   const result = await getProduct(slug);
   if (result.status === "not_found") notFound();
-  if (result.status === "unavailable") {
+  if (result.status === "not_configured" || result.status === "unavailable") {
+    if (result.status === "not_configured" && slug === previewProduct.slug) {
+      return (
+        <article className={styles.detail}>
+          <p className={styles.kicker}>FICHA PRELIMINAR · DATOS EN VALIDACIÓN</p>
+          <h1>{previewProduct.name}</h1>
+          <p className={styles.description}>{previewProduct.detail}</p>
+          <section className={styles.previewSection} aria-labelledby="preview-details-title">
+            <h2 id="preview-details-title">Información del producto</h2>
+            <p>La presentación y la información final deben confirmarse con el rótulo y el registro correspondientes.</p>
+            <p className={styles.previewLegal}>{requiredSupplementNotice}</p>
+          </section>
+          <section className={styles.previewSection} aria-labelledby="preview-price-title">
+            <h2 id="preview-price-title">Precio y disponibilidad</h2>
+            <p>A confirmar.</p>
+            <AddToCartButton
+              item={previewCartItem}
+              label="Probar en el carrito"
+            />
+          </section>
+          <p className={styles.note}>Esta demostración no confirma una compra, no reserva productos y no genera pedidos.</p>
+        </article>
+      );
+    }
     return (
-      <div className={styles.state} role="status">
-        <p>La ficha no está disponible en este momento. Volvé a intentarlo más tarde.</p>
+      <div className={styles.state} role="alert">
+        <p>{result.status === "not_configured"
+          ? "El catálogo comercial todavía no está conectado."
+          : "La ficha no está disponible en este momento. Volvé a intentarlo más tarde."}</p>
         <Link className={styles.paginationLink} href="/productos">Volver al catálogo</Link>
       </div>
     );
@@ -57,8 +85,13 @@ async function ProductContent({ params }: { params: Promise<{ slug: string }> })
           availableClassName={styles.available}
           unavailableClassName={styles.unavailable}
         />
+        <AddToCartButton
+          item={toCartItem(product)}
+          disabled={product.availability === "OUT_OF_STOCK" || product.maxQuantity === 0}
+          label="Agregar al carrito"
+        />
       </section>
-      <p className={styles.note}>La compra online aún no está habilitada.</p>
+      <p className={styles.note}>La compra online aún no está habilitada. {requiredSupplementNotice}</p>
     </article>
   );
 }

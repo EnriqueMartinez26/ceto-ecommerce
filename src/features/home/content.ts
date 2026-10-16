@@ -1,47 +1,36 @@
-export const offers = [
-  { units: 1, label: "1 mes", note: "1 frasco · 60 cápsulas" },
-  { units: 2, label: "2 meses", note: "2 frascos" },
-  { units: 3, label: "3 meses", note: "3 frascos" },
-] as const;
-
-export const ingredients = [
-  "Ceto BHB",
-  "Cafeína natural",
-  "Té verde",
-  "L-Carnitina",
-  "Guaraná",
-  "Picolinato de cromo",
-  "Complejo B",
+export const productValidationItems = [
+  { number: "01", label: "Denominación oficial: en validación" },
+  { number: "02", label: "Presentación: pendiente de confirmar" },
+  { number: "03", label: "Composición y uso: pendientes de validar" },
+  { number: "04", label: "Precio y disponibilidad: pendientes" },
 ] as const;
 
 export const planItems = [
   {
     number: "01",
     title: "Ceto BHB",
-    description: "Un frasco de 60 cápsulas para acompañar tu rutina.",
+    description: "Nombre comunicado en el material recibido; denominación y ficha oficial pendientes de validación.",
   },
   {
     number: "02",
     title: "Guía de alimentación",
-    description: "Un plan digital bajo en carbohidratos para organizar tus comidas.",
+    description: "El material la menciona; contenido, alcance y condiciones de entrega pendientes de confirmación.",
   },
   {
     number: "03",
-    title: "Rutina en casa",
-    description: "Una propuesta práctica para sumar movimiento a tu semana.",
+    title: "Actividad en casa",
+    description: "La publicación la menciona; alcance y condiciones pendientes de confirmación.",
   },
   {
     number: "04",
     title: "Acompañamiento",
-    description: "Seguimiento semanal por WhatsApp para resolver dudas del plan.",
+    description: "El material lo menciona; canal, frecuencia y condiciones pendientes de confirmación.",
   },
 ] as const;
-
-export const heroLabels = ["La propuesta", "Qué incluye", "Elegí tu combo"] as const;
 
 export const siteLinks = [
   { id: "inicio", label: "Inicio" },
   { id: "plan", label: "El plan" },
-  { id: "formula", label: "Ingredientes" },
+  { id: "producto", label: "Producto" },
   { id: "preguntas", label: "Preguntas" },
 ] as const;

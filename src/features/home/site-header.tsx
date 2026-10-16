@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { CartLink } from "@/shared/cart";
 import { siteLinks } from "./content";
 
 export function SiteHeader() {
@@ -88,7 +89,10 @@ export function SiteHeader() {
           ))}
           <Link className="desktop-nav__catalog" href="/productos">Productos</Link>
         </nav>
-        <a className="header-cta" href="#combos">Ver combos <span aria-hidden="true">↓</span></a>
+        <div className="site-header__actions">
+          <CartLink />
+          <a className="header-cta" href="#producto">Ver producto <span aria-hidden="true">↓</span></a>
+        </div>
       </header>
       <dialog
         className="mobile-menu"

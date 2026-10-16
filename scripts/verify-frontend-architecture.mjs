@@ -9,9 +9,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = path.join(root, "src");
 const catalogAdapter = "src/features/catalog/server/catalog-api.ts";
 const reviewedClientModules = new Set([
-  "src/features/home/combo-selector.tsx",
+  "src/features/home/product-preview-section.tsx",
   "src/features/home/reveal-behavior.tsx",
   "src/features/home/site-header.tsx",
+  "src/features/catalog/presentation/AddToCartButton.tsx",
+  "src/features/cart/presentation/CartView.tsx",
+  "src/shared/cart/CartLink.tsx",
+  "src/shared/cart/CartProvider.tsx",
 ]);
 const globalDeclarations = new Map([
   [":root", new Set(["color-scheme", "--*"])],

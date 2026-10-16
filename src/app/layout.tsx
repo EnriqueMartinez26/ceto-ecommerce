@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Roboto_Condensed } from "next/font/google";
+import { CartProvider } from "@/shared/cart";
 import "./globals.css";
 
 const uiFont = Roboto_Condensed({
@@ -13,14 +14,14 @@ const bodyFont = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Mejor Vida Ceto | Tu plan, con acompañamiento",
+  title: "Mejor Vida Ceto | Información en revisión",
   description:
-    "Ceto BHB, guía de alimentación, rutina en casa y seguimiento por WhatsApp en una propuesta integral.",
+    "Conocé la propuesta de Mejor Vida Ceto. La información del producto y las condiciones comerciales están en revisión.",
   applicationName: "Mejor Vida Ceto",
   openGraph: {
-    title: "Mejor Vida Ceto | Tu plan, con acompañamiento",
+    title: "Mejor Vida Ceto | Información en revisión",
     description:
-      "Conocé el plan Mejor Vida Ceto: producto, recursos digitales y seguimiento cercano.",
+      "Conocé la propuesta de Mejor Vida Ceto. La información del producto y las condiciones comerciales están en revisión.",
     locale: "es_AR",
     type: "website",
   },
@@ -35,7 +36,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es-AR" className={`${uiFont.variable} ${bodyFont.variable}`}>
-      <body>{children}</body>
+      <body>
+        <CartProvider>{children}</CartProvider>
+      </body>
     </html>
   );
 }

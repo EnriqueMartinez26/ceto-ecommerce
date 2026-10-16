@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "test:frontend": "node --test tests/frontend/catalog-response.test.mjs tests/frontend/accessibility-colors.test.mjs",
+    "test:frontend": "node --test tests/frontend/catalog-response.test.mjs tests/frontend/accessibility-colors.test.mjs tests/frontend/cart-model.test.mjs",
     "lint": "eslint && npm run architecture:frontend",
     "architecture:frontend": "node scripts/verify-frontend-architecture.mjs --self-test"
   },
