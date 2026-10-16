@@ -1,5 +1,6 @@
 import { planItems, productValidationItems } from "./content";
 import layout from "@/shared/ui/layout.module.css";
+import styles from "./home.module.css";
 
 export function OfferBand() {
   return (
@@ -49,7 +50,9 @@ export function ProductInformationSection() {
           <p className="eyebrow"><span className="eyebrow__line" /> INFORMACIÓN DEL PRODUCTO</p>
           <h2>Ficha preliminar.<br /><em>En validación.</em></h2>
           <p className="section-heading__text">El material compartido identifica el producto como Ceto BHB. La denominación oficial, la presentación, la composición y el modo de uso deben validarse contra el rótulo correspondiente antes de publicar una ficha comercial.</p>
-          <p className="section-heading__text"><strong>SUPLEMENTA DIETAS INSUFICIENTES. CONSULTE A SU MÉDICO Y/O FARMACÉUTICO</strong></p>
+          <p className={`${styles.supplementNotice} section-heading__text`}>
+            SUPLEMENTA DIETAS INSUFICIENTES. CONSULTE A SU MÉDICO Y/O FARMACÉUTICO
+          </p>
         </div>
         <div className="validation-grid" role="list" aria-label="Datos pendientes de validación">
           {productValidationItems.map((item) => (
