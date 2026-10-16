@@ -1,0 +1,21 @@
+
+
+.page { min-height: 100dvh; display: grid; grid-template-columns: .9fr 1.1fr; align-items: center; gap: 48px; }
+.eyebrow { display: flex; align-items: center; gap: 9px; margin: 0 0 19px; color: var(--ink-muted); font-family: var(--font-ui); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.eyebrowLine { width: 20px; height: 3px; background: var(--brand); }
+.description { max-width: 390px; margin-bottom: 30px; color: var(--ink-muted); font-size: 15px; line-height: 1.6; }
+.button { min-height: 46px; display: inline-flex; align-items: center; justify-content: center; gap: 16px; padding: 0 18px; border: var(--border-strong); border-radius: var(--radius-sm); font-family: var(--font-ui); font-size: 13px; font-weight: 800; letter-spacing: .035em; text-transform: uppercase; }
+.buttonPrimary { background: var(--brand); color: white; box-shadow: var(--shadow-control); transition: transform var(--duration-fast) var(--ease-ui), box-shadow var(--duration-fast) var(--ease-ui), background var(--duration-fast) var(--ease-ui); }
+.buttonPrimary:hover { transform: translateY(-1px); background: var(--brand-hover); box-shadow: 0 4px 0 var(--ink); }
+.buttonPrimary:active { transform: translateY(2px); background: var(--brand-active); box-shadow: 0 1px 0 var(--ink); }
+.buttonPrimary span { font-size: 16px; }
+.page :global(.not-found-page__code) { position: relative; padding: 25px; border: var(--border-strong); border-radius: var(--radius-md); background: var(--bg-soft); color: var(--brand); font-family: var(--font-ui); font-size: clamp(120px, 20vw, 270px); font-weight: 800; letter-spacing: -.09em; line-height: 1; box-shadow: 8px 8px 0 var(--ink); }
+.page :global(.not-found-page__code) span { position: absolute; top: 22px; right: 25px; color: var(--ink); font-size: 35px; letter-spacing: 0; }
+.page :global(.not-found-page__content) h1 { margin: 0 0 20px; font-family: var(--font-ui); font-size: clamp(48px, 7vw, 86px); font-weight: 800; line-height: .95; text-transform: uppercase; }
+.page :global(.not-found-page__content) h1 em { color: var(--brand); font-style: normal; }
+
+@media (max-width: 767px) {
+  .page { min-height: 100dvh; grid-template-columns: 1fr; align-content: center; gap: 48px; padding-block: 50px; }
+  .page :global(.not-found-page__code) { font-size: clamp(105px, 31vw, 180px); }
+  .page :global(.not-found-page__content) h1 { font-size: clamp(46px, 12vw, 68px); }
+}

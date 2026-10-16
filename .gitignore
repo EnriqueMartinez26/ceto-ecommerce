@@ -22,3 +22,9 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Local-only frontend and agent state
+.codegraph/
+.local-backups/
+.upstream-ceto/
+next-env.d.ts

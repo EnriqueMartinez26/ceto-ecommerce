@@ -1,0 +1,13 @@
+.header { min-height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line-soft); }
+.brand, .back { min-height: 44px; display: inline-flex; align-items: center; outline-offset: 3px; }
+.brand { color: var(--forest); font-family: var(--font-ui); font-size: 17px; font-weight: 800; letter-spacing: .025em; white-space: nowrap; }
+.brand b { color: var(--brand); }
+.back { gap: 8px; padding-inline: 15px; border: 1px solid var(--line-soft); border-radius: var(--radius-pill); color: var(--forest); font-family: var(--font-body); font-size: 13px; font-weight: 650; }
+.brand:focus-visible, .back:focus-visible { outline: 3px solid var(--natural-dark); }
+.back:hover, .back:focus-visible { background: var(--paper-green); }
+
+@media (max-width: 600px) {
+  .header { min-height: 68px; gap: 12px; }
+  .brand { font-size: 14px; }
+  .back { max-width: 55%; padding-inline: 11px; font-size: 12px; text-align: right; }
+}
