@@ -49,10 +49,7 @@ export function ProductInformationSection() {
         <span className="section-index" aria-hidden="true">04 / 05</span>
           <p className="eyebrow"><span className="eyebrow__line" /> INFORMACIÓN DEL PRODUCTO</p>
           <h2>Ficha preliminar.<br /><em>En validación.</em></h2>
-          <p className="section-heading__text">El material compartido identifica el producto como Ceto BHB. La denominación oficial, la presentación, la composición y el modo de uso deben validarse contra el rótulo correspondiente antes de publicar una ficha comercial.</p>
-          <p className={`${styles.supplementNotice} section-heading__text`}>
-            SUPLEMENTA DIETAS INSUFICIENTES. CONSULTE A SU MÉDICO Y/O FARMACÉUTICO
-          </p>
+          <p className={`${styles.productValidationText} section-heading__text`}>El material compartido identifica el producto como Ceto BHB. La denominación oficial, la presentación, la composición y el modo de uso deben validarse contra el rótulo correspondiente antes de publicar una ficha comercial.</p>
         </div>
         <div className="validation-grid" role="list" aria-label="Datos pendientes de validación">
           {productValidationItems.map((item) => (

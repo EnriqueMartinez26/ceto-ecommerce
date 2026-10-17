@@ -7,7 +7,7 @@ import { ProductHeader } from "./ProductHeader";
 import { ProductPrice } from "./ProductPrice";
 import { AddToCartButton } from "./AddToCartButton";
 import { toCartItem } from "./cart-item";
-import { previewCartItem, previewProduct, requiredSupplementNotice } from "./preview-product";
+import { previewCartItem, previewProduct } from "./preview-product";
 import styles from "./catalog.module.css";
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -60,7 +60,6 @@ async function CatalogContent({ page, size }: Pagination) {
           <p className={styles.kicker}>FICHA PRELIMINAR · DATOS EN VALIDACIÓN</p>
           <h2 id="preview-product-title">{previewProduct.name}</h2>
           <p>{previewProduct.detail}</p>
-          <p className={styles.previewLegal}>{requiredSupplementNotice}</p>
           <div className={styles.previewActions}>
             <Link className={styles.paginationLink} href={`/productos/${previewProduct.slug}`}>Ver ficha preliminar</Link>
             <AddToCartButton
@@ -151,7 +150,7 @@ export function CatalogPage({ searchParams }: { searchParams: PageSearchParams }
       <Suspense fallback={<p className={styles.state} role="status">Cargando catálogo…</p>}>
         <CatalogRoute searchParams={searchParams} />
       </Suspense>
-      <p className={styles.note}>La compra online aún no está habilitada. {requiredSupplementNotice}</p>
+      <p className={styles.note}>La compra online aún no está habilitada.</p>
     </main>
   );
 }

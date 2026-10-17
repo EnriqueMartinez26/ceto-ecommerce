@@ -47,7 +47,6 @@ export function ProductPreviewSection() {
             Probar en el carrito
           </button>
           <small>La vista previa no genera pedidos ni reserva productos. Presentación y disponibilidad pendientes de validación.</small>
-          <small>SUPLEMENTA DIETAS INSUFICIENTES. CONSULTE A SU MÉDICO Y/O FARMACÉUTICO</small>
         </aside>
       </div>
     </section>

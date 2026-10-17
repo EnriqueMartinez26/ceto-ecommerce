@@ -7,7 +7,7 @@ import { ProductHeader } from "./ProductHeader";
 import { ProductPrice } from "./ProductPrice";
 import { AddToCartButton } from "./AddToCartButton";
 import { toCartItem } from "./cart-item";
-import { previewCartItem, previewProduct, requiredSupplementNotice } from "./preview-product";
+import { previewCartItem, previewProduct } from "./preview-product";
 import styles from "./catalog.module.css";
 
 async function ProductContent({ params }: { params: Promise<{ slug: string }> }) {
@@ -26,7 +26,6 @@ async function ProductContent({ params }: { params: Promise<{ slug: string }> })
           <section className={styles.previewSection} aria-labelledby="preview-details-title">
             <h2 id="preview-details-title">Información del producto</h2>
             <p>La presentación y la información final deben confirmarse con el rótulo y el registro correspondientes.</p>
-            <p className={styles.previewLegal}>{requiredSupplementNotice}</p>
           </section>
           <section className={styles.previewSection} aria-labelledby="preview-price-title">
             <h2 id="preview-price-title">Precio y disponibilidad</h2>
@@ -91,7 +90,7 @@ async function ProductContent({ params }: { params: Promise<{ slug: string }> })
           label="Agregar al carrito"
         />
       </section>
-      <p className={styles.note}>La compra online aún no está habilitada. {requiredSupplementNotice}</p>
+      <p className={styles.note}>La compra online aún no está habilitada.</p>
     </article>
   );
 }

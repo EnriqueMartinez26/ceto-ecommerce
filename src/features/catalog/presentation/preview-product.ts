@@ -13,6 +13,3 @@ export const previewCartItem = {
   quantity: 1,
   maxQuantity: 99,
 } as const;
-
-export const requiredSupplementNotice =
-  "SUPLEMENTA DIETAS INSUFICIENTES. CONSULTE A SU MÉDICO Y/O FARMACÉUTICO";
